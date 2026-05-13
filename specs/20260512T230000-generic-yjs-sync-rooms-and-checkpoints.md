@@ -230,7 +230,7 @@ The checkpoint path is the better first feature because it keeps the default syn
 | `gc: false` support | Deferred | Do not implement now | It is only needed for exact Yjs snapshot reconstruction. No current UI needs that promise. |
 | Client GC matching | 1 evidence | Do not require matching | Normal update sync works across different local GC policies. Only snapshot origin docs require `gc: false`. |
 | Room policy control | 2 coherence | Server owns persisted retention | A client connection must not be able to silently turn a room into retained-history storage. |
-| Route compatibility | 3 taste | Build generic routes first, migrate callers, then delete old routes | A clean break is easier to explain than keeping `/workspaces`, `/documents`, and `/sync` as equal long-term shapes. |
+| Route compatibility | 3 taste | Build generic routes first, migrate callers, then delete legacy routes | A clean break is easier to explain than keeping `/workspaces`, `/documents`, and `/sync` as equal long-term shapes. |
 
 ## Architecture
 
@@ -323,7 +323,7 @@ First PR commit graph (one logical change per commit):
 
 Each commit must be independently shippable:
   - After commit 1, no behavior changes for clients.
-  - After commit 2, all clients use /sync/:room; old routes still answer for safety.
+  - After commit 2, all clients use /sync/:room; legacy routes still answer for rollback safety.
   - Commit 3 lands only after metrics show zero traffic on /workspaces/* and /documents/*.
 ```
 
@@ -377,7 +377,7 @@ Critical constraint: do not let Wrangler delete the `WorkspaceRoom` or `Document
 - [ ] **3.1** Confirm before deletion that no shipped UI calls the `/documents/:document/snapshots*` endpoints. Verified during spec review: only `apps/api/src/app.ts` references them; no client app, package, or example does. The auto-save in `DocumentRoom.onAllDisconnected` writes snapshots that nothing reads.
 - [ ] **3.2** Delete the four `/documents/:document/snapshots*` routes from `apps/api/src/app.ts`.
 - [ ] **3.3** Delete the `/workspaces/:workspace` and `/documents/:document` routes (GET and POST) from `apps/api/src/app.ts`.
-- [ ] **3.4** Remove the `app.use('/workspaces/*', requireOAuthUser)` and `app.use('/documents/*', requireOAuthUser)` middlewares.
+- [ ] **3.4** Remove the `app.use('/workspaces/*', requireAppAccessToken)` and `app.use('/documents/*', requireAppAccessToken)` middlewares.
 - [ ] **3.5** Delete `getWorkspaceStub` and `getDocumentStub` helpers in `apps/api/src/app.ts`.
 - [ ] **3.6** Leave `WorkspaceRoom` and `DocumentRoom` exports, the `WORKSPACE_ROOM`/`DOCUMENT_ROOM` Wrangler bindings, and the `v1` migration entry in place. The classes still hold user data; deleting them is a separate retirement decision with its own data plan, not part of the route migration.
 - [ ] **3.7** Decide before merging whether to drop the `'workspace'` and `'document'` values from `DoType`. Recommendation: leave them in the union so historical `durable_object_instance` rows continue to type-check. Stop writing them in new code.
@@ -485,7 +485,7 @@ commit 2 lands  : new client builds talk to /sync; old tabs still open keep talk
 commit 3 lands  : /workspaces and /documents return 404
 ```
 
-Old open tabs and unupdated installs (the published Tab Manager extension, Whispering desktop builds, anyone with a stale browser tab) keep talking to the old routes. Commit 3 is a hard break. Before merging it, verify:
+Open tabs and unupdated installs (the published Tab Manager extension, Whispering desktop builds, anyone with a stale browser tab) may keep talking to the legacy routes. Commit 3 is a hard break. Before merging it, verify:
 
 ```txt
 - production access logs show zero successful traffic on /workspaces/* and /documents/*
@@ -494,7 +494,7 @@ Old open tabs and unupdated installs (the published Tab Manager extension, Whisp
 - no Whispering or other desktop build in active distribution still ships old URLs
 ```
 
-If any of those fail, hold commit 3 and ship a deprecation period instead.
+If any of those fail, hold commit 3. Do not keep a deprecation lane in this spec; either prove the callers are gone or write a separate compatibility spec with an owner and removal date.
 
 ### Snapshot RPCs have no consumers
 

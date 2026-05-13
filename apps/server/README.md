@@ -1,101 +1,126 @@
 # Epicenter Server
 
-Epicenter Server is the self-hostable auth and sync runtime.
+Epicenter Server is the composable host for auth, sync, and Cloud Apps.
 
-It owns account cookies, OAuth token issuance, workspace identity, encryption
-key derivation, workspace sync, and document sync. It must stay useful without
-Postgres.
+It owns the built-in private workspace core:
 
 ```txt
-Domains split by public protocol role.
-Deployables split by infrastructure and operational boundary.
-Hono modules split by code composition boundary.
-```
-
-In hosted production, this deployable serves two public roles:
-
-```txt
-accounts.epicenter.so
-  account pages
+accounts
+  Better Auth cookies
+  hosted sign-in and consent
   OAuth issuer metadata
   authorize, token, revoke, JWKS
-  sign-in and consent
 
-sync.epicenter.so
+app access token routes
   protected resource metadata
-  /me
+  /workspace-identity
   workspace sync
   document sync
+
+public
+  landing and health routes
+  public Cloud App reads when an app exposes them
 ```
 
-Self-hosters can run the same server on one origin:
+Cloud Apps are mounted into the same host. Billing, assets, dashboard, Ark,
+Betcha, and future hosted modules should live under the server composition, not
+in a separate `apps/cloud` platform.
 
 ```txt
-https://server.example.com
-|-- account and OAuth routes
-|-- /me
-|-- /workspaces/*
-`-- /documents/*
+apps/server/src/
+|-- app.ts
+|-- auth/
+|-- modules/
+|   |-- accounts/
+|   |-- app-access-token/
+|   `-- sync/
+`-- cloud-apps/
+    |-- billing/
+    |-- assets/
+    |-- dashboard/
+    |-- ark/
+    `-- betcha/
 ```
 
-Composition happens in the deployable root:
+The same code can run on one origin or several public hosts. Host dispatch is a
+routing choice, not a package boundary.
 
 ```txt
-createServerApp()
-|-- createAccountsRoutes(serverEnv)
-|-- createSyncRoutes(serverEnv)
-`-- createHostDispatch()
-    |-- accounts.epicenter.so -> accounts routes
-    |-- sync.epicenter.so -> sync routes
-    `-- self-hosted default -> accounts routes + sync routes
+hosted production:
+  accounts.epicenter.so -> accounts routes
+  sync.epicenter.so     -> app access token routes
+  api.epicenter.so      -> hosted Cloud Apps
+  ark.epicenter.so      -> Ark Cloud App
+
+self-hosted:
+  server.example.com    -> accounts + app access token routes + enabled Cloud Apps
 ```
 
-The route modules receive dependencies from `app.ts`. They should not import the
-deployable root, import sibling modules, or reach into Cloud code.
+Route groups choose their credential model at the mount point:
 
 ```txt
-ServerEnv
-|-- auth
-|   |-- Better Auth instance
-|   |-- oauthProvider
-|   `-- trusted clients
-|-- identity
-|   |-- user lookup
-|   `-- encryption key derivation
-|-- sync
-|   |-- workspace store
-|   |-- document store
-|   `-- websocket rooms
-`-- config
-    |-- issuer origins
-    |-- resource origins
-    `-- self-hosted origin
+hosted auth routes
+  /sign-in
+  /consent
+  /auth/*
+  discovery
+  -> Better Auth cookie session
+
+app access token routes
+  /workspace-identity
+  /ai/*
+  /workspaces/*
+  /documents/*
+  /api/billing/*
+  /api/assets/* writes
+  -> normalizeAppAccessToken
+  -> requireAppAccessToken
+
+public routes
+  /
+  /api/assets/* reads
+  /dashboard SPA
+  redirects
+  -> no auth middleware
 ```
 
 Allowed dependencies:
 
 ```txt
-apps/server
+server core
 |-- Better Auth
 |-- OAuth token issuing and JWKS
+|-- OAuth access-token verification
+|-- workspace identity and key derivation
 |-- self-hostable storage
-|-- workspace sync
-|-- document sync
-|-- encryption key derivation
-`-- packages/auth shared types
+`-- workspace and document sync
+
+cloud-apps
+|-- packages/ui
+|-- packages/auth shared types
+|-- OAuth access-token verification
+|-- Drizzle and Postgres when the app needs hosted state
+|-- billing provider SDKs
+|-- hosted storage registry
+`-- asset management
 ```
 
 Forbidden dependencies:
 
 ```txt
-apps/server
-|-- Drizzle Postgres bindings
+server core
+|-- Cloud App schemas
 |-- billing provider SDKs
 |-- hosted storage registry
-|-- Cloud dashboard source
-`-- proprietary Cloud control-plane code
+`-- dashboard implementation details
+
+cloud-apps
+|-- Better Auth raw Session as app auth
+|-- Better Auth getSession() for app access token routes
+|-- encryption key derivation
+`-- sync room internals
 ```
 
-The future split should be boring. If accounts and sync ever need independent
-deployment, `apps/accounts` can mount `createAccountsRoutes()` and `apps/sync`
-can mount `createSyncRoutes()` without rewriting the route modules.
+Move code here by module. Build the new mount, move callers, prove it with
+tests, then remove the old path. Do not keep parallel `apps/server` and
+`apps/cloud` stories alive as a long-term compatibility layer.

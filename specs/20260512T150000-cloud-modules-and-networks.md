@@ -123,15 +123,11 @@ The final OAuth architecture spec had the right resource contract but an overly
 fixed deployable story:
 
 ```txt
-Earlier wording:
-  apps/server = self-hostable auth and sync runtime
-  apps/cloud  = hosted control plane and Cloud Apps
-
-Better wording:
-  Epicenter Server = composable host
+Target wording:
+  apps/server      = composable host
   server core      = built-in auth, identity, workspace sync, document sync
-  Cloud Apps       = optional compile-time capabilities
-  instances    = operator-configured mounts for each enabled Cloud App
+  Cloud Apps       = optional compile-time capabilities under apps/server
+  instances        = operator-configured mounts for each enabled Cloud App
 ```
 
 The older server-authoritative apps spec has the right product instinct but the
@@ -388,9 +384,9 @@ it is named.
 
 ## Suggested File Shape
 
-This is a target shape, not an immediate implementation command. The exact app
-folder can be `apps/server` or a renamed host package. The important thing is
-that the composition root is singular.
+This is the target shape. Use `apps/server` as the first implementation
+directory. Do not keep `apps/cloud` as a sibling platform; move Cloud App code
+under the server host and delete the placeholder when it is empty.
 
 ```txt
 apps/server/src/
@@ -502,7 +498,7 @@ export const postRelations = relations(post, ({ one }) => ({
 }));
 ```
 
-The factory is thin — it accepts the operator's mount config and forwards the
+The factory is thin: it accepts the operator's mount config and forwards the
 schema module wholesale to `defineCloudApp`:
 
 ```ts
@@ -864,8 +860,7 @@ it.
 
 ## Open Questions
 
-1. Should the first implementation directory be `apps/server`, `apps/epicenter-server`, or a package consumed by a thin app wrapper?
-2. Does a third-party cloud need its own OAuth issuer, or can it trust a separate issuer controlled by the same operator?
+1. Does a third-party cloud need its own OAuth issuer, or can it trust a separate issuer controlled by the same operator?
 
 ### Deferred
 

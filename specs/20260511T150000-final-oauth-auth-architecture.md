@@ -55,10 +55,10 @@ Layer 2: Server composition (a separate decision)
   Hosted domains: accounts.epicenter.so, sync.epicenter.so, api.epicenter.so, Cloud App hosts
 ```
 
-The auth contract collapse must land before any server composition cleanup.
-Apps must already be consuming `AuthClient` capabilities before file moves out
-of `apps/api` start, or the rename ships with the old credential shapes still
-in place.
+The auth contract collapse and route-family auth cleanup must land before the
+server composition cleanup. Apps must already be consuming `AuthClient`
+capabilities before file moves out of `apps/api`, or the rename ships with the
+old credential shapes still in place.
 
 The target is not "Better Auth everywhere." The target is narrower:
 
@@ -710,7 +710,7 @@ Cloud billing, assets, hosted storage registry:
   must not be required for workspace boot
 
 Workspace and document sync:
-  stay as protected resources that verify OAuth access tokens
+  stay as OAuth protected resources that verify OAuth access tokens
   must not call Better Auth getSession()
   must not derive encryption keys per request (only /workspace-identity derives keys)
 
@@ -759,9 +759,10 @@ Better Auth OAuth provider machinery:
     /.well-known/* metadata mounting
 
 Epicenter identity projection:
-  apps/api/src/auth/me.ts                  (current; renames to workspace-identity.ts)
+  apps/api/src/auth/app-access-token-auth.ts
+    resolveRequestWorkspaceIdentity()
   apps/api/src/auth/identity-response.ts
-  apps/api/src/app.ts /auth/me route today, /workspace-identity in the target
+  apps/api/src/app.ts /workspace-identity route
 
 Server composition and product boundary:
   current apps/api mixes base server modules and cloud work
@@ -1297,8 +1298,8 @@ Use Hono route modules for:
 Use separate deployables only for:
   different infrastructure requirements
   independent scaling needs
-  separate ownership
-  separate release cadence
+  independent operational ownership
+  independent release cadence
 ```
 
 Rejected alternatives:
@@ -1312,12 +1313,12 @@ Why rejected:
   accounts-plus-sync makes the accounts name false
   cloud-plus-sync makes self-hosting depend on the hosted control plane
 
-Three deployables:
+Three product platforms:
   apps/accounts + apps/sync + apps/cloud
 
 Why rejected:
   auth and sync are both required for the useful self-hosted server
-  splitting them creates deployment overhead before there is an independent
+  splitting them creates platform overhead before there is an independent
   scaling or ownership need
 
 Mountable modules inside one composable host:
@@ -1609,7 +1610,7 @@ api.epicenter.so/dashboard
 
 ### Browser Resource Boundaries
 
-CORS policy follows the protected-resource boundary. Do not solve browser access
+CORS policy follows the OAuth protected resource boundary. Do not solve browser access
 by adding one global allowlist to every hosted route.
 
 ```txt
@@ -1697,7 +1698,7 @@ Cloud Apps
 |
 `-- must not depend on:
     |-- Better Auth raw Session as app auth
-    |-- Better Auth getSession() for protected resources
+    |-- Better Auth getSession() for app access token routes
     |-- encryption key derivation
     |-- base sync module internals
     `-- /workspace-identity as workspace boot identity
@@ -1987,7 +1988,7 @@ Keep or create:
 Product sentence:
 
 ```txt
-Apps authenticate with OAuth and call protected resources with OAuth access tokens.
+Apps authenticate with OAuth and call OAuth protected resources with OAuth access tokens.
 ```
 
 Behavior refused:
@@ -2001,9 +2002,9 @@ Code family deleted:
 ```txt
 createCookieAuth
 cookie platform auth modes
-cookie resource middleware branch
+cookie app access token middleware branch
 app credential forms
-Better Auth getSession for protected resources
+Better Auth getSession for app access token routes
 ```
 
 User loss:
@@ -2112,15 +2113,17 @@ keys; see "Forward Compatibility With Future E2EE").
 ## Clean-Break Implementation Plan
 
 Order matters. The auth contract is the first cleanup. Better Auth ownership,
-`/workspace-identity`, and old bridge deletion all happen before any move into
-the composable `apps/server` host with its `cloud-apps/` subtree.
+`/workspace-identity`, app access token route auth, and old bridge deletion
+all happen before any move into the composable `apps/server` host with its
+`cloud-apps/` subtree.
 
 ```txt
 1. Collapse app code to AuthState and auth capabilities.
 2. Keep OAuth protocol work in Better Auth.
 3. Move Epicenter identity projection to /workspace-identity.
 4. Delete old credential bridges inside current apps/api.
-5. Only then move server core and Cloud Apps into apps/server.
+5. Move server core and Cloud Apps into apps/server.
+   Remove apps/cloud as a separate platform.
    Physical deployable splitting stays optional after composition lands.
 ```
 
@@ -2194,7 +2197,7 @@ bun run typecheck in packages/auth
 - [ ] **3.7** Update OAuth launchers to discover from `issuer`, request `resource`, and ask for `workspaces:open offline_access` for sync clients.
 - [ ] **3.8** Delete `createBrowserOAuthLauncherFromApi`.
 - [ ] **3.9** Keep `/workspace-identity` calls inside auth. App code should not call `/workspace-identity` directly.
-- [ ] **3.10** Rename `apps/api/src/auth/me.ts` to `apps/api/src/auth/workspace-identity.ts` (and the route handler from `/auth/me` to `/auth/workspace-identity` during the migration, then to `/workspace-identity` in the clean-break target). Drop any `/me` or `/auth/me` aliases.
+- [x] **3.10** Keep `/workspace-identity` as the only workspace identity route. The current resolver lives in `apps/api/src/auth/app-access-token-auth.ts` as `resolveRequestWorkspaceIdentity`; do not add `/me`, `/auth/me`, or `/auth/workspace-identity` aliases.
 - [ ] **3.11** Have `/workspace-identity` reject access tokens missing the `workspaces:open` scope with a 403 that names the missing scope.
 - [ ] **3.12** Document that `/workspace-identity` replaces only Epicenter identity bridges, not Better Auth or `oauthProvider` machinery (authorize, token, revoke, metadata, JWKS, PKCE, consent, trusted clients, access-token issuing, refresh-token issuing).
 - [ ] **3.13** Document that no per-workspace key-release endpoint exists; `/workspace-identity` returns all keying material the client needs to open any workspace it owns.
@@ -2257,7 +2260,7 @@ Each pair of consecutive commits leaves the system in a running state, so
 the chain can stop at any commit boundary and ship.
 
 ```txt
-Commit 1: Rename /auth/me to /workspace-identity            (mechanical)
+Commit 1: Keep /workspace-identity as the identity route    (landed)
 Commit 2: Add the workspaces:open scope and enforce it      (load-bearing)
 Commit 3: Delete customSession and set-auth-token           (small bridges)
 Commit 4: Delete auth.bearerToken from the AuthClient       (cascade win)
@@ -2267,24 +2270,21 @@ Commit 5: Delete deviceAuthorization; add CLI loopback PKCE (substantive)
 The order is dependency-driven, not size-driven. Each later commit assumes
 the earlier ones already landed.
 
-#### Commit 1: Rename to /workspace-identity
+#### Commit 1: Keep /workspace-identity as the identity route
 
 ```txt
 Route mount:
-  apps/api/src/app.ts:258    /auth/me  ->  /workspace-identity
+  apps/api/src/app.ts        /workspace-identity
 
-File renames:
-  apps/api/src/auth/me.ts          ->  workspace-identity.ts
-  apps/api/src/auth/me.test.ts     ->  workspace-identity.test.ts
-  apps/api/src/auth/identity-response.ts stays
-    (the helper is internal; rename the export instead of the file)
+Resolver:
+  apps/api/src/auth/app-access-token-auth.ts
+    resolveRequestWorkspaceIdentity()
 
-Identifier renames:
+Identifier check:
   AuthIdentity                 ->  WorkspaceIdentity
     packages/auth/src/auth-types.ts
-  createAuthIdentityResponse   ->  createWorkspaceIdentityResponse
-    apps/api/src/auth/identity-response.ts
-  resolveOAuthIdentity         stays (it returns WorkspaceIdentity now)
+  resolveRequestWorkspaceIdentity
+    apps/api/src/auth/app-access-token-auth.ts
 
 Implements wave items: 3.10, 3.14
 
@@ -2295,7 +2295,7 @@ Why first:
 Verification:
   rg -n "AuthIdentity|/auth/me" apps packages --glob '!specs/**'
     -> only specs and historical docs should match.
-  bun test apps/api/src/auth/workspace-identity.test.ts
+  bun test apps/api/src/auth/app-access-token-auth.test.ts
 ```
 
 #### Commit 2: Add workspaces:open scope
@@ -2322,7 +2322,7 @@ Client side:
     pass the scope through unchanged.
 
 Tests:
-  apps/api/src/auth/workspace-identity.test.ts
+  apps/api/src/auth/app-access-token-auth.test.ts
     add cases: missing scope -> 403; present scope -> 200.
 
 Implements wave items: 3.5, 3.6, 3.7, 3.11
@@ -2545,7 +2545,7 @@ First-party app move:
 - [ ] **5.22** Configure WXT extension launchers with `issuer = accounts.epicenter.so` and `resource = sync.epicenter.so`.
 - [ ] **5.23** Remove app credential forms that duplicate hosted sign-in.
 - [ ] **5.24** Replace sync bearer-token getters with `auth.openWebSocket`.
-- [ ] **5.25** Replace direct fetch with `auth.fetch` for protected resources.
+- [ ] **5.25** Replace direct fetch with `auth.fetch` for app access token routes.
 - [ ] **5.26** Use `sync.epicenter.so` as the hosted sync resource for workspace and document sync.
 - [ ] **5.27** Add explicit separate grants when one app needs both sync and Cloud resources.
 
@@ -2604,12 +2604,12 @@ Current auth-heavy tree:
 apps/api/src/
 |-- app.ts
 |-- auth/
+|   |-- app-access-token.ts
+|   |-- app-access-token-auth.ts
 |   |-- create-auth.ts
 |   |-- identity-response.ts
-|   |-- me.ts
 |   |-- oauth-metadata.ts
 |   |-- oauth-resource.ts
-|   |-- single-credential.ts
 |   `-- trusted-oauth-clients.ts
 packages/auth/src/
 |-- auth-types.ts

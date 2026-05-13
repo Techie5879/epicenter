@@ -65,8 +65,8 @@ Apps should not read:
 ```
 
 The deployable split is less product-shaped. The OAuth architecture spec and
-the cloud modules companion spec describe a single composable host with
-optional Cloud Apps, not two separate deployables:
+the cloud modules companion spec now choose a single composable host with
+optional Cloud Apps:
 
 ```txt
 apps/server base modules:
@@ -86,8 +86,7 @@ apps/server cloud-apps subtree:
 
 Physical splitting (separate processes, separate domains) stays available as
 an operational topology choice, but `apps/server` and `apps/cloud` are not
-two separate product platforms. This still leaves a product question
-unresolved:
+two separate product platforms. The product question is narrower:
 
 ```txt
 What exactly is the thing an app connects to?
@@ -468,7 +467,7 @@ Auth token capability boundary:
 
 - [ ] **3.1** Pick the smallest self-hosted origin shape:
   `https://epicenter.example.com/auth`, `/sync`, and `/api`.
-- [ ] **3.2** Map existing `apps/server` base modules and the planned `cloud-apps/` subtree onto that origin. There is no separate `apps/cloud` deployable to map; every Cloud App is a colocated compile-time module mounted at its own host.
+- [ ] **3.2** Map server core and the `cloud-apps/` subtree onto that origin inside `apps/server`. There is no separate `apps/cloud` deployable to map; every Cloud App is a colocated compile-time module mounted at its own host.
 - [ ] **3.3** Identify which state needs a database for self-hosted accounts.
 - [ ] **3.4** Identify which hosted Cloud features require Postgres and must stay out of the minimal server.
 

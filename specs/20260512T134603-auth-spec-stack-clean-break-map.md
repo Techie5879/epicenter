@@ -43,7 +43,7 @@ Server composition:
 | 3 | `specs/20260512T111335-post-oauth-audit-remediation.md` | Fixes correctness gaps left after migration. Phase 3 (local workspace lifetime during reauth) is **superseded** by order 3.5; the rest still applies. | Immediate obligation |
 | 3.5 | `specs/20260512T220000-session-two-axis-cohesive-reshape.md` | Reshapes `Session<T>` to `SessionPayload<T> \| null`, renames `requireSignedIn` to `requireIdentity` and per-app `getSignedInSession` to `requireWorkspace`, and delivers the same-user `reauth-required` invariant. **Landed.** | Runtime cohesion fix |
 | 4 | `specs/20260512T114350-auth-token-capability-boundary.md` | Cleans up token ownership, persisted session shape, and storage vocabulary. | Long-term boundary cleanup |
-| 5 | Future server composition spec | Moves pieces out of `apps/api` into a composable server host after the auth contract is stable. Physical splitting stays optional. | Later |
+| 5 | `specs/20260512T150000-cloud-modules-and-networks.md` | Moves pieces out of `apps/api` into one composable `apps/server` host. Cloud Apps live under that host, not in `apps/cloud`. | Composition cleanup |
 
 Rejected, do not execute: `specs/20260512T161042-async-storage-and-build-unification.md`
 collapsed sync and async session construction into one async builder. A second
@@ -199,7 +199,7 @@ Do not add a ticket endpoint until there is a concrete threat model or logging r
 
 No conflict, but order matters.
 
-Do not start moving `apps/api` into a new server composition while apps still depend on old credential shapes, stale routes, or unsealed resource scopes. The first target should be a single composable host. Physical splitting can come later as boring file movement over a stable contract.
+Do not split `apps/server` and `apps/cloud` into separate conceptual platforms. The first target is one composable host. Physical splitting can come later as boring host dispatch or deployment packaging over the same modules.
 
 ## Clean Break Rules
 
@@ -211,7 +211,7 @@ Keep these rules as the guardrail for future auth specs:
 4. Do not keep `/auth/get-session`, `/auth/me`, or `/me` as workspace identity bridges.
 5. Do not keep both `sessionStorage` and `sessionStore` as public config names long term.
 6. Do not add `/docs/*` aliases for document sync. Fix the clients to call `/documents/*`.
-7. Do not split deployables until the auth contract and invariant patch are passing tests.
+7. Do not create a permanent `apps/cloud` platform. Cloud Apps compose into `apps/server`; deployment topology comes after module boundaries are stable.
 8. Do not put public-record state (Ark posts, Betcha challenges, follows) in server core. Public records live in Cloud Apps mounted at their own hosts.
 9. Do not design federation. Mounted Cloud Apps are islands by default. If federation ever happens, it gets its own architecture spec, not an extension of the Cloud Apps spec.
 
@@ -223,7 +223,7 @@ Keep these rules as the guardrail for future auth specs:
 3. Land the session two-axis reshape (covers remediation Phase 3). DONE.
 4. Run the token capability clean break.
 5. Update docs and skills to the new vocabulary.
-6. Only then start server composition work. Split processes only if operations demand it.
+6. Move server core and Cloud Apps into `apps/server`. Remove `apps/cloud` once no code needs it as a migration inbox.
 ```
 
 ## Success Criteria

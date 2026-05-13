@@ -14,20 +14,20 @@ The live tree was audited against this spec. Result:
 | Phase | Status | Notes |
 | --- | --- | --- |
 | 0 | Live | 0.3 (machine auth decision) still required before Phase 4. |
-| 1 | Landed | `resolveOAuthPrincipal` enforces `workspaces:open`, returns an `insufficient_scope` variant, and `createOAuthUnauthorizedResourceResponse` produces HTTP 403 / WS 4403 with `Bearer error="insufficient_scope" scope="workspaces:open"`. Shared `hasScope` helper at `apps/api/src/auth/oauth-scope.ts`. Coverage in `oauth-principal.test.ts` and `oauth-resource.test.ts`. JSDoc corrected. |
+| 1 | Landed | `resolveBearerUser` enforces `workspaces:open`, returns an `InsufficientScope` error, and `createOAuthUnauthorizedResourceResponse` produces HTTP 403 / WS 4403 with `Bearer error="insufficient_scope" scope="workspaces:open"`. Coverage in `app-access-token-auth.test.ts` and `oauth-resource.test.ts`. JSDoc corrected. |
 | 2 | Landed | Fuji and Honeycrisp child sync use `/documents/` as of `52e5e668e` (`fix(fuji,honeycrisp): point child doc sync at /documents`). |
 | 3 | Superseded | Replaced by `specs/20260512T220000-session-two-axis-cohesive-reshape.md`. `Session<T>` is now `SessionPayload<T> \| null` and `createSession` disposes only on `signed-out` or different user. |
 | 4 | Live | `packages/auth/src/node/machine-auth.ts` still calls dead `device.code`, `device.token`, and `getSession` paths. Server has no `deviceAuthorization()`. |
-| 5 | Landed | `isWebSocketUpgrade(c)` makes the four upgrade-detection sites case-insensitive. `singleCredential` now rejects duplicate `bearer.*` entries and strips every `bearer.*` from `Sec-WebSocket-Protocol` before forwarding (deleting the header when nothing remains). Coverage in `single-credential.test.ts`. |
+| 5 | Landed | `isWebSocketUpgrade(c)` makes the four upgrade-detection sites case-insensitive. `normalizeAppAccessToken` now rejects duplicate `bearer.*` entries and strips every `bearer.*` from `Sec-WebSocket-Protocol` before forwarding (deleting the header when nothing remains). Coverage in `app-access-token.test.ts`. |
 | 6 | Live | Callback pages navigate on `startSignIn()` resolution without confirming `auth.state.status === 'signed-in'`. |
 
-Highest-priority remaining items: **0.3** (machine auth decision) before Phase 4 code churn, then **Phase 5** (WebSocket credential normalization) as the next resource-boundary tightening now that Phase 1 sealed the HTTP path.
+Highest-priority remaining items: **0.3** (machine auth decision) before Phase 4 code churn, then **Phase 5** (WebSocket credential normalization) as the next app access token route tightening now that Phase 1 sealed the HTTP path.
 
 ## One Sentence
 
-Keep same-user local workspaces alive during temporary network auth failure, and require every network resource to prove the OAuth scope it uses.
+Keep same-user local workspaces alive during temporary network auth failure, and require every app access token route to prove the OAuth scope it uses.
 
-This is the cohesion test for the spec. Anything that does not protect local workspace lifetime or seal the OAuth resource boundary belongs in a sibling cleanup spec.
+This is the cohesion test for the spec. Anything that does not protect local workspace lifetime or seal the OAuth protected resource boundary belongs in a sibling cleanup spec.
 
 ## Execution Shape
 
@@ -38,7 +38,7 @@ LOCAL PLANE
   same-user workspace state stays mounted during reauth-required
 
 NETWORK PLANE
-  each protected HTTP and WebSocket resource verifies a scoped OAuth token
+  each app access token route verifies a scoped OAuth token
 
 DRIFT PLANE
   clients call routes and auth surfaces that still exist
@@ -46,7 +46,7 @@ DRIFT PLANE
 
 Do the work in this order when possible:
 
-1. Seal the server resource boundary.
+1. Seal the app access token route gate.
 2. Fix route drift that blocks sync.
 3. Preserve same-user local workspace lifetime during `reauth-required`.
 4. Pick the machine auth path.
@@ -57,7 +57,7 @@ Refuse broad cleanup inside this spec. Billing, deployable split, token storage 
 
 ## Overview
 
-The OAuth migration moved apps onto `auth.startSignIn`, `auth.fetch`, and `auth.openWebSocket`. That boundary is still the right shape, but the audit found five correctness gaps around it: protected routes verify token validity without enforcing resource scope, machine auth still calls removed server endpoints, `reauth-required` destroys local workspaces, some child document sync clients call `/docs/*` while the API serves `/documents/*`, and WebSocket bearer normalization is not finished.
+The OAuth migration moved apps onto `auth.startSignIn`, `auth.fetch`, and `auth.openWebSocket`. That boundary is still the right shape, but the audit found five correctness gaps around it: app access token routes verify token validity without enforcing the required scope, machine auth still calls removed server endpoints, `reauth-required` destroys local workspaces, some child document sync clients call `/docs/*` while the API serves `/documents/*`, and WebSocket bearer normalization is not finished.
 
 This spec fixes those gaps first. WebSocket origin checks, callback polish, extension launch durability, API middleware cleanup, and billing are included only when they directly affect the same auth boundary.
 
@@ -106,8 +106,8 @@ if (!hasScope(payload, WORKSPACES_OPEN_SCOPE)) {
 	return { status: 'insufficient_scope', requiredScope: WORKSPACES_OPEN_SCOPE };
 }
 
-// protected resource middleware
-const result = await resolveOAuthPrincipal({ ... });
+// app access token route middleware
+const result = await resolveBearerUser({ ... });
 if (result.status !== 'resolved') {
 	return createOAuthUnauthorizedResourceResponse(c);
 }
@@ -138,17 +138,17 @@ url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`);
 The API route is `/documents/:document`:
 
 ```ts
-app.use('/documents/*', requireOAuthUser);
+app.use('/documents/*', requireAppAccessToken);
 app.get('/documents/:document', ...);
 ```
 
 ### Problems
 
-1. **Scope is checked at boot, not at resource use**: A token can pass protected resource middleware without `workspaces:open` as long as it has the right issuer, audience, and subject.
+1. **Scope is checked at boot, not at route use**: A token can pass app access token middleware without `workspaces:open` as long as it has the right issuer, audience, and subject.
 2. **Machine auth is stale**: CLI login still depends on device and session endpoints that the live server no longer exposes.
 3. **Local-first fallback is broken**: A refresh failure preserves identity in auth state but destroys the workspace that could use local IndexedDB data.
 4. **Child document sync points at a dead route**: Rich-text child docs in Fuji and Honeycrisp can reconnect forever against `/docs/*`.
-5. **WebSocket credential handling is only partly normalized**: `singleCredential` lifts the bearer subprotocol into `Authorization`, but the forwarded request can still carry the raw `bearer.*` entry.
+5. **WebSocket credential handling is only partly normalized**: `normalizeAppAccessToken` lifts the bearer subprotocol into `Authorization`, but the forwarded request can still carry the raw `bearer.*` entry.
 
 ### Desired State
 
@@ -165,7 +165,7 @@ AuthClient
   openWebSocket()
         |
         v
-Resource boundary
+App access token routes
   verify issuer
   verify audience
   verify required scope
@@ -182,7 +182,7 @@ DeepWiki against `better-auth/better-auth` confirmed three points that matter he
 
 | Question | Finding | Spec impact |
 | --- | --- | --- |
-| Does `verifyAccessToken` enforce scopes automatically? | No. Scopes are enforced when the caller passes `opts.scopes`. | `resolveOAuthPrincipal` must request the required scope, or it must do an equivalent local scope check. |
+| Does `verifyAccessToken` enforce scopes automatically? | No. Scopes are enforced when the caller passes `opts.scopes`. | `resolveBearerUser` must request the required scope, or it must do an equivalent local scope check. |
 | Does the OAuth provider expose refresh-token revocation? | Yes. The OAuth provider exposes `/oauth2/revoke`; revoking a refresh token also removes access tokens granted from it. | Machine logout should call the OAuth revoke endpoint instead of Better Auth `signOut` with a bearer header. |
 | Are `/auth/device/code` and `/auth/device/token` always present? | No. They come from the separate device authorization plugin. | Machine login cannot call those endpoints unless the server installs that plugin again. |
 
@@ -190,7 +190,7 @@ Local installed source also shows `verifyAccessToken` checks `opts.scopes` only 
 
 ### Cloudflare Workers and Hono
 
-DeepWiki did not provide a definitive upstream rule for every WebSocket edge detail. It did confirm the shape that matters for this spec: validate before proxying to Durable Objects when possible, and avoid treating CORS middleware as WebSocket protection. The exact header-rewrite behavior should be proven with local tests around `singleCredential` and the Durable Object request path.
+DeepWiki did not provide a definitive upstream rule for every WebSocket edge detail. It did confirm the shape that matters for this spec: validate before proxying to Durable Objects when possible, and avoid treating CORS middleware as WebSocket protection. The exact header-rewrite behavior should be proven with local tests around `normalizeAppAccessToken` and the Durable Object request path.
 
 Decision class: local evidence plus design coherence, not upstream law.
 
@@ -215,11 +215,11 @@ DeepWiki confirmed the general SvelteKit pattern: redirect only after an auth de
 | --- | --- | --- | --- |
 | Keep `AuthClient` as the app boundary | 2 coherence | Keep | The leak is around resource checks and lifecycle handling, not the public app contract. |
 | Treat `reauth-required` as local-usable | 1 evidence, 2 coherence | Keep workspace payload mounted for the same user | Auth deliberately preserves identity and encryption keys. Yjs and IndexedDB support local work while offline. |
-| Enforce `workspaces:open` on current protected resources | 1 evidence | Pass `scopes: [WORKSPACES_OPEN_SCOPE]` to token verification or keep one equivalent canonical check | Better Auth only enforces scopes when asked. `/workspace-identity` already treats this scope as required. |
+| Enforce `workspaces:open` on current app access token routes | 1 evidence | Pass `scopes: [WORKSPACES_OPEN_SCOPE]` to token verification or keep one equivalent canonical check | Better Auth only enforces scopes when asked. `/workspace-identity` already treats this scope as required. |
 | Replace or restore machine login deliberately | 1 evidence | Choose one path before claiming CLI auth works | Device endpoints are absent unless the server installs the device plugin. `/auth/get-session` no longer returns workspace identity. |
 | Change `/docs/*` child sync clients to `/documents/*` | 1 evidence | Update Fuji and Honeycrisp immediately | The API route is `/documents/:document`; `/docs/*` is dead. |
-| Strip bearer WebSocket subprotocol after normalization | 2 coherence | Consume bearer once at the edge | `singleCredential` promises one canonical credential. Raw bearer material should not be forwarded beyond the resource edge. |
-| Do not add a static WebSocket `Origin` allowlist for bearer sync | 2 coherence, local evidence | Remove the helper idea | Sync is an OAuth protected resource. A valid scoped bearer token, not membership in the first-party `TRUSTED_ORIGINS` list, is the resource boundary. Unauthenticated upgrade load belongs to platform rate limits. |
+| Strip bearer WebSocket subprotocol after normalization | 2 coherence | Consume bearer once at the edge | `normalizeAppAccessToken` promises one canonical credential. Raw bearer material should not be forwarded beyond the app access token route middleware. |
+| Do not add a static WebSocket `Origin` allowlist for bearer sync | 2 coherence, local evidence | Remove the helper idea | Sync is an OAuth protected resource. A valid scoped bearer token, not membership in the first-party `TRUSTED_ORIGINS` list, is the OAuth protected resource boundary. Unauthenticated upgrade load belongs to platform rate limits. |
 | Defer billing remediation | 3 taste under constraint | Sibling spec | Billing issues are real, but they do not serve the one-sentence auth thesis. |
 | Defer API middleware diet | 3 taste under constraint | Sibling spec | Route partitioning is useful but broad. Mixing it with auth fixes raises route-order risk. |
 
@@ -285,12 +285,12 @@ Request
   Authorization: Bearer access_token
         |
         v
-singleCredential
+normalizeAppAccessToken
   rejects ambiguous credentials
   lifts WS bearer into Authorization
         |
         v
-resolveOAuthPrincipal
+resolveBearerUser
   parse bearer
   verify issuer
   verify audience
@@ -325,26 +325,26 @@ The phases below are ordered patches, not parallel feature tracks. Do not start 
 
 | Order | Patch | Why this order |
 | --- | --- | --- |
-| 1 | Protected resource scopes | Smallest revert-safe security fix. |
+| 1 | App access token route scopes | Smallest revert-safe security fix. |
 | 2 | `/docs/*` route drift | Obvious dead route that blocks child sync. |
 | 3 | `reauth-required` lifetime | Preserves the local-first promise after the server boundary is sealed. |
 | 4 | Machine auth | Requires a product decision before code churn. |
-| 5 | WebSocket normalization | Same resource boundary, but higher handshake edge-case risk. |
+| 5 | WebSocket normalization | Same app access token gate, but higher handshake edge-case risk. |
 | 6 | Callback and extension durability | Important polish after the core invariant is true. |
 
 ### Phase 0: Freeze Scope and Protect Existing Work
 
-- [x] **0.1** Confirmed `apps/epicenter` does not exist in this checkout. The deployable is `apps/api`. Composable host (`apps/server` + `cloud-apps/`) is future work tracked under `specs/20260512T150000-cloud-modules-and-networks.md`. There is no `apps/cloud` deployable.
+- [x] **0.1** Confirmed `apps/epicenter` does not exist in this checkout. The current deployable is `apps/api`. The target host is `apps/server` with `cloud-apps/` inside it, tracked under `specs/20260512T150000-cloud-modules-and-networks.md`. There is no `apps/cloud` deployable.
 - [x] **0.2** Existing uncommitted work in `apps/api/src/app.ts`, `apps/fuji/src/routes/(signed-in)/fuji/browser.ts`, and `apps/honeycrisp/src/routes/(signed-in)/honeycrisp/browser.ts` was preserved through the reshape that landed in `specs/20260512T220000-session-two-axis-cohesive-reshape.md`.
 - [ ] **0.3** Update this spec with the exact machine-auth decision before implementing Phase 4. Recommended choice is still Option A (loopback PKCE), see Phase 4 commentary. Still live.
 
-### Phase 1: Seal Current Resource Routes
+### Phase 1: Seal Current App Access Token Routes
 
-- [x] **1.1** Update `resolveOAuthPrincipal` (`apps/api/src/auth/oauth-principal.ts`) to require `workspaces:open` for the currently mounted protected routes (`/ai/*`, `/workspaces/*`, `/documents/*`, `/api/billing/*`, `/api/assets/*` in `apps/api/src/app.ts`). Add a discriminated `'insufficient_scope'` result variant matching `resolveWorkspaceIdentity` (`apps/api/src/auth/workspace-identity.ts`).
-- [x] **1.2** Local `hasScope` check pulled into a shared helper (`apps/api/src/auth/oauth-scope.ts`) and used by both `resolveWorkspaceIdentity` and `resolveOAuthPrincipal`. Better Auth verifier `scopes` option was not used: the local check is already proven, it surfaces the exact missing scope to the caller, and it avoids speculating about distinguishable error shapes from the verifier.
-- [x] **1.3** Extended `createOAuthUnauthorizedResourceResponse` (`apps/api/src/auth/oauth-resource.ts`) with a `failure` parameter. Protected-resource middleware in `app.ts` now returns HTTP 403 (`Bearer error="insufficient_scope" scope="workspaces:open"`) and closes WebSocket upgrades with `4403 insufficient_scope` carrying the same body. `invalid_token` keeps its existing 401 / 4401 path as the default.
-- [x] **1.4** `apps/api/src/auth/oauth-principal.test.ts` added with: valid scoped token, missing scope, wrong audience, wrong issuer, malformed bearer input, missing user. Run with `bun --cwd apps/api test`.
-- [x] **1.5** JSDoc on `resolveOAuthPrincipal` rewritten to state the enforced scope; the misleading "skips ... workspaces:open scope check" sentence is gone.
+- [x] **1.1** Update `resolveBearerUser` (`apps/api/src/auth/app-access-token-auth.ts`) to require `workspaces:open` for the currently mounted app access token routes (`/ai/*`, `/workspaces/*`, `/documents/*`, `/api/billing/*`, `/api/assets/*` in `apps/api/src/app.ts`). Return `InsufficientScope` when the token misses the required scope.
+- [x] **1.2** Local `hasScope` check used by both `resolveBearerUser` and `resolveBearerIdentity`. Better Auth verifier `scopes` option was not used: the local check is already proven, it surfaces the exact missing scope to the caller, and it avoids speculating about distinguishable error shapes from the verifier.
+- [x] **1.3** Extended `createOAuthUnauthorizedResourceResponse` (`apps/api/src/auth/oauth-resource.ts`) with a `failure` parameter. App access token middleware in `app.ts` now returns HTTP 403 (`Bearer error="insufficient_scope" scope="workspaces:open"`) and closes WebSocket upgrades with `4403 insufficient_scope` carrying the same body. `invalid_token` keeps its existing 401 / 4401 path as the default.
+- [x] **1.4** `apps/api/src/auth/app-access-token-auth.test.ts` added with: valid scoped token, missing scope, wrong audience, wrong issuer, malformed bearer input, missing user. Run with `bun --cwd apps/api test`.
+- [x] **1.5** JSDoc on `resolveBearerUser` rewritten to state the enforced scope.
 
 Acceptance: `bun --cwd apps/api test` passes (56 pass / 0 fail at landing); `apps/api` and `apps/fuji` typechecks are clean.
 
@@ -413,9 +413,9 @@ Acceptance: `bun --cwd packages/auth test` passes; running `epicenter auth login
 
 - [x] **5.1** Decision: no static `Origin` allowlist for bearer WS sync. Current code has no such gate (`apps/api/src/app.ts:121-130` skips CORS on upgrades and there is no separate WS origin check). Item resolved as "do not add."
 - [x] **5.2** Shared `isWebSocketUpgrade(c)` helper at `apps/api/src/is-websocket-upgrade.ts` lowercases the `Upgrade` header before comparing to `websocket`. Used at the CORS bypass (`app.ts`), both `/workspaces/:workspace` and `/documents/:document` upgrade gates, and `createOAuthUnauthorizedResourceResponse`.
-- [x] **5.3** `parseWsBearer` now collects every `bearer.*` subprotocol entry and returns a discriminated result; two or more entries throw `HTTPException(400, 'multiple_credentials')` from `singleCredential` instead of silently picking the first.
-- [x] **5.4** After consuming a single bearer, `singleCredential` rewrites `Sec-WebSocket-Protocol` to drop every `bearer.*` entry (and removes the header entirely when no other entries remain) before downstream handlers and the DO `fetch` see the request. Raw credential material no longer crosses the middleware boundary.
-- [x] **5.5** `single-credential.test.ts` extended with: protocol stripped when only a WS bearer is present, full header removed when no non-bearer entries remain, two `bearer.*` entries rejected as `multiple_credentials`, mixed-case `Upgrade: WebSocket` still strips and lifts. Existing cookie + WS-bearer and HTTP + WS-bearer mismatch tests retained.
+- [x] **5.3** `parseWsBearer` now collects every `bearer.*` subprotocol entry and returns a discriminated result; two or more entries throw `HTTPException(400, 'multiple_credentials')` from `normalizeAppAccessToken` instead of silently picking the first.
+- [x] **5.4** After consuming a single bearer, `normalizeAppAccessToken` rewrites `Sec-WebSocket-Protocol` to drop every `bearer.*` entry (and removes the header entirely when no other entries remain) before downstream handlers and the DO `fetch` see the request. Raw credential material no longer crosses the middleware boundary.
+- [x] **5.5** `app-access-token.test.ts` covers: protocol stripped when only a WS bearer is present, full header removed when no non-bearer entries remain, two `bearer.*` entries rejected as `multiple_credentials`, mixed-case `Upgrade: WebSocket` still strips and lifts, and path-scoped mounting leaves hosted auth routes untouched. Cookie-plus-bearer rejection is no longer part of this middleware.
 - [x] **5.6** Folded into Open Questions item 3: default is client-side reconnect ahead of expiry; server-side close stays deferred.
 
 ### Phase 6: Callback and Extension Durability
@@ -475,7 +475,7 @@ Acceptance: `bun --cwd packages/auth test` passes; running `epicenter auth login
 ### WebSocket Sends Duplicate Credentials
 
 1. Request includes cookie plus bearer, HTTP bearer plus WS bearer, or multiple WS bearers.
-2. `singleCredential` rejects the request.
+2. `normalizeAppAccessToken` rejects the request.
 3. Durable Object code never sees raw bearer material.
 
 ## Verification Plan
@@ -532,33 +532,29 @@ These are the questions that must stay answered as implementation proceeds.
 1. Should all current protected routes use `workspaces:open`, or should AI, billing, and assets get narrower scopes before launch?
 2. Is CLI/device login currently shipped to users? If yes, restore a working machine login path immediately. If no, delete or hide the stale surface until loopback PKCE lands.
 3. Should WebSocket token expiry be enforced by client reconnect only, server close only, or both? Default proposal: client-side reconnect ahead of expiry via `auth.openWebSocket`'s fresh access token. Server-side close is deferred unless a malicious-client threat model is identified that the local-first product is willing to defend against at the DO boundary. Long-lived hibernated DOs are the case this question protects against.
-4. Resolved: `apps/epicenter` is not a deployable. Use `apps/api` for current work. Composable host (`apps/server` + `cloud-apps/`) is tracked under `specs/20260512T150000-cloud-modules-and-networks.md`.
+4. Resolved: `apps/epicenter` is not a deployable. Use `apps/api` for current work. The target host is `apps/server` with Cloud Apps under `apps/server/src/cloud-apps`, tracked under `specs/20260512T150000-cloud-modules-and-networks.md`.
 
 ## Next Implementation Prompt
 
-The highest-priority remaining item is Phase 1 (protected resource scope enforcement). The following is a self-contained prompt for the next implementation pass.
+The highest-priority remaining item is Phase 1 (app access token route scope enforcement). The following is a self-contained prompt for the next implementation pass.
 
 ```txt
 Goal
   Seal /ai/*, /workspaces/*, /documents/*, /api/billing/*, and /api/assets/*
   so they only accept OAuth access tokens that carry the workspaces:open
-  scope. Today resolveOAuthPrincipal verifies issuer + audience + user but
-  not scope, so a token issued for a different resource family passes.
+  scope. Today resolveBearerUser verifies issuer + audience + user but
+  not scope, so a token issued for a different audience passes.
 
 Files to edit
-  apps/api/src/auth/oauth-principal.ts
+  apps/api/src/auth/app-access-token-auth.ts
     - Add 'insufficient_scope' variant to OAuthPrincipalResult (mirror
-      resolveWorkspaceIdentity in workspace-identity.ts).
+      resolveBearerIdentity in app-access-token-auth.ts).
     - Pass scopes: [WORKSPACES_OPEN_SCOPE] to verifyOAuthAccessToken. If the
       Better Auth verifier does not surface scope failure distinctly, copy
-      the local hasScope() helper from workspace-identity.ts:64-69 and use
+      the local hasScope() helper and use
       it after the verify step.
-    - Replace the misleading JSDoc on resolveOAuthPrincipal (lines 14-20).
+    - Replace the misleading JSDoc on resolveBearerUser.
       It must document that workspaces:open is enforced.
-
-  apps/api/src/auth/workspace-identity.ts
-    - Export WORKSPACES_OPEN_SCOPE and the hasScope helper if it is moved.
-    - Leave behavior unchanged (still enforces the same scope).
 
   apps/api/src/auth/oauth-resource.ts
     - Extend createOAuthUnauthorizedResourceResponse to accept a
@@ -570,11 +566,11 @@ Files to edit
     - Keep the 401 / 4401 path for malformed and invalid.
 
   apps/api/src/app.ts
-    - Update requireOAuthUser (lines 345-368) to forward the new variant to
+    - Update requireAppAccessToken to forward the new variant to
       createOAuthUnauthorizedResourceResponse.
 
-  apps/api/src/auth/oauth-principal.test.ts  (new)
-    - Model after workspace-identity.test.ts.
+  apps/api/src/auth/app-access-token-auth.test.ts  (new)
+    - Model after the existing OAuth verifier setup.
     - Cover: valid scoped token, missing scope, wrong audience, wrong
       issuer, malformed bearer input, missing user.
 
@@ -588,7 +584,7 @@ Acceptance
 
 Out of scope
   - Do not touch /workspace-identity (already correct).
-  - Do not touch singleCredential, machine auth, or callback pages. Those
+  - Do not touch normalizeAppAccessToken, machine auth, or callback pages. Those
     are tracked in later phases of this spec.
   - Do not introduce narrower scopes for AI/billing/assets. Open Question 1
     tracks that decision separately.
