@@ -10,7 +10,7 @@ import {
 	parseBearer,
 	resolveBearerIdentity,
 	resolveBearerUser,
-} from './app-resource-auth.js';
+} from './app-access-token-auth.js';
 
 const redirectUri = 'http://localhost:5174/auth/callback';
 const verifier = 'test-verifier-test-verifier-test-verifier';
@@ -20,7 +20,7 @@ const encryptionKeys: EncryptionKeys = [
 		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
 ];
-let nextBoundaryTestPort = 51_000 + Math.floor(Math.random() * 10_000);
+let nextAppAccessTokenTestPort = 51_000 + Math.floor(Math.random() * 10_000);
 
 test('parseBearer extracts bearer tokens case-insensitively', () => {
 	expect(parseBearer('Bearer abc.def.ghi')).toBe('abc.def.ghi');
@@ -36,7 +36,7 @@ test('parseBearer returns null for missing, empty, or non-bearer input', () => {
 });
 
 test('resolveBearerUser resolves a valid scoped token to the calling user', async () => {
-	const setup = createBoundaryTestServer();
+	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
 		const { data, error } = await callUser(setup, accessToken);
@@ -44,7 +44,7 @@ test('resolveBearerUser resolves a valid scoped token to the calling user', asyn
 		expect(error).toBeNull();
 		expect(data).toEqual({
 			id: expect.any(String),
-			email: 'boundary-test@example.com',
+			email: 'app-access-token-test@example.com',
 		});
 	} finally {
 		setup.server.stop(true);
@@ -52,7 +52,7 @@ test('resolveBearerUser resolves a valid scoped token to the calling user', asyn
 });
 
 test('resolveBearerUser rejects tokens missing the workspaces:open scope', async () => {
-	const setup = createBoundaryTestServer();
+	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
 			scope: 'openid profile email offline_access',
@@ -70,7 +70,7 @@ test('resolveBearerUser rejects tokens missing the workspaces:open scope', async
 });
 
 test('resolveBearerUser rejects tokens issued for the wrong audience as InvalidToken', async () => {
-	const setup = createBoundaryTestServer();
+	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
 			resource: setup.wrongAudience,
@@ -85,7 +85,7 @@ test('resolveBearerUser rejects tokens issued for the wrong audience as InvalidT
 });
 
 test('resolveBearerUser rejects tokens verified against the wrong issuer as InvalidToken', async () => {
-	const setup = createBoundaryTestServer();
+	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
 		const { data, error } = await callUser(setup, accessToken, {
@@ -121,7 +121,7 @@ test('resolveBearerUser rejects malformed bearer input before calling the verifi
 });
 
 test('resolveBearerUser rejects tokens whose user no longer exists as InvalidToken', async () => {
-	const setup = createBoundaryTestServer();
+	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
 		setup.db.user = [];
@@ -136,13 +136,13 @@ test('resolveBearerUser rejects tokens whose user no longer exists as InvalidTok
 });
 
 test('resolveBearerIdentity returns user and encryption keys for a valid token', async () => {
-	const setup = createBoundaryTestServer();
+	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
 		const { data, error } = await callIdentity(setup, accessToken);
 
 		expect(error).toBeNull();
-		expect(data?.user.email).toBe('boundary-test@example.com');
+		expect(data?.user.email).toBe('app-access-token-test@example.com');
 		expect(data?.encryptionKeys).toEqual(encryptionKeys);
 	} finally {
 		setup.server.stop(true);
@@ -170,7 +170,7 @@ test('resolveBearerIdentity short-circuits user lookup and key derivation on ver
 	expect(error?.name).toBe('InvalidToken');
 });
 
-function createBoundaryTestServer() {
+function createAppAccessTokenTestServer() {
 	const db: MemoryDB = {
 		user: [],
 		session: [],
@@ -184,7 +184,7 @@ function createBoundaryTestServer() {
 	};
 
 	for (let attempt = 0; attempt < 40; attempt += 1) {
-		const port = nextBoundaryTestPort++;
+		const port = nextAppAccessTokenTestPort++;
 		const baseURL = `http://localhost:${port}`;
 		const wrongAudience = `${baseURL}/other-resource`;
 		const auth = betterAuth({
@@ -226,7 +226,7 @@ function createBoundaryTestServer() {
 		}
 	}
 
-	throw new Error('Failed to find an available app-resource-auth test port.');
+	throw new Error('Failed to find an available app-access-token-auth test port.');
 }
 
 function isAddressInUse(error: unknown) {
@@ -238,7 +238,7 @@ function isAddressInUse(error: unknown) {
 }
 
 function commonResolverDeps(
-	setup: ReturnType<typeof createBoundaryTestServer>,
+	setup: ReturnType<typeof createAppAccessTokenTestServer>,
 	accessToken: string,
 	overrides: { audience?: string; issuer?: string } = {},
 ) {
@@ -255,7 +255,7 @@ function commonResolverDeps(
 }
 
 async function callUser(
-	setup: ReturnType<typeof createBoundaryTestServer>,
+	setup: ReturnType<typeof createAppAccessTokenTestServer>,
 	accessToken: string,
 	overrides: { audience?: string; issuer?: string } = {},
 ) {
@@ -263,7 +263,7 @@ async function callUser(
 }
 
 async function callIdentity(
-	setup: ReturnType<typeof createBoundaryTestServer>,
+	setup: ReturnType<typeof createAppAccessTokenTestServer>,
 	accessToken: string,
 	overrides: { audience?: string; issuer?: string } = {},
 ) {
@@ -274,7 +274,7 @@ async function callIdentity(
 }
 
 async function issueOAuthTokens(
-	{ auth, baseURL }: ReturnType<typeof createBoundaryTestServer>,
+	{ auth, baseURL }: ReturnType<typeof createAppAccessTokenTestServer>,
 	{
 		resource = baseURL,
 		scope = 'openid profile email offline_access workspaces:open',
@@ -285,9 +285,9 @@ async function issueOAuthTokens(
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
-				email: 'boundary-test@example.com',
+				email: 'app-access-token-test@example.com',
 				password: 'password123',
-				name: 'Boundary Test',
+				name: 'App Access Token Test',
 			}),
 		}),
 	);
@@ -296,7 +296,7 @@ async function issueOAuthTokens(
 
 	const client = (await auth.api.adminCreateOAuthClient({
 		body: {
-			client_name: 'App Resource Auth Test',
+			client_name: 'App Access Token Auth Test',
 			redirect_uris: [redirectUri],
 			token_endpoint_auth_method: 'none',
 			grant_types: ['authorization_code'],

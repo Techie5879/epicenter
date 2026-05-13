@@ -1,7 +1,7 @@
 /**
  * OAuth Resource Response Tests
  *
- * Verifies protected app resource auth failures at the API boundary.
+ * Verifies app access token auth failures at the API boundary.
  *
  * Key behaviors:
  * - HTTP `InvalidToken` returns 401 with `WWW-Authenticate: Bearer error="invalid_token"`

@@ -14,6 +14,13 @@ now folded into `specs/20260511T150000-final-oauth-auth-architecture.md`,
 which also adds the accounts/resource origin split and the final machine-auth
 boundary. Use the newer spec as the implementation source of truth.
 
+Historical note:
+  This spec uses older "credential family" vocabulary. Current API code uses:
+    public routes
+    hosted auth routes
+    app access token routes
+  Do not use this spec as naming guidance for current API auth code.
+
 ## Current Worktree Handling
 
 This branch already contains parts of the superseded credential-family implementation. Do not reset the branch wholesale. Treat the existing work as a staging area:

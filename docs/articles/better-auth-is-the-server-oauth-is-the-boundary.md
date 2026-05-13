@@ -1,15 +1,10 @@
 # Better Auth Is the Server, OAuth Is the Boundary
 
 > **Historical note (2026-05-12):** This article was written before the
-> `/workspace-identity` rename and the composable server cleanup. The
-> composition story it sketches is still right in spirit, but two pieces
-> are out of date.
+> composable server cleanup. The composition story it sketches is still right
+> in spirit, but the deployment framing is out of date.
 >
-> 1. `/me` is now `/workspace-identity`, and `AuthIdentity` is now
->    `WorkspaceIdentity`. See
->    `specs/20260511T150000-final-oauth-auth-architecture.md` for the
->    current names and route shape.
-> 2. There is no separate `apps/cloud` deployable. Hosted features
+> There is no separate `apps/cloud` deployable. Hosted features
 >    (billing, dashboard, assets, storage registry) and product surfaces
 >    (Ark, Betcha) are Cloud Apps inside the composable `apps/server`
 >    host. Physical splitting across processes or domains is operational
@@ -28,11 +23,11 @@ OAuth sessions, not Better Auth sessions.
 The easy confusion is thinking OAuth replaces Better Auth. It does not. OAuth
 is a protocol. Better Auth is the auth implementation. Epicenter uses Better
 Auth to run the auth server, then exposes OAuth as the standard way apps talk
-to protected resources.
+to OAuth protected resources.
 
-`/me` is the adapter between those worlds. The app presents an OAuth access
+`/workspace-identity` is the adapter between those worlds. The app presents an OAuth access
 token; Epicenter Server verifies it, loads the Better Auth user, derives
-encryption keys, and returns the local-first `AuthIdentity`. The keys come from
+encryption keys, and returns the local-first `WorkspaceIdentity`. The keys come from
 Epicenter Server after token verification. They do not live in OAuth claims.
 
 This is not the shortest Better Auth browser-cookie path, and that is the
@@ -48,7 +43,7 @@ Better Auth:
   users, sessions, cookies, login, plugins, OAuth provider
 
 Epicenter auth:
-  AuthIdentity, OAuthSession, token refresh, auth.fetch, auth.openWebSocket
+  WorkspaceIdentity, OAuthSession, token refresh, auth.fetch, auth.openWebSocket
 ```
 
 That split is the whole design.
@@ -114,7 +109,7 @@ OAuth access token:
   sync
   cloud APIs
 
-AuthIdentity:
+WorkspaceIdentity:
   Epicenter workspace identity
   user + encryptionKeys
 ```
@@ -140,30 +135,30 @@ hosted cloud dashboard
 
 Cookies are excellent when the browser cookie jar is the runtime. They are not a universal runtime credential. OAuth gives every client the same app-to-resource contract.
 
-## `/me` is the Epicenter adapter
+## `/workspace-identity` is the Epicenter adapter
 
-The OAuth token proves the app can call a resource. It should not carry the workspace keys directly. Epicenter resolves those through `/me`.
+The OAuth token proves the app can call a resource. It should not carry the workspace keys directly. Epicenter resolves those through `/workspace-identity`.
 
 ```txt
 1. app exchanges OAuth code for tokens
-2. app calls resource /me with Authorization: Bearer <access token>
+2. app calls resource /workspace-identity with Authorization: Bearer <access token>
 3. server verifies issuer and audience
 4. server reads payload.sub
 5. server loads the Better Auth user row
 6. server projects AuthUser
 7. server derives encryptionKeys from user.id
-8. server returns AuthIdentity
+8. server returns WorkspaceIdentity
 ```
 
-That makes `/me` the bridge between generic OAuth and Epicenter's local-first workspace model.
+That makes `/workspace-identity` the bridge between generic OAuth and Epicenter's local-first workspace model.
 
 ```ts
-type AuthIdentity = {
+type WorkspaceIdentity = {
   user: AuthUser;
   encryptionKeys: EncryptionKeys;
 };
 
-type OAuthSession = AuthIdentity & {
+type OAuthSession = WorkspaceIdentity & {
   accessToken: string;
   refreshToken: string;
   accessTokenExpiresAt: number;
@@ -198,8 +193,8 @@ epicenter.so
 |-- sync.epicenter.so
 |   `-- apps/server
 |       |-- OAuth resource verification
-|       |-- /me
-|       |   `-- AuthIdentity = user + encryptionKeys
+|       |-- /workspace-identity
+|       |   `-- WorkspaceIdentity = user + encryptionKeys
 |       |-- /workspaces/*
 |       `-- /documents/*
 |
@@ -227,8 +222,8 @@ The round trips are not accidental. They keep account login, OAuth token exchang
 6  accounts -> user       consent, if needed
 7  accounts -> app        redirect back with auth code
 8  app      -> accounts   exchange code for OAuth tokens
-9  app      -> sync /me   bearer access token
-10 sync     -> app        AuthIdentity with encryptionKeys
+9  app      -> sync /workspace-identity   bearer access token
+10 sync     -> app                        WorkspaceIdentity with encryptionKeys
 ```
 
 Returning users with an account cookie take the shorter path.
@@ -237,8 +232,8 @@ Returning users with an account cookie take the shorter path.
 1  app      -> accounts   authorize with PKCE + resource
 2  accounts -> app        redirect back with code
 3  app      -> accounts   exchange code for tokens
-4  app      -> sync /me   bearer access token
-5  sync     -> app        AuthIdentity with encryptionKeys
+4  app      -> sync /workspace-identity   bearer access token
+5  sync     -> app                        WorkspaceIdentity with encryptionKeys
 ```
 
 This is why OAuth belongs at the app boundary. The account cookie can stay on `accounts.epicenter.so`; the app gets an audience-bound token for the resource it actually needs.
@@ -256,7 +251,7 @@ Good:
   Better Auth oauthProvider issues access and refresh tokens.
   Apps store OAuthSession.
   Protected resources verify OAuth access tokens.
-  /me returns AuthIdentity.
+  /workspace-identity returns WorkspaceIdentity.
 
 Bad:
   Apps store Better Auth session tokens.

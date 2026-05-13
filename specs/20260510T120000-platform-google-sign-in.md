@@ -6,6 +6,13 @@
 **Branch**: codex/auth-bearer-omit-cookies
 **Superseded by**: `specs/20260511T090000-auth-credential-families-minimal-production.md`
 
+Historical note:
+  This spec uses older "credential family" vocabulary. Current API code uses:
+    public routes
+    hosted auth routes
+    app access token routes
+  Do not use this spec as naming guidance for current API auth code.
+
 This file is a historical implementation note. Use `specs/20260511T090000-auth-credential-families-minimal-production.md` as the authoritative source for the auth credential-family migration, including the cookie and bearer family split, `AuthClient.signInWithSocial({ provider })`, and the `@epicenter/oauth-client` boundary.
 
 ## Overview

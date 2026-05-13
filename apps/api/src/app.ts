@@ -17,9 +17,9 @@ import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { normalizeAppAccessToken } from './auth/app-access-token';
 import {
-	resolveRequestAppResourceUser,
+	resolveRequestAppAccessTokenUser,
 	resolveRequestWorkspaceIdentity,
-} from './auth/app-resource-auth';
+} from './auth/app-access-token-auth';
 import { createAuth } from './auth/create-auth';
 import { deriveUserEncryptionKeys } from './auth/encryption';
 import {
@@ -180,27 +180,37 @@ const factory = createFactory<Env>({
 const app = factory.createApp();
 
 // ---------------------------------------------------------------------------
-// Route families
+// Auth route groups
 //
-// The API host composes three endpoint families. Each one has exactly one
-// credential model. Mounting middleware globally would blur the families;
-// every family-specific middleware below is mounted only on its own paths.
+// The API host composes three route groups. Each group has one credential
+// model, and group middleware is mounted only on its own paths.
 //
-//   Hosted auth family
+// Glossary:
+//   OAuth says "protected resource" for the server/API a token can call.
+//   Epicenter code says "app access token routes" for the routes that require
+//   that token.
+//   The protocol term stays in OAuth metadata and verifier code.
+//   The route group name uses the credential humans need to reason about.
+//
+//   Public routes
+//     /, /billing redirect, /dashboard SPA, /api/assets/* GET reads
+//     credential: none
+//     middleware: shared CORS, db, and auth construction only
+//
+//   Hosted auth routes
 //     /sign-in, /consent, /auth/*, OAuth discovery
 //     credential: Better Auth account cookie during the hosted flow
+//     middleware: Better Auth getSession/auth.handler only inside handlers
 //
-//   App resource family
+//   App access token routes
 //     /workspace-identity, /ai/*, /workspaces/*, /documents/*,
 //     /api/billing/*, /api/assets/* (authenticated writes)
 //     credential: OAuth app access token (Authorization or WS subprotocol)
-//
-//   Public family
-//     /, /billing redirect, /dashboard SPA, /api/assets/* GET reads
-//     credential: none (unguessable URLs guard the asset reads)
+//     middleware: normalizeAppAccessToken, then requireAppAccessToken except
+//     /workspace-identity, which verifies inline to derive encryption keys
 // ---------------------------------------------------------------------------
 
-// ===== Public family =====
+// ===== Public routes =====
 
 app.get(
 	'/',
@@ -212,9 +222,9 @@ app.get(
 );
 
 // Asset reads: unauthenticated (unguessable URL is the credential).
-// Registered before the app resource gate so GET reads bypass it. Hono runs
-// matching entries in registration order, so a later `app.use` middleware
-// does not retroactively guard this handler.
+// Registered before the app access token route gate so GET reads bypass it.
+// Hono runs matching entries in registration order, so a later `app.use`
+// middleware does not retroactively guard this handler.
 app.route('/api/assets', assetPublicRoutes);
 
 // Billing: redirect legacy page to dashboard SPA.
@@ -236,7 +246,7 @@ app.get('/dashboard', async (c) => {
 	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
 });
 
-// ===== Hosted auth family =====
+// ===== Hosted auth routes =====
 
 // Server-rendered sign-in page. Consumes the Better Auth account cookie
 // via `auth.api.getSession`; no app access token is involved.
@@ -337,7 +347,7 @@ app.on(
 	(c) => c.var.auth.handler(c.req.raw),
 );
 
-// ===== App resource family =====
+// ===== App access token routes =====
 //
 // All endpoints below this point authenticate the caller with an OAuth app
 // access token. Two middlewares wrap them:
@@ -353,11 +363,11 @@ app.on(
 //      calling user as `c.var.user`. Failure produces RFC 6750 responses
 //      (HTTP 401/403, WS 4401/4403).
 //
-// `/workspace-identity` participates in this family but verifies inline so
-// it can return identity + encryption keys instead of just the user. It
-// gets normalize, skips require.
+// `/workspace-identity` is an app access token route but verifies inline so
+// it can return identity + encryption keys instead of just the user. It runs
+// normalizeAppAccessToken, but skips requireAppAccessToken.
 
-const APP_RESOURCE_GATE_PATHS = [
+const APP_ACCESS_TOKEN_GATE_PATHS = [
 	'/ai/*',
 	'/workspaces/*',
 	'/documents/*',
@@ -365,20 +375,20 @@ const APP_RESOURCE_GATE_PATHS = [
 	'/api/assets/*',
 ] as const;
 
-// Normalize on every app resource path (including /workspace-identity).
+// Normalize on every app access token route, including /workspace-identity.
 app.use('/workspace-identity', normalizeAppAccessToken);
-for (const path of APP_RESOURCE_GATE_PATHS) {
+for (const path of APP_ACCESS_TOKEN_GATE_PATHS) {
 	app.use(path, normalizeAppAccessToken);
 }
 
 // Require a verified app access token on the gated paths.
 const requireAppAccessToken = factory.createMiddleware(async (c, next) => {
-	const { data: user, error } = await resolveRequestAppResourceUser(c);
+	const { data: user, error } = await resolveRequestAppAccessTokenUser(c);
 	if (error) return createOAuthUnauthorizedResourceResponse(c, error);
 	c.set('user', user);
 	await next();
 });
-for (const path of APP_RESOURCE_GATE_PATHS) {
+for (const path of APP_ACCESS_TOKEN_GATE_PATHS) {
 	app.use(path, requireAppAccessToken);
 }
 

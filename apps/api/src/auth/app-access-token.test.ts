@@ -95,7 +95,7 @@ test('distinct HTTP and WebSocket bearers are rejected', async () => {
 	expect(res.status).toBe(400);
 });
 
-test('cookie with bearer is accepted because only bearer authorizes app resources', async () => {
+test('cookie with bearer is accepted because only bearer authorizes app access token routes', async () => {
 	const res = await createTestApp().request('/', {
 		headers: {
 			authorization: 'Bearer token-1',
@@ -111,7 +111,7 @@ test('cookie with bearer is accepted because only bearer authorizes app resource
 
 test('hosted auth routes are not governed when middleware is path-scoped', async () => {
 	// Mirrors how app.ts mounts normalizeAppAccessToken: only on the app
-	// resource family. Hosted auth routes (/sign-in, /consent, /auth/*) must
+	// access token routes. Hosted auth routes (/sign-in, /consent, /auth/*) must
 	// not see WS bearer lifting; the bearer subprotocol has no meaning there.
 	const app = new Hono();
 	app.use('/app/*', normalizeAppAccessToken);
@@ -121,7 +121,7 @@ test('hosted auth routes are not governed when middleware is path-scoped', async
 			subprotocol: c.req.header('sec-websocket-protocol') ?? null,
 		}),
 	);
-	app.get('/app/resource', (c) =>
+	app.get('/app/access-token-route', (c) =>
 		c.json({
 			authorization: c.req.header('authorization') ?? null,
 			subprotocol: c.req.header('sec-websocket-protocol') ?? null,
@@ -135,13 +135,13 @@ test('hosted auth routes are not governed when middleware is path-scoped', async
 	expect(signInBody.authorization).toBeNull();
 	expect(signInBody.subprotocol).toBe('epicenter, bearer.token-1');
 
-	const resourceRes = await app.request('/app/resource', {
+	const gatedRes = await app.request('/app/access-token-route', {
 		headers: { 'sec-websocket-protocol': 'epicenter, bearer.token-1' },
 	});
-	const resourceBody = (await resourceRes.json()) as Record<
+	const gatedBody = (await gatedRes.json()) as Record<
 		string,
 		string | null
 	>;
-	expect(resourceBody.authorization).toBe('Bearer token-1');
-	expect(resourceBody.subprotocol).toBe('epicenter');
+	expect(gatedBody.authorization).toBe('Bearer token-1');
+	expect(gatedBody.subprotocol).toBe('epicenter');
 });

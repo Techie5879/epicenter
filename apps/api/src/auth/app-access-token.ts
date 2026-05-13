@@ -1,17 +1,17 @@
 import { BEARER_SUBPROTOCOL_PREFIX, parseSubprotocols } from '@epicenter/sync';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
-import { parseBearer } from './app-resource-auth.js';
+import { parseBearer } from './app-access-token-auth.js';
 
 /**
  * Lift the WebSocket bearer subprotocol into `Authorization: Bearer` so app
- * resource handlers and verification read one canonical input.
+ * access token routes and verification read one canonical input.
  *
- * ## Endpoint family this serves
+ * ## Route group this serves
  *
- * The app resource endpoint family (`/workspace-identity`, `/ai/*`,
+ * App access token routes (`/workspace-identity`, `/ai/*`,
  * `/workspaces/*`, `/documents/*`, `/api/billing/*`, `/api/assets/*`)
- * accepts exactly one credential: an OAuth app access token.
+ * accept exactly one credential: an OAuth app access token.
  *
  * - HTTP clients send `Authorization: Bearer <accessToken>`.
  * - Browser WebSocket clients cannot set `Authorization` on
@@ -20,17 +20,17 @@ import { parseBearer } from './app-resource-auth.js';
  *
  * This middleware lifts a WS subprotocol bearer into `Authorization` and
  * strips it from `Sec-WebSocket-Protocol` so the raw token does not flow
- * past this layer. Mount it only on app resource endpoint families.
+ * past this layer. Mount it only on app access token routes.
  *
  * ## Why this is not a cookie-vs-bearer policer
  *
- * Cookies are the credential for the *hosted auth* endpoint family
+ * Cookies are the credential for the hosted auth routes
  * (`/sign-in`, `/consent`, `/auth/*`); they carry no meaning on app
- * resource routes. The app resource verifier in `app-resource-auth.ts`
+ * access token routes. The verifier in `app-access-token-auth.ts`
  * verifies JWTs directly through the OAuth resource client against JWKS,
  * audience, issuer, and scope. It never consults a Better Auth cookie
  * session, so a stale account cookie cannot accidentally authorize an
- * app resource request, and there is no ambiguity worth rejecting at
+ * app access token request, and there is no ambiguity worth rejecting at
  * this layer.
  *
  * ## Rejection cases (HTTP 400 `multiple_credentials`)

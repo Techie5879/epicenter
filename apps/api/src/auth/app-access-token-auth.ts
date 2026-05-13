@@ -48,7 +48,7 @@ export function parseBearer(value: string | null): string | null {
 /**
  * Verify an OAuth app access token, enforce the `workspaces:open` scope, and
  * resolve the calling Better Auth user. The single source of truth for what
- * "a token good enough to reach an app resource endpoint" means in this
+ * "a token good enough to reach an app access token route" means in this
  * codebase.
  *
  * Wrappers project the user differently:
@@ -116,7 +116,7 @@ export async function resolveBearerIdentity(
  * Resolve the OAuth app access token on the current request to the calling
  * user. Hono adapter around the pure bearer resolver above.
  */
-export function resolveRequestAppResourceUser<E extends RequestOAuthEnv>(
+export function resolveRequestAppAccessTokenUser<E extends RequestOAuthEnv>(
 	c: Context<E>,
 ) {
 	return resolveBearerUser(createResolverDeps(c));

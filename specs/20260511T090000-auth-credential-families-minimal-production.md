@@ -48,7 +48,7 @@ old:
 
 current:
   every app -> OAuth code + PKCE -> OAuthSession
-  identity -> GET /auth/me
+  identity -> GET /workspace-identity
   resources -> OAuth access token verification
 ```
 
@@ -58,13 +58,20 @@ When this document conflicts with `20260511T105846-auth-oauth-everywhere-clean-b
 
 This spec is no longer spec-only. The current worktree has implemented parts of this older direction: the OAuth client package, `/auth/oauth-session`, the auth core split into `auth-contract.ts`, `create-bearer-auth.ts`, and `create-cookie-auth.ts`, and cookie/bearer app platform files.
 
-Treat those changes as salvage, not as the final plan. Keep the PKCE launcher machinery and trusted client registration work where useful. Replace the bridge and family split with `/auth/me`, `OAuthSession`, auth-owned `fetch`, and auth-owned `openWebSocket`.
+Treat those changes as salvage, not as the final plan. Keep the PKCE launcher machinery and trusted client registration work where useful. Replace the bridge and family split with `/workspace-identity`, `OAuthSession`, auth-owned `fetch`, and auth-owned `openWebSocket`.
 
 ---
 
 ## Historical Content Below
 
 Everything below this marker is the superseded plan. It intentionally preserves the old vocabulary so the audit trail remains readable, but it is not implementation guidance. In particular, ignore any instruction below that says to build `/auth/oauth-session`, persist a Better Auth session token in app storage, keep cookie and bearer app families, or expose `auth.bearerToken`.
+
+Historical note:
+  This spec uses older "credential family" vocabulary. Current API code uses:
+    public routes
+    hosted auth routes
+    app access token routes
+  Do not use this spec as naming guidance for current API auth code.
 
 ## Historical One-Sentence Test
 

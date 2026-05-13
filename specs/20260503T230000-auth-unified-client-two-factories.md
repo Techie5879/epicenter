@@ -7,6 +7,13 @@
 **Supersedes**: `specs/20260503T213238-auth-cookie-bearer-two-products-clean-break.md`
 **Sibling specs**: `specs/20260504T010000-drop-authclient-redirect-sign-in.md` (drops the `signInWithSocialRedirect` method; each browser app mints its own ID token), `specs/20260504T020000-workspace-identity-reset-deterministic-teardown.md` (Wave-5 carryover; replaces the partial reset path with a deterministic teardown sequence)
 
+Historical note:
+  This spec uses older "credential family" vocabulary. Current API code uses:
+    public routes
+    hosted auth routes
+    app access token routes
+  Do not use this spec as naming guidance for current API auth code.
+
 ## One-Sentence Test
 
 `AuthClient` is the credential's lifecycle handle on this runtime; `createCookieAuth` and `createBearerAuth` produce the same interface, differing only in how they acquire, persist, and present the credential.

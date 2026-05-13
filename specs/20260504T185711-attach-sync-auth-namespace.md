@@ -5,6 +5,13 @@
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth
 
+Historical note:
+  This spec uses older "credential family" vocabulary. Current API code uses:
+    public routes
+    hosted auth routes
+    app access token routes
+  Do not use this spec as naming guidance for current API auth code.
+
 ## One-Sentence Test
 
 Superseded note, 2026-05-05: Phase 6.A of the sign-out preservation spec

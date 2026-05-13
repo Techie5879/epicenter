@@ -5,6 +5,13 @@
 **Author**: AI-assisted
 **Branch**: codex/explicit-daemon-host-config
 
+Historical note:
+  This spec uses older "credential family" vocabulary. Current API code uses:
+    public routes
+    hosted auth routes
+    app access token routes
+  Do not use this spec as naming guidance for current API auth code.
+
 ## Current Reconciliation (2026-05-07)
 
 Do not execute the original checklist below as written. The thesis landed, but

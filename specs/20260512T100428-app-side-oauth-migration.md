@@ -460,8 +460,8 @@ back in the callback page.
 Dashboard previously relied on first-party Better Auth cookies on
 `api.epicenter.so`. After migration it sends `Authorization: Bearer` via
 `auth.fetch`. Verify billing endpoints (`apps/dashboard/src/lib/api.ts:55,
-70`) are behind `requireOAuthUser`, not the old cookie middleware.
-Existing API routes already use `requireOAuthUser` per the architecture
+70`) are behind `requireAppAccessToken`, not the old cookie middleware.
+Existing API routes already use `requireAppAccessToken` per the architecture
 spec; this is a verification step, not a code change.
 
 ### 6.6 User-visible reset
