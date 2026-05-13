@@ -36,8 +36,8 @@ type RequestOAuthEnv = {
  * Case-insensitive on the scheme; trims surrounding whitespace; returns null
  * for missing, empty, or non-bearer inputs.
  *
- * Shared with `single-credential.ts` so well-formedness and authorization
- * agree on what counts as a bearer.
+ * Shared with `app-access-token.ts` so the normalize layer and the verify
+ * layer agree on what counts as a bearer.
  */
 export function parseBearer(value: string | null): string | null {
 	if (!value) return null;
@@ -46,9 +46,10 @@ export function parseBearer(value: string | null): string | null {
 }
 
 /**
- * Verify a bearer access token, enforce the `workspaces:open` scope, and
+ * Verify an OAuth app access token, enforce the `workspaces:open` scope, and
  * resolve the calling Better Auth user. The single source of truth for what
- * "a token good enough to reach a protected resource" means in this codebase.
+ * "a token good enough to reach an app resource endpoint" means in this
+ * codebase.
  *
  * Wrappers project the user differently:
  * - `resolveBearerUser` returns the lean `AuthUser` for the middleware path.
@@ -80,10 +81,10 @@ async function verifyBearerToUser(
 }
 
 /**
- * Cheap resolver for the protected-resource boundary (`/ai/*`,
- * `/workspaces/*`, `/documents/*`, `/api/billing/*`, `/api/assets/*`).
- * Skips encryption-key derivation; only the calling user is needed once
- * the scope is proven.
+ * Cheap resolver for the `requireAppAccessToken` middleware that gates
+ * `/ai/*`, `/workspaces/*`, `/documents/*`, `/api/billing/*`, and
+ * `/api/assets/*`. Skips encryption-key derivation; only the calling user
+ * is needed once the scope is proven.
  */
 export async function resolveBearerUser(
 	deps: ResolverDeps,
@@ -112,19 +113,20 @@ export async function resolveBearerIdentity(
 }
 
 /**
- * Resolve the OAuth bearer on the current request to the calling user.
- * This is the Hono adapter around the pure bearer resolver above.
+ * Resolve the OAuth app access token on the current request to the calling
+ * user. Hono adapter around the pure bearer resolver above.
  */
-export function resolveRequestOAuthUser<E extends RequestOAuthEnv>(
+export function resolveRequestAppResourceUser<E extends RequestOAuthEnv>(
 	c: Context<E>,
 ) {
 	return resolveBearerUser(createResolverDeps(c));
 }
 
 /**
- * Resolve the OAuth bearer on the current request to the full workspace
- * identity payload. Key derivation stays injected so this module remains
- * free of Worker-only imports and easy to test through the pure resolver.
+ * Resolve the OAuth app access token on the current request to the full
+ * workspace identity payload. Key derivation stays injected so this module
+ * remains free of Worker-only imports and easy to test through the pure
+ * resolver.
  */
 export function resolveRequestWorkspaceIdentity<E extends RequestOAuthEnv>(
 	c: Context<E>,
@@ -134,18 +136,6 @@ export function resolveRequestWorkspaceIdentity<E extends RequestOAuthEnv>(
 		...createResolverDeps(c),
 		deriveUserEncryptionKeys,
 	});
-}
-
-/**
- * Read the `scope` claim from a verified access-token payload and check
- * whether the required scope is present. Treats anything that is not a
- * space-separated string of scopes as "no scopes granted".
- */
-function hasScope(payload: unknown, required: string): boolean {
-	if (payload === null || typeof payload !== 'object') return false;
-	const raw = (payload as { scope?: unknown }).scope;
-	if (typeof raw !== 'string') return false;
-	return raw.split(/\s+/).filter(Boolean).includes(required);
 }
 
 function createResolverDeps<E extends RequestOAuthEnv>(
@@ -168,4 +158,16 @@ function createResolverDeps<E extends RequestOAuthEnv>(
 			return row ?? null;
 		},
 	};
+}
+
+/**
+ * Read the `scope` claim from a verified access-token payload and check
+ * whether the required scope is present. Treats anything that is not a
+ * space-separated string of scopes as "no scopes granted".
+ */
+function hasScope(payload: unknown, required: string): boolean {
+	if (payload === null || typeof payload !== 'object') return false;
+	const raw = (payload as { scope?: unknown }).scope;
+	if (typeof raw !== 'string') return false;
+	return raw.split(/\s+/).filter(Boolean).includes(required);
 }

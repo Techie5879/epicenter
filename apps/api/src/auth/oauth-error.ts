@@ -10,7 +10,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 export const WORKSPACES_OPEN_SCOPE = 'workspaces:open';
 
 /**
- * Failure shapes produced by every OAuth resource-boundary resolver in this
+ * Failure shapes produced by every OAuth app resource resolver in this
  * package.
  *
  * Variants:

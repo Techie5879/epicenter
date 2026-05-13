@@ -1,7 +1,7 @@
 /**
  * Typed Hono routes for the billing dashboard SPA.
  *
- * All routes require authentication (requireSession applied in app.ts).
+ * All routes require authentication (requireAppAccessToken applied in app.ts).
  * Data flows from Autumn's API—no custom tables needed.
  *
  * Response types are defined in billing-contract.ts (the shared contract).

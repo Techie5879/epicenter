@@ -1,18 +1,10 @@
-/**
- * Single Credential Middleware Tests
- *
- * Verifies that `singleCredential` rejects multi-credential requests at the
- * edge and lifts WebSocket subprotocol bearers into a canonical
- * `Authorization` header before downstream handlers run.
- */
-
 import { expect, test } from 'bun:test';
 import { Hono } from 'hono';
-import { singleCredential } from './single-credential.js';
+import { normalizeAppAccessToken } from './app-access-token.js';
 
 function createTestApp() {
 	const app = new Hono();
-	app.use('*', singleCredential);
+	app.use('*', normalizeAppAccessToken);
 	app.get('/', (c) =>
 		c.json({
 			authorization: c.req.header('authorization') ?? null,
@@ -23,7 +15,7 @@ function createTestApp() {
 	return app;
 }
 
-test('only-cookie passes through unchanged', async () => {
+test('cookie-only requests pass through unchanged', async () => {
 	const res = await createTestApp().request('/', {
 		headers: { cookie: 'theme=dark; better-auth.session_token=session-1' },
 	});
@@ -34,7 +26,7 @@ test('only-cookie passes through unchanged', async () => {
 	expect(body.authorization).toBeNull();
 });
 
-test('only-bearer passes through unchanged', async () => {
+test('HTTP bearer requests pass through unchanged', async () => {
 	const res = await createTestApp().request('/', {
 		headers: { authorization: 'Bearer token-1' },
 	});
@@ -45,7 +37,7 @@ test('only-bearer passes through unchanged', async () => {
 	expect(body.cookie).toBeNull();
 });
 
-test('only-WS-bearer is lifted into Authorization and stripped from the protocol', async () => {
+test('WebSocket bearer is lifted into Authorization and stripped from protocols', async () => {
 	const res = await createTestApp().request('/', {
 		headers: { 'sec-websocket-protocol': 'epicenter, bearer.token-1' },
 	});
@@ -56,7 +48,7 @@ test('only-WS-bearer is lifted into Authorization and stripped from the protocol
 	expect(body.subprotocol).toBe('epicenter');
 });
 
-test('only-WS-bearer with no remaining protocols drops the header entirely', async () => {
+test('WebSocket bearer with no remaining protocols drops the header', async () => {
 	const res = await createTestApp().request('/', {
 		headers: { 'sec-websocket-protocol': 'bearer.token-1' },
 	});
@@ -67,7 +59,7 @@ test('only-WS-bearer with no remaining protocols drops the header entirely', asy
 	expect(body.subprotocol).toBeNull();
 });
 
-test('two WS bearer entries are rejected as multiple_credentials', async () => {
+test('duplicate WebSocket bearers are rejected as multiple_credentials', async () => {
 	const res = await createTestApp().request('/', {
 		headers: {
 			'sec-websocket-protocol':
@@ -78,10 +70,10 @@ test('two WS bearer entries are rejected as multiple_credentials', async () => {
 	expect(res.status).toBe(400);
 });
 
-test('mixed-case Upgrade with a WS bearer still strips the bearer entry', async () => {
+test('matching HTTP and WebSocket bearers are accepted', async () => {
 	const res = await createTestApp().request('/', {
 		headers: {
-			'upgrade': 'WebSocket',
+			authorization: 'Bearer token-1',
 			'sec-websocket-protocol': 'epicenter, bearer.token-1',
 		},
 	});
@@ -92,42 +84,7 @@ test('mixed-case Upgrade with a WS bearer still strips the bearer entry', async 
 	expect(body.subprotocol).toBe('epicenter');
 });
 
-test('matching HTTP and WS bearers are accepted', async () => {
-	const res = await createTestApp().request('/', {
-		headers: {
-			authorization: 'Bearer token-1',
-			'sec-websocket-protocol': 'epicenter, bearer.token-1',
-		},
-	});
-
-	expect(res.status).toBe(200);
-	const body = (await res.json()) as Record<string, string | null>;
-	expect(body.authorization).toBe('Bearer token-1');
-});
-
-test('cookie + HTTP bearer is rejected', async () => {
-	const res = await createTestApp().request('/', {
-		headers: {
-			authorization: 'Bearer token-1',
-			cookie: 'better-auth.session_token=session-1',
-		},
-	});
-
-	expect(res.status).toBe(400);
-});
-
-test('cookie + WS bearer is rejected', async () => {
-	const res = await createTestApp().request('/', {
-		headers: {
-			cookie: 'better-auth.session_token=session-1',
-			'sec-websocket-protocol': 'epicenter, bearer.token-1',
-		},
-	});
-
-	expect(res.status).toBe(400);
-});
-
-test('two distinct bearers (HTTP + WS) are rejected', async () => {
+test('distinct HTTP and WebSocket bearers are rejected', async () => {
 	const res = await createTestApp().request('/', {
 		headers: {
 			authorization: 'Bearer token-1',
@@ -138,13 +95,16 @@ test('two distinct bearers (HTTP + WS) are rejected', async () => {
 	expect(res.status).toBe(400);
 });
 
-test('no credentials passes through cleanly', async () => {
+test('cookie with bearer is accepted because only bearer authorizes app resources', async () => {
 	const res = await createTestApp().request('/', {
-		headers: { accept: 'application/json' },
+		headers: {
+			authorization: 'Bearer token-1',
+			cookie: 'better-auth.session_token=session-1',
+		},
 	});
 
 	expect(res.status).toBe(200);
 	const body = (await res.json()) as Record<string, string | null>;
-	expect(body.authorization).toBeNull();
-	expect(body.cookie).toBeNull();
+	expect(body.authorization).toBe('Bearer token-1');
+	expect(body.cookie).toContain('better-auth.session_token=session-1');
 });

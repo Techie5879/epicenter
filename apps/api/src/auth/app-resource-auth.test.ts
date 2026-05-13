@@ -1,19 +1,3 @@
-/**
- * Protected Resource Boundary Tests
- *
- * Covers the three exported helpers in `resource-boundary.ts`:
- *
- * - `parseBearer`: header parsing used by both the well-formedness layer
- *   (`single-credential`) and the resolvers below.
- * - `resolveBearerUser`: cheap resolver used by `requireOAuthUser` for every
- *   protected app resource (`/ai/*`, `/workspaces/*`, `/documents/*`,
- *   `/api/billing/*`, `/api/assets/*`).
- * - `resolveBearerIdentity`: full resolver used by `/workspace-identity`,
- *   adding per-user encryption keys to the returned payload.
- *
- * HTTP and WebSocket wire-format coverage lives in `oauth-resource.test.ts`.
- */
-
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import type { EncryptionKeys } from '@epicenter/encryption';
@@ -26,7 +10,7 @@ import {
 	parseBearer,
 	resolveBearerIdentity,
 	resolveBearerUser,
-} from './resource-boundary.js';
+} from './app-resource-auth.js';
 
 const redirectUri = 'http://localhost:5174/auth/callback';
 const verifier = 'test-verifier-test-verifier-test-verifier';
@@ -38,15 +22,8 @@ const encryptionKeys: EncryptionKeys = [
 ];
 let nextBoundaryTestPort = 51_000 + Math.floor(Math.random() * 10_000);
 
-// ---------------------------------------------------------------------------
-// parseBearer
-// ---------------------------------------------------------------------------
-
-test('parseBearer extracts the token from a Bearer header', () => {
+test('parseBearer extracts bearer tokens case-insensitively', () => {
 	expect(parseBearer('Bearer abc.def.ghi')).toBe('abc.def.ghi');
-});
-
-test('parseBearer is case-insensitive on the scheme and trims whitespace', () => {
 	expect(parseBearer('bearer   abc.def.ghi   ')).toBe('abc.def.ghi');
 	expect(parseBearer('BEARER abc.def.ghi')).toBe('abc.def.ghi');
 });
@@ -57,10 +34,6 @@ test('parseBearer returns null for missing, empty, or non-bearer input', () => {
 	expect(parseBearer('Bearer ')).toBeNull();
 	expect(parseBearer('Token abc')).toBeNull();
 });
-
-// ---------------------------------------------------------------------------
-// resolveBearerUser
-// ---------------------------------------------------------------------------
 
 test('resolveBearerUser resolves a valid scoped token to the calling user', async () => {
 	const setup = createBoundaryTestServer();
@@ -162,11 +135,7 @@ test('resolveBearerUser rejects tokens whose user no longer exists as InvalidTok
 	}
 });
 
-// ---------------------------------------------------------------------------
-// resolveBearerIdentity
-// ---------------------------------------------------------------------------
-
-test('resolveBearerIdentity returns user + encryption keys for a valid token', async () => {
+test('resolveBearerIdentity returns user and encryption keys for a valid token', async () => {
 	const setup = createBoundaryTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
@@ -180,7 +149,7 @@ test('resolveBearerIdentity returns user + encryption keys for a valid token', a
 	}
 });
 
-test('resolveBearerIdentity short-circuits findUserById and key derivation on verifier failure', async () => {
+test('resolveBearerIdentity short-circuits user lookup and key derivation on verifier failure', async () => {
 	const { data, error } = await resolveBearerIdentity({
 		authorization: 'Bearer expired-token',
 		audience: 'http://localhost:8787',
@@ -200,10 +169,6 @@ test('resolveBearerIdentity short-circuits findUserById and key derivation on ve
 	expect(data).toBeNull();
 	expect(error?.name).toBe('InvalidToken');
 });
-
-// ---------------------------------------------------------------------------
-// Shared test plumbing
-// ---------------------------------------------------------------------------
 
 function createBoundaryTestServer() {
 	const db: MemoryDB = {
@@ -261,7 +226,7 @@ function createBoundaryTestServer() {
 		}
 	}
 
-	throw new Error('Failed to find an available resource-boundary test port.');
+	throw new Error('Failed to find an available app-resource-auth test port.');
 }
 
 function isAddressInUse(error: unknown) {
@@ -331,7 +296,7 @@ async function issueOAuthTokens(
 
 	const client = (await auth.api.adminCreateOAuthClient({
 		body: {
-			client_name: 'Resource Boundary Test',
+			client_name: 'App Resource Auth Test',
 			redirect_uris: [redirectUri],
 			token_endpoint_auth_method: 'none',
 			grant_types: ['authorization_code'],

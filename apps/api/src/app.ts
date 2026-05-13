@@ -15,6 +15,11 @@ import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
+import { normalizeAppAccessToken } from './auth/app-access-token';
+import {
+	resolveRequestAppResourceUser,
+	resolveRequestWorkspaceIdentity,
+} from './auth/app-resource-auth';
 import { createAuth } from './auth/create-auth';
 import { deriveUserEncryptionKeys } from './auth/encryption';
 import {
@@ -25,13 +30,7 @@ import {
 	OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
 } from './auth/oauth-metadata';
 import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
-import {
-	resolveRequestOAuthUser,
-	resolveRequestWorkspaceIdentity,
-} from './auth/resource-boundary';
-import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
-import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import {
 	renderConsentPage,
 	renderSignedInPage,
@@ -41,6 +40,7 @@ import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
+import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import { TRUSTED_ORIGINS } from './trusted-origins';
 
 export { DocumentRoom } from './document-room';
@@ -174,16 +174,34 @@ const factory = createFactory<Env>({
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
 			await next();
 		});
-
-		// Layer 3: Single credential. Reject ambiguous auth and lift WS bearer
-		// subprotocols into Authorization. See {@link singleCredential} JSDoc.
-		app.use('*', singleCredential);
 	},
 });
 
 const app = factory.createApp();
 
-// Health
+// ---------------------------------------------------------------------------
+// Route families
+//
+// The API host composes three endpoint families. Each one has exactly one
+// credential model. Mounting middleware globally would blur the families;
+// every family-specific middleware below is mounted only on its own paths.
+//
+//   Hosted auth family
+//     /sign-in, /consent, /auth/*, OAuth discovery
+//     credential: Better Auth account cookie during the hosted flow
+//
+//   App resource family
+//     /workspace-identity, /ai/*, /workspaces/*, /documents/*,
+//     /api/billing/*, /api/assets/* (authenticated writes)
+//     credential: OAuth app access token (Authorization or WS subprotocol)
+//
+//   Public family
+//     /, /billing redirect, /dashboard SPA, /api/assets/* GET reads
+//     credential: none (unguessable URLs guard the asset reads)
+// ---------------------------------------------------------------------------
+
+// ===== Public family =====
+
 app.get(
 	'/',
 	describeRoute({
@@ -193,7 +211,35 @@ app.get(
 	(c) => c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
-// Auth pages: server-rendered Hono JSX
+// Asset reads: unauthenticated (unguessable URL is the credential).
+// Registered before the app resource gate so GET reads bypass it. Hono runs
+// matching entries in registration order, so a later `app.use` middleware
+// does not retroactively guard this handler.
+app.route('/api/assets', assetPublicRoutes);
+
+// Billing: redirect legacy page to dashboard SPA.
+app.get('/billing', (c) => c.redirect('/dashboard'));
+
+// Dashboard SPA: static assets served by Workers Static Assets (wrangler.jsonc).
+// This catch-all handles SPA client-side routing: when no static file matches,
+// serve index.html so the SvelteKit router takes over.
+app.get('/dashboard/*', async (c) => {
+	const assets = c.env.ASSETS;
+	if (!assets) return c.notFound();
+	const indexUrl = new URL('/dashboard/index.html', c.req.url);
+	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
+});
+app.get('/dashboard', async (c) => {
+	const assets = c.env.ASSETS;
+	if (!assets) return c.notFound();
+	const indexUrl = new URL('/dashboard/index.html', c.req.url);
+	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
+});
+
+// ===== Hosted auth family =====
+
+// Server-rendered sign-in page. Consumes the Better Auth account cookie
+// via `auth.api.getSession`; no app access token is involved.
 app.get('/sign-in', async (c) => {
 	const session = await c.var.auth.api.getSession({
 		headers: c.req.raw.headers,
@@ -219,6 +265,8 @@ app.get('/sign-in', async (c) => {
 	}
 	return c.html(renderSignInPage());
 });
+
+// OAuth consent screen. Also a hosted auth page; cookie-driven.
 app.get(
 	'/consent',
 	sValidator('query', type({ 'client_id?': 'string', 'scope?': 'string' })),
@@ -236,19 +284,7 @@ app.get(
 		return c.html(renderConsentPage({ clientId, scope }));
 	},
 );
-app.get(
-	'/workspace-identity',
-	describeRoute({
-		description: 'Resolve an OAuth access token to Epicenter identity',
-		tags: ['auth', 'oauth'],
-	}),
-	async (c) => {
-		const { data: identity, error } =
-			await resolveRequestWorkspaceIdentity(c, deriveUserEncryptionKeys);
-		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
-		return c.json(identity);
-	},
-);
+
 // OAuth discovery. Register issuer-path routes before the /auth/* catch-all
 // because Hono matches routes in registration order.
 app.get(
@@ -289,6 +325,8 @@ app.get(
 		return c.json(metadata);
 	},
 );
+
+// Better Auth catch-all (login, OAuth authorize/token/revoke, JWKS).
 app.on(
 	['GET', 'POST'],
 	'/auth/*',
@@ -299,27 +337,53 @@ app.on(
 	(c) => c.var.auth.handler(c.req.raw),
 );
 
-// Asset reads: unauthenticated (unguessable URL is the credential).
-// Must be mounted before requireOAuthUser so GET requests aren't blocked.
-app.route('/api/assets', assetPublicRoutes);
+// ===== App resource family =====
+//
+// All endpoints below this point authenticate the caller with an OAuth app
+// access token. Two middlewares wrap them:
+//
+//   1. `normalizeAppAccessToken` lifts a WebSocket bearer subprotocol entry
+//      (`Sec-WebSocket-Protocol: epicenter, bearer.<token>`) into
+//      `Authorization: Bearer <token>` so the verifier reads one input.
+//      Browser WebSocket clients cannot set `Authorization` directly, so
+//      this is the only smuggling channel for WS auth.
+//
+//   2. `requireAppAccessToken` verifies the token (signature, audience,
+//      issuer, `workspaces:open` scope, user lookup) and exposes the
+//      calling user as `c.var.user`. Failure produces RFC 6750 responses
+//      (HTTP 401/403, WS 4401/4403).
+//
+// `/workspace-identity` participates in this family but verifies inline so
+// it can return identity + encryption keys instead of just the user. It
+// gets normalize, skips require.
 
-// Require an OAuth access token for protected app resources. Assumes
-// {@link singleCredential} has already validated and normalized credentials.
-const requireOAuthUser = factory.createMiddleware(async (c, next) => {
-	const { data: user, error } = await resolveRequestOAuthUser(c);
+const APP_RESOURCE_GATE_PATHS = [
+	'/ai/*',
+	'/workspaces/*',
+	'/documents/*',
+	'/api/billing/*',
+	'/api/assets/*',
+] as const;
+
+// Normalize on every app resource path (including /workspace-identity).
+app.use('/workspace-identity', normalizeAppAccessToken);
+for (const path of APP_RESOURCE_GATE_PATHS) {
+	app.use(path, normalizeAppAccessToken);
+}
+
+// Require a verified app access token on the gated paths.
+const requireAppAccessToken = factory.createMiddleware(async (c, next) => {
+	const { data: user, error } = await resolveRequestAppResourceUser(c);
 	if (error) return createOAuthUnauthorizedResourceResponse(c, error);
 	c.set('user', user);
 	await next();
 });
-
-app.use('/ai/*', requireOAuthUser);
-app.use('/workspaces/*', requireOAuthUser);
-app.use('/documents/*', requireOAuthUser);
-app.use('/api/billing/*', requireOAuthUser);
-app.use('/api/assets/*', requireOAuthUser);
+for (const path of APP_RESOURCE_GATE_PATHS) {
+	app.use(path, requireAppAccessToken);
+}
 
 // Ensure Autumn customer exists and stash planId for model gating.
-// Runs after requireOAuthUser for AI routes so c.var.user is available.
+// Runs after requireAppAccessToken for /ai/* so c.var.user is available.
 app.use('/ai/*', async (c, next) => {
 	const autumn = createAutumn(c.env);
 	const customer = await autumn.customers.getOrCreate({
@@ -334,29 +398,28 @@ app.use('/ai/*', async (c, next) => {
 	await next();
 });
 
-// Billing: redirect legacy page to dashboard SPA
-app.get('/billing', (c) => c.redirect('/dashboard'));
-
-// Dashboard SPA: static assets served by Workers Static Assets (wrangler.jsonc).
-// This catch-all handles SPA client-side routing: when no static file matches,
-// serve index.html so the SvelteKit router takes over.
-app.get('/dashboard/*', async (c) => {
-	const assets = c.env.ASSETS;
-	if (!assets) return c.notFound();
-	const indexUrl = new URL('/dashboard/index.html', c.req.url);
-	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
-});
-app.get('/dashboard', async (c) => {
-	const assets = c.env.ASSETS;
-	if (!assets) return c.notFound();
-	const indexUrl = new URL('/dashboard/index.html', c.req.url);
-	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
-});
+// `/workspace-identity` does its own verify so it can derive encryption
+// keys alongside the user. Identical RFC 6750 failure mapping.
+app.get(
+	'/workspace-identity',
+	describeRoute({
+		description: 'Resolve an OAuth access token to Epicenter identity',
+		tags: ['auth', 'oauth'],
+	}),
+	async (c) => {
+		const { data: identity, error } = await resolveRequestWorkspaceIdentity(
+			c,
+			deriveUserEncryptionKeys,
+		);
+		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
+		return c.json(identity);
+	},
+);
 
 // Billing API routes: typed JSON routes consumed by the dashboard SPA via hc<AppType>
 app.route('/api/billing', billingRoutes);
 
-// Asset routes: upload + delete (authed, mounted after requireOAuthUser)
+// Asset routes: upload + delete (authed, mounted after requireAppAccessToken)
 app.route('/api/assets', assetAuthedRoutes);
 
 // AI chat

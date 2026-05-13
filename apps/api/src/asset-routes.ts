@@ -78,10 +78,10 @@ function sanitizeFilename(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Authenticated routes (mounted behind requireSession in app.ts)
+// Authenticated routes (mounted behind requireAppAccessToken in app.ts)
 // ---------------------------------------------------------------------------
 
-/** Authenticated routes (upload + delete). Mounted behind requireSession in app.ts. */
+/** Authenticated routes (upload + delete). Mounted behind requireAppAccessToken in app.ts. */
 export const assetAuthedRoutes = new Hono<Env>()
 	// POST / — Create (upload)
 	.post(
@@ -302,10 +302,10 @@ export const assetAuthedRoutes = new Hono<Env>()
 	);
 
 // ---------------------------------------------------------------------------
-// Public routes (mounted without requireSession in app.ts)
+// Public routes (mounted without requireAppAccessToken in app.ts)
 // ---------------------------------------------------------------------------
 
-/** Public routes (read). Mounted without requireSession in app.ts. */
+/** Public routes (read). Mounted without requireAppAccessToken in app.ts. */
 export const assetPublicRoutes = new Hono<Env>()
 	// GET /:userId/:assetId — Read (unauthenticated, unguessable URL)
 	.get(
