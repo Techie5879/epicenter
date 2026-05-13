@@ -17,27 +17,48 @@ import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import { jwt } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
+import * as schema from '../db/schema.js';
 import {
-	projectTrustedOAuthClientToRow,
+	ensureTrustedOAuthClients,
 	trustedOAuthClientIds,
 } from './trusted-oauth-clients.js';
 
 const redirectUri = 'http://localhost:5174/auth/callback';
 const verifier = 'test-verifier-test-verifier-test-verifier';
 
-test('trusted OAuth clients project to public PKCE client rows', () => {
-	const row = projectTrustedOAuthClientToRow({
-		clientId: 'trusted-client-1',
-		name: 'Trusted Client',
-		runtime: 'browser',
-		redirectUris: [redirectUri],
-	});
+test('trusted OAuth client seeding writes public PKCE client rows', async () => {
+	const rows: unknown[] = [];
+	const updates: unknown[] = [];
+	const db = {
+		insert(table: unknown) {
+			expect(table).toBe(schema.oauthClient);
+			return {
+				values(row: unknown) {
+					rows.push(row);
+					return {
+						onConflictDoUpdate(update: unknown) {
+							updates.push(update);
+							return Promise.resolve();
+						},
+					};
+				},
+			};
+		},
+	} as never;
+
+	await ensureTrustedOAuthClients(db);
+
+	const row = rows.find(
+		(value): value is { clientId: string } =>
+			typeof value === 'object' &&
+			value !== null &&
+			'clientId' in value &&
+			value.clientId === 'epicenter-dashboard',
+	);
 
 	expect(row).toMatchObject({
-		id: 'trusted-client-1',
-		clientId: 'trusted-client-1',
-		name: 'Trusted Client',
-		redirectUris: [redirectUri],
+		id: 'epicenter-dashboard',
+		clientId: 'epicenter-dashboard',
 		tokenEndpointAuthMethod: 'none',
 		grantTypes: ['authorization_code'],
 		responseTypes: ['code'],
@@ -47,6 +68,7 @@ test('trusted OAuth clients project to public PKCE client rows', () => {
 		requirePKCE: true,
 		skipConsent: true,
 	});
+	expect(updates).toHaveLength(rows.length);
 });
 
 test('trusted OAuth client skips consent during authorization', async () => {
@@ -80,14 +102,14 @@ test('registered non-trusted OAuth client requires consent', async () => {
 
 function createTrustedClientTestAuth() {
 	const baseURL = 'http://localhost:47878';
-	const trustedClient = projectTrustedOAuthClientToRow({
+	const trustedClient = testOAuthClientRow({
 		clientId: 'trusted-client-1',
 		name: 'Trusted Client',
 		runtime: 'browser',
 		redirectUris: [redirectUri],
 	});
 	const registeredClient = {
-		...projectTrustedOAuthClientToRow({
+		...testOAuthClientRow({
 			clientId: 'registered-client-1',
 			name: 'Registered Client',
 			runtime: 'browser',
@@ -139,6 +161,36 @@ function createTrustedClientTestAuth() {
 	});
 
 	return { auth, baseURL };
+}
+
+function testOAuthClientRow({
+	clientId,
+	name,
+	runtime,
+	redirectUris,
+}: {
+	clientId: string;
+	name: string;
+	runtime: 'browser' | 'extension' | 'device';
+	redirectUris: string[];
+}) {
+	return {
+		id: clientId,
+		clientId,
+		disabled: false,
+		skipConsent: true,
+		scopes: ['openid', 'profile', 'email', 'offline_access', 'workspaces:open'],
+		createdAt: new Date(),
+		updatedAt: new Date(),
+		name,
+		redirectUris,
+		tokenEndpointAuthMethod: 'none',
+		grantTypes: ['authorization_code'],
+		responseTypes: ['code'],
+		public: true,
+		type: runtime === 'device' ? 'native' : 'user-agent-based',
+		requirePKCE: true,
+	};
 }
 
 async function signUpTestUser(

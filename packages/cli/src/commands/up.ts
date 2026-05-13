@@ -37,7 +37,7 @@ import { Ok, type Result, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import {
 	CONFIG_FILENAME,
-	DaemonConfigError,
+	type DaemonConfigError,
 	disposeStartedDaemonRoutes,
 	type LoadedDaemonConfig,
 	loadDaemonConfig,
@@ -86,19 +86,6 @@ export type UpHandle = {
 };
 
 /**
- * Surface for swapping out config/server construction in tests. The yargs
- * handler passes the production defaults; `up.test.ts` passes fakes.
- */
-export type RunUpDeps = {
-	loadDaemonConfig?: (
-		dir: string,
-	) => Promise<Result<LoadedDaemonConfig, DaemonConfigError>>;
-	startDaemonRoutes?: (
-		config: LoadedDaemonConfig,
-	) => Promise<Result<StartedDaemonRoute[], DaemonConfigError>>;
-};
-
-/**
  * Daemon body. Idempotently sets up disk state, loads every hosted daemon runtime,
  * binds the IPC socket, and returns a handle. The
  * yargs `handler` calls this, prints the operator-facing banner, installs
@@ -111,7 +98,6 @@ export type RunUpDeps = {
  */
 export async function runUp(
 	options: UpOptions,
-	deps: RunUpDeps = {},
 ): Promise<Result<UpHandle, DaemonConfigError | StartupErrorType>> {
 	const requestedProjectDir = resolve(options.projectDir);
 	const configPath = join(requestedProjectDir, CONFIG_FILENAME);
@@ -125,8 +111,6 @@ export async function runUp(
 	if (leaseResult.error !== null) return leaseResult;
 	const lease = leaseResult.data;
 
-	const loader = deps.loadDaemonConfig ?? loadDaemonConfig;
-	const starter = deps.startDaemonRoutes ?? startDaemonRoutes;
 	const configMtime = readConfigMtime(projectDir);
 	const metadata: DaemonMetadata = {
 		pid: process.pid,
@@ -157,14 +141,14 @@ export async function runUp(
 		return teardownPromise;
 	};
 
-	const loadResult = await loader(projectDir);
+	const loadResult = await loadDaemonConfig(projectDir);
 	if (loadResult.error) {
 		await teardown();
 		return loadResult;
 	}
 	const config = loadResult.data;
 
-	const startResult = await starter(config);
+	const startResult = await startDaemonRoutes(config);
 	if (startResult.error) {
 		await teardown();
 		return startResult;

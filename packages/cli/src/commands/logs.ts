@@ -37,7 +37,7 @@ const FOLLOW_POLL_MS = 100;
  * to the daemon log rotation threshold before rotation, so worst-case memory
  * is small and predictable.
  */
-export function tailLines(path: string, n: number): string {
+function tailLines(path: string, n: number): string {
 	if (!existsSync(path)) return '';
 	const buf = readFileSync(path, 'utf8');
 	if (buf.length === 0) return '';
@@ -52,7 +52,7 @@ export function tailLines(path: string, n: number): string {
  * file when watch reports `'rename'` (the rotation event from
  * daemon log rotation). The returned function cancels the watcher.
  */
-export function followLog(path: string): () => void {
+function followLog(path: string): () => void {
 	let fd = existsSync(path) ? openSync(path, 'r') : -1;
 	let pos = fd >= 0 ? statSync(path).size : 0;
 

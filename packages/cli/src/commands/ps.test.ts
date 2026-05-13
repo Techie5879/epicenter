@@ -1,9 +1,8 @@
 /**
  * Wave 7 unit tests for `epicenter ps`.
  *
- * `runPs` is driven directly with a stubbed `pingDaemon` so we can simulate
- * "alive and responsive" vs "alive but unresponsive" without standing up
- * a real socket server.
+ * `runPs` is driven through real daemon-shaped socket behavior so the command
+ * body stays free of test-only dependency seams.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -22,12 +21,19 @@ import {
 	socketPathFor,
 	writeMetadata,
 } from '@epicenter/workspace/node';
+import { Hono } from 'hono';
+import { Ok } from 'wellcrafted/result';
 import { runPs } from './ps';
 
 let originalXdg: string | undefined;
 let originalHome: string | undefined;
 let runtimeRoot: string;
 let homeRoot: string;
+
+function servePingDaemon(socketPath: string): Bun.Server<undefined> {
+	const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
+	return Bun.serve({ unix: socketPath, fetch: app.fetch });
+}
 
 beforeEach(() => {
 	originalXdg = process.env.XDG_RUNTIME_DIR;
@@ -50,7 +56,7 @@ afterEach(() => {
 
 describe('runPs', () => {
 	test('returns empty list when runtime dir has no metadata', async () => {
-		const rows = await runPs({ pingDaemon: async () => true });
+		const rows = await runPs();
 		expect(rows).toEqual([]);
 	});
 
@@ -73,21 +79,28 @@ describe('runPs', () => {
 				configMtime: 0,
 			});
 			writeFileSync(socketPathFor(deadDir), '');
+			const server = servePingDaemon(socketPathFor(aliveDir));
 
-			expect(existsSync(metadataPathFor(deadDir))).toBe(true);
-			expect(existsSync(socketPathFor(deadDir))).toBe(true);
+			try {
+				expect(existsSync(metadataPathFor(deadDir))).toBe(true);
+				expect(existsSync(socketPathFor(deadDir))).toBe(true);
 
-			const rows = await runPs({ pingDaemon: async () => true });
+				const rows = await runPs();
 
-			expect(rows).toHaveLength(1);
-			expect(rows[0]!.dir).toBe(aliveDir);
-			expect(rows[0]!.pid).toBe(process.pid);
+				expect(rows).toHaveLength(1);
+				expect(rows[0]?.dir).toBe(aliveDir);
+				expect(rows[0]?.pid).toBe(process.pid);
 
-			// Orphan was swept.
-			expect(existsSync(metadataPathFor(deadDir))).toBe(false);
-			expect(existsSync(socketPathFor(deadDir))).toBe(false);
-			// Alive metadata still present.
-			expect(existsSync(metadataPathFor(aliveDir))).toBe(true);
+				// Orphan was swept.
+				expect(existsSync(metadataPathFor(deadDir))).toBe(false);
+				expect(existsSync(socketPathFor(deadDir))).toBe(false);
+				// Alive metadata still present.
+				expect(existsSync(metadataPathFor(aliveDir))).toBe(true);
+			} finally {
+				await server.stop(true).catch(() => {
+					// best effort
+				});
+			}
 		} finally {
 			rmSync(aliveDir, { recursive: true, force: true });
 			rmSync(deadDir, { recursive: true, force: true });
@@ -105,7 +118,7 @@ describe('runPs', () => {
 				configMtime: 0,
 			});
 			writeFileSync(socketPathFor(dir), '');
-			const rows = await runPs({ pingDaemon: async () => false });
+			const rows = await runPs();
 			expect(rows).toEqual([]);
 			expect(existsSync(metadataPathFor(dir))).toBe(false);
 			expect(existsSync(socketPathFor(dir))).toBe(false);

@@ -124,10 +124,7 @@ function fail(message: string): void {
 	process.exitCode = 1;
 }
 
-export function filterByPath(
-	entries: ActionManifest,
-	path: string,
-): ActionManifest {
+function filterByPath(entries: ActionManifest, path: string): ActionManifest {
 	if (!path) return entries;
 	const pfx = `${path}.`;
 	const out: ActionManifest = {};

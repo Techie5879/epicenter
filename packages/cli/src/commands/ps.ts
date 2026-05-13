@@ -49,18 +49,12 @@ export type PsRow = {
 	configChanged: boolean | '?';
 };
 
-/** Test seam; matches the production `pingDaemon` signature. */
-export type RunPsDeps = {
-	pingDaemon?: (socketPath: string, timeoutMs?: number) => Promise<boolean>;
-};
-
 /**
  * Body of `ps`. Returns the rows the table renderer prints. Dead-pid
  * metadata files are unlinked as a side effect (along with any phantom
  * socket files) before the function returns.
  */
-export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
-	const ping = deps.pingDaemon ?? pingDaemon;
+export async function runPs(): Promise<PsRow[]> {
 	const rows: PsRow[] = [];
 	for (const meta of enumerateDaemons()) {
 		// Dead pid: orphan, unlink metadata + socket and skip.
@@ -71,7 +65,7 @@ export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
 
 		// Pid alive but socket unresponsive: also orphan.
 		const sockPath = socketPathFor(meta.dir);
-		const responsive = await ping(sockPath, 250);
+		const responsive = await pingDaemon(sockPath, 250);
 		if (!responsive) {
 			sweepDaemonRuntimeFiles(meta.dir);
 			continue;

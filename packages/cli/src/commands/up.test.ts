@@ -23,11 +23,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type {
-	DaemonRouteDefinition,
-	DaemonRuntime,
-	StartedDaemonRoute,
-} from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
 	metadataPathFor,
@@ -37,7 +32,6 @@ import {
 } from '@epicenter/workspace/node';
 import { Hono } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
-import { DaemonConfigError, type LoadedDaemonConfig } from '../load-config';
 import { runUp } from './up';
 
 let originalXdg: string | undefined;
@@ -56,6 +50,67 @@ function expectOk<T>(result: Result<T, unknown>): T {
 	return result.data as T;
 }
 
+function configPath() {
+	return join(workDir, 'epicenter.config.ts');
+}
+
+function writeRouteConfig({
+	route = 'default',
+	disposeMarker,
+	importMarker,
+	startBody,
+}: {
+	route?: string;
+	disposeMarker?: string;
+	importMarker?: string;
+	startBody?: string;
+} = {}) {
+	const markerImport = importMarker
+		? `await Bun.write(${JSON.stringify(importMarker)}, 'imported');`
+		: '';
+	const body =
+		startBody ??
+		`return {
+			actions: {},
+			async [Symbol.asyncDispose]() {
+				${
+					disposeMarker
+						? `await Bun.write(${JSON.stringify(disposeMarker)}, 'disposed');`
+						: ''
+				}
+			},
+			sync: {
+				whenConnected: new Promise(() => {}),
+				status: { phase: 'connected' },
+				onStatusChange: () => () => {},
+			},
+			awareness: {
+				peers: () => new Map(),
+				observe: () => () => {},
+			},
+			remote: {
+				invoke: async () => ({ data: null, error: null }),
+			},
+		};`;
+	writeFileSync(
+		configPath(),
+		`${markerImport}
+export default {
+	daemon: {
+		routes: [
+			{
+				route: ${JSON.stringify(route)},
+				start: async () => {
+					${body}
+				},
+			},
+		],
+	},
+};
+`,
+	);
+}
+
 let originalHome: string | undefined;
 
 beforeEach(() => {
@@ -70,8 +125,7 @@ beforeEach(() => {
 	process.env.HOME = homeRoot;
 
 	workDir = mkdtempSync(join(tmpdir(), 'ep-dir-'));
-	// Seed an empty config so readConfigMtime succeeds (the file exists path).
-	writeFileSync(join(workDir, 'epicenter.config.ts'), 'export {};\n');
+	writeRouteConfig();
 });
 
 afterEach(() => {
@@ -85,59 +139,13 @@ afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
 });
 
-function makeFakeWorkspace(onDispose?: () => void): DaemonRuntime {
-	return {
-		actions: {},
-		async [Symbol.asyncDispose]() {
-			onDispose?.();
-		},
-		sync: {
-			whenConnected: new Promise(() => {
-				/* sync connects in the background */
-			}),
-			status: { phase: 'connected' },
-			onStatusChange: () => () => {},
-			// Unused fields; cast through unknown to keep the fake minimal.
-		} as unknown as DaemonRuntime['sync'],
-		awareness: {
-			peers: () => new Map(),
-			observe: () => () => {},
-		} as unknown as DaemonRuntime['awareness'],
-		remote: {
-			invoke: async () => ({ data: null, error: null }),
-		} as unknown as DaemonRuntime['remote'],
-	};
-}
-
-function makeFakeConfig(runtime: DaemonRuntime): LoadedDaemonConfig {
-	const routes: DaemonRouteDefinition[] = [
-		{
-			route: 'default',
-			start: async () => runtime,
-		},
-	];
-	return {
-		projectDir: workDir as LoadedDaemonConfig['projectDir'],
-		configPath: join(workDir, 'epicenter.config.ts'),
-		routes,
-	};
-}
-
 describe('runUp: happy path', () => {
 	test('writes metadata, binds socket, replies to ping', async () => {
-		const workspace = makeFakeWorkspace();
-		const config = makeFakeConfig(workspace);
-
 		const handle = expectOk(
-			await runUp(
-				{
-					projectDir: workDir,
-					quiet: true,
-				},
-				{
-					loadDaemonConfig: async () => Ok(config),
-				},
-			),
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+			}),
 		);
 		try {
 			// Metadata was written.
@@ -163,18 +171,12 @@ describe('runUp: happy path', () => {
 
 describe('runUp: failure cleanup', () => {
 	test('releases the daemon lease when config loading fails', async () => {
-		const configPath = join(workDir, 'epicenter.config.ts');
+		writeFileSync(configPath(), 'export default {};\n');
 
-		const { error } = await runUp(
-			{
-				projectDir: workDir,
-				quiet: true,
-			},
-			{
-				loadDaemonConfig: async () =>
-					DaemonConfigError.InvalidConfig({ configPath }),
-			},
-		);
+		const { error } = await runUp({
+			projectDir: workDir,
+			quiet: true,
+		});
 
 		expect(error?.name).toBe('InvalidConfig');
 		const lease = expectOk(claimDaemonLease(workDir));
@@ -182,23 +184,14 @@ describe('runUp: failure cleanup', () => {
 	});
 
 	test('releases the daemon lease when route startup fails', async () => {
-		const config = makeFakeConfig(makeFakeWorkspace());
+		writeRouteConfig({
+			startBody: "throw new Error('route failed');",
+		});
 
-		const { error } = await runUp(
-			{
-				projectDir: workDir,
-				quiet: true,
-			},
-			{
-				loadDaemonConfig: async () => Ok(config),
-				startDaemonRoutes: async () =>
-					DaemonConfigError.RouteFailed({
-						configPath: config.configPath,
-						route: 'default',
-						cause: new Error('route failed'),
-					}),
-			},
-		);
+		const { error } = await runUp({
+			projectDir: workDir,
+			quiet: true,
+		});
 
 		expect(error?.name).toBe('RouteFailed');
 		const lease = expectOk(claimDaemonLease(workDir));
@@ -206,19 +199,12 @@ describe('runUp: failure cleanup', () => {
 	});
 
 	test('returns MetadataWriteFailed and tears down when metadata path is blocked', async () => {
-		const workspace = makeFakeWorkspace();
-		const config = makeFakeConfig(workspace);
 		mkdirSync(metadataPathFor(workDir));
 
-		const { error } = await runUp(
-			{
-				projectDir: workDir,
-				quiet: true,
-			},
-			{
-				loadDaemonConfig: async () => Ok(config),
-			},
-		);
+		const { error } = await runUp({
+			projectDir: workDir,
+			quiet: true,
+		});
 
 		expect(error?.name).toBe('MetadataWriteFailed');
 		expect(existsSync(socketPathFor(workDir))).toBe(false);
@@ -242,40 +228,19 @@ describe('runUp: already running', () => {
 			configMtime: 0,
 		});
 
-		let loadCalls = 0;
-		let startCalls = 0;
-		let disposeCalls = 0;
+		const disposeMarker = join(workDir, 'disposed.txt');
+		writeRouteConfig({ disposeMarker });
+
 		try {
-			const { error } = await runUp(
-				{
-					projectDir: workDir,
-					quiet: true,
-				},
-				{
-					loadDaemonConfig: async () => {
-						loadCalls++;
-						return Ok(makeFakeConfig(makeFakeWorkspace()));
-					},
-					startDaemonRoutes: async () => {
-						startCalls++;
-						return Ok([
-							{
-								route: 'default',
-								runtime: makeFakeWorkspace(() => {
-									disposeCalls++;
-								}),
-							},
-						] satisfies StartedDaemonRoute[]);
-					},
-				},
-			);
+			const { error } = await runUp({
+				projectDir: workDir,
+				quiet: true,
+			});
 			expect(error).toMatchObject({
 				name: 'AlreadyRunning',
 				pid: process.pid,
 			});
-			expect(loadCalls).toBe(1);
-			expect(startCalls).toBe(1);
-			expect(disposeCalls).toBe(1);
+			expect(existsSync(disposeMarker)).toBe(true);
 		} finally {
 			await server.stop(true).catch(() => {
 				// best-effort
@@ -285,30 +250,17 @@ describe('runUp: already running', () => {
 
 	test('does not import config when the daemon lease is held', async () => {
 		const lease = expectOk(claimDaemonLease(workDir));
+		const importMarker = join(workDir, 'imported.txt');
+		writeRouteConfig({ importMarker });
 
-		let loadCalls = 0;
-		let startCalls = 0;
 		try {
-			const { error } = await runUp(
-				{
-					projectDir: workDir,
-					quiet: true,
-				},
-				{
-					loadDaemonConfig: async () => {
-						loadCalls++;
-						return Ok(makeFakeConfig(makeFakeWorkspace()));
-					},
-					startDaemonRoutes: async () => {
-						startCalls++;
-						return Ok([] satisfies StartedDaemonRoute[]);
-					},
-				},
-			);
+			const { error } = await runUp({
+				projectDir: workDir,
+				quiet: true,
+			});
 
 			expect(error?.name).toBe('AlreadyRunning');
-			expect(loadCalls).toBe(0);
-			expect(startCalls).toBe(0);
+			expect(existsSync(importMarker)).toBe(false);
 		} finally {
 			lease.release();
 		}
@@ -330,19 +282,11 @@ describe('runUp: orphan path', () => {
 			configMtime: 0,
 		});
 
-		const workspace = makeFakeWorkspace();
-		const config = makeFakeConfig(workspace);
-
 		const handle = expectOk(
-			await runUp(
-				{
-					projectDir: workDir,
-					quiet: true,
-				},
-				{
-					loadDaemonConfig: async () => Ok(config),
-				},
-			),
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+			}),
 		);
 
 		try {

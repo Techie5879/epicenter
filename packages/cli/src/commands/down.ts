@@ -21,7 +21,6 @@ import {
 	socketPathFor,
 	unlinkMetadata,
 } from '@epicenter/workspace/node';
-import type { Result } from 'wellcrafted/result';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
 
@@ -41,21 +40,6 @@ function isProcessAlive(pid: number): boolean {
 export type DownOptions = {
 	projectDir: string;
 	all: boolean;
-};
-
-/**
- * Test seam for `runDown`. Tests stub `shutdown` to simulate a hung daemon
- * and `kill` to capture the SIGTERM fallback without actually signaling pids.
- *
- * `shutdown` returns a Result: `Ok` is graceful ack, `Err` triggers the
- * SIGTERM fallback.
- */
-export type RunDownDeps = {
-	shutdown?: (
-		socketPath: string,
-		timeoutMs: number,
-	) => Promise<Result<unknown, unknown>>;
-	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
 
 /** Outcome of stopping a single daemon. */
@@ -80,12 +64,9 @@ export type DownResult = {
  * when we had to fall through, and (only the caller decides) `'absent'`
  * when there was no metadata to begin with.
  */
-async function shutdownOne(
-	meta: DaemonMetadata,
-	deps: Required<RunDownDeps>,
-): Promise<DownOutcome> {
+async function shutdownOne(meta: DaemonMetadata): Promise<DownOutcome> {
 	const sock = socketPathFor(meta.dir);
-	const { error } = await deps.shutdown(sock, SHUTDOWN_TIMEOUT_MS);
+	const { error } = await daemonClient(sock, SHUTDOWN_TIMEOUT_MS).shutdown();
 	if (!error) {
 		return { kind: 'graceful', pid: meta.pid, dir: meta.dir };
 	}
@@ -93,7 +74,7 @@ async function shutdownOne(
 	// IPC didn't ack; fall back to SIGTERM if the pid is alive.
 	if (isProcessAlive(meta.pid)) {
 		try {
-			deps.kill(meta.pid, 'SIGTERM');
+			process.kill(meta.pid, 'SIGTERM');
 		} catch {
 			// pid raced to exit between the alive check and the kill;
 			// equivalent to graceful from our perspective.
@@ -115,20 +96,10 @@ async function shutdownOne(
  *   - default: shut down the daemon for the project, or report `'absent'`
  *     if no metadata exists.
  */
-export async function runDown(
-	options: DownOptions,
-	deps: RunDownDeps = {},
-): Promise<DownResult> {
-	const resolved: Required<RunDownDeps> = {
-		shutdown:
-			deps.shutdown ??
-			((sock, timeoutMs) => daemonClient(sock, timeoutMs).shutdown()),
-		kill: deps.kill ?? ((pid, sig) => process.kill(pid, sig)),
-	};
-
+export async function runDown(options: DownOptions): Promise<DownResult> {
 	if (options.all) {
 		const outcomes = await Promise.all(
-			enumerateDaemons().map((m) => shutdownOne(m, resolved)),
+			enumerateDaemons().map((m) => shutdownOne(m)),
 		);
 		return { outcomes };
 	}
@@ -138,7 +109,7 @@ export async function runDown(
 	if (!meta) {
 		return { outcomes: [{ kind: 'absent', dir: projectDir }] };
 	}
-	const outcome = await shutdownOne(meta, resolved);
+	const outcome = await shutdownOne(meta);
 	return { outcomes: [outcome] };
 }
 

@@ -18,7 +18,7 @@ export const trustedOAuthClientIds = new Set(
 
 let trustedOAuthClientsSeed: Promise<void> | null = null;
 
-export function projectTrustedOAuthClientToRow<
+function projectTrustedOAuthClientToRow<
 	const TClient extends {
 		clientId: string;
 		name: string;

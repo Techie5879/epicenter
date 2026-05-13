@@ -1,9 +1,8 @@
 /**
  * Wave 7 unit tests for `epicenter down`.
  *
- * Drives `runDown` directly with a stubbed `shutdown` and `kill`, so we
- * never touch a real daemon process. The cross-process e2e for shutdown
- * lives in Wave 8.
+ * Drives `runDown` through daemon-shaped unix socket behavior so production
+ * code does not expose fake shutdown or kill seams.
  *
  * Cases:
  *   1. Graceful shutdown when the daemon answers `shutdown` ok.
@@ -16,8 +15,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeMetadata } from '@epicenter/workspace/node';
-import { Err, Ok } from 'wellcrafted/result';
+import { socketPathFor, writeMetadata } from '@epicenter/workspace/node';
+import { Hono } from 'hono';
+import { Ok } from 'wellcrafted/result';
 import { runDown } from './down';
 
 let originalXdg: string | undefined;
@@ -25,6 +25,11 @@ let originalHome: string | undefined;
 let runtimeRoot: string;
 let homeRoot: string;
 let workDir: string;
+
+function serveShutdownDaemon(socketPath: string): Bun.Server<undefined> {
+	const app = new Hono().post('/shutdown', (c) => c.json(Ok(null)));
+	return Bun.serve({ unix: socketPath, fetch: app.fetch });
+}
 
 beforeEach(() => {
 	originalXdg = process.env.XDG_RUNTIME_DIR;
@@ -59,66 +64,42 @@ describe('runDown: graceful', () => {
 			cliVersion: '0.0.0',
 			configMtime: 0,
 		});
+		const server = serveShutdownDaemon(socketPathFor(workDir));
 
-		const result = await runDown(
-			{ projectDir: workDir, all: false },
-			{
-				shutdown: async () => Ok(null),
-				kill: () => {
-					throw new Error('kill should not be called on graceful path');
-				},
-			},
-		);
+		try {
+			const result = await runDown({ projectDir: workDir, all: false });
 
-		expect(result.outcomes).toHaveLength(1);
-		expect(result.outcomes[0]!.kind).toBe('graceful');
+			expect(result.outcomes).toHaveLength(1);
+			expect(result.outcomes[0]?.kind).toBe('graceful');
+		} finally {
+			await server.stop(true).catch(() => {
+				// best effort
+			});
+		}
 	});
 });
 
 describe('runDown: SIGTERM fallback', () => {
-	test('falls through to kill when shutdown returns transport error', async () => {
+	test('reports sigterm when shutdown cannot reach a recorded dead pid', async () => {
 		writeMetadata(workDir, {
-			pid: process.pid,
+			pid: 99999999,
 			dir: workDir,
 			startedAt: new Date().toISOString(),
 			cliVersion: '0.0.0',
 			configMtime: 0,
 		});
 
-		const killed: Array<{ pid: number; sig: string }> = [];
-		const result = await runDown(
-			{ projectDir: workDir, all: false },
-			{
-				shutdown: async () =>
-					Err({ name: 'Timeout', message: 'timeout after 1000ms' }),
-				kill: (pid, sig) => {
-					killed.push({ pid, sig });
-				},
-			},
-		);
+		const result = await runDown({ projectDir: workDir, all: false });
 
-		expect(result.outcomes[0]!.kind).toBe('sigterm');
-		expect(killed).toEqual([{ pid: process.pid, sig: 'SIGTERM' }]);
+		expect(result.outcomes[0]?.kind).toBe('sigterm');
 	});
 });
 
 describe('runDown: absent', () => {
 	test('reports absent when no project metadata file exists', async () => {
-		const result = await runDown(
-			{ projectDir: workDir, all: false },
-			{
-				shutdown: async () => {
-					throw new Error(
-						'shutdown should not be called when metadata is absent',
-					);
-				},
-				kill: () => {
-					throw new Error('kill should not be called when metadata is absent');
-				},
-			},
-		);
+		const result = await runDown({ projectDir: workDir, all: false });
 		expect(result.outcomes).toHaveLength(1);
-		expect(result.outcomes[0]!.kind).toBe('absent');
+		expect(result.outcomes[0]?.kind).toBe('absent');
 	});
 });
 
@@ -141,16 +122,21 @@ describe('runDown --all', () => {
 				cliVersion: '0.0.0',
 				configMtime: 0,
 			});
+			const serverA = serveShutdownDaemon(socketPathFor(dirA));
+			const serverB = serveShutdownDaemon(socketPathFor(dirB));
 
-			const result = await runDown(
-				{ projectDir: '.', all: true },
-				{
-					shutdown: async () => Ok(null),
-					kill: () => {},
-				},
-			);
-			expect(result.outcomes).toHaveLength(2);
-			expect(result.outcomes.every((o) => o.kind === 'graceful')).toBe(true);
+			try {
+				const result = await runDown({ projectDir: '.', all: true });
+				expect(result.outcomes).toHaveLength(2);
+				expect(result.outcomes.every((o) => o.kind === 'graceful')).toBe(true);
+			} finally {
+				await serverA.stop(true).catch(() => {
+					// best effort
+				});
+				await serverB.stop(true).catch(() => {
+					// best effort
+				});
+			}
 		} finally {
 			rmSync(dirA, { recursive: true, force: true });
 			rmSync(dirB, { recursive: true, force: true });

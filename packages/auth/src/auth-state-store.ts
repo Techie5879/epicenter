@@ -1,6 +1,6 @@
 import { encryptionKeysEqual } from '@epicenter/encryption';
 import type { AuthState } from './auth-contract.js';
-import type { WorkspaceIdentity, AuthUser } from './auth-types.js';
+import type { AuthUser, WorkspaceIdentity } from './auth-types.js';
 
 export function createAuthStateStore(initialState: AuthState) {
 	let state = initialState;
@@ -41,7 +41,7 @@ export function authStateFromIdentity(
 		: { status: 'signed-in', identity };
 }
 
-export function identitiesEqual(
+function identitiesEqual(
 	left: WorkspaceIdentity | null,
 	right: WorkspaceIdentity | null,
 ) {
