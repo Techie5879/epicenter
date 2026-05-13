@@ -108,3 +108,40 @@ test('cookie with bearer is accepted because only bearer authorizes app resource
 	expect(body.authorization).toBe('Bearer token-1');
 	expect(body.cookie).toContain('better-auth.session_token=session-1');
 });
+
+test('hosted auth routes are not governed when middleware is path-scoped', async () => {
+	// Mirrors how app.ts mounts normalizeAppAccessToken: only on the app
+	// resource family. Hosted auth routes (/sign-in, /consent, /auth/*) must
+	// not see WS bearer lifting; the bearer subprotocol has no meaning there.
+	const app = new Hono();
+	app.use('/app/*', normalizeAppAccessToken);
+	app.get('/sign-in', (c) =>
+		c.json({
+			authorization: c.req.header('authorization') ?? null,
+			subprotocol: c.req.header('sec-websocket-protocol') ?? null,
+		}),
+	);
+	app.get('/app/resource', (c) =>
+		c.json({
+			authorization: c.req.header('authorization') ?? null,
+			subprotocol: c.req.header('sec-websocket-protocol') ?? null,
+		}),
+	);
+
+	const signInRes = await app.request('/sign-in', {
+		headers: { 'sec-websocket-protocol': 'epicenter, bearer.token-1' },
+	});
+	const signInBody = (await signInRes.json()) as Record<string, string | null>;
+	expect(signInBody.authorization).toBeNull();
+	expect(signInBody.subprotocol).toBe('epicenter, bearer.token-1');
+
+	const resourceRes = await app.request('/app/resource', {
+		headers: { 'sec-websocket-protocol': 'epicenter, bearer.token-1' },
+	});
+	const resourceBody = (await resourceRes.json()) as Record<
+		string,
+		string | null
+	>;
+	expect(resourceBody.authorization).toBe('Bearer token-1');
+	expect(resourceBody.subprotocol).toBe('epicenter');
+});

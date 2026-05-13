@@ -1,11 +1,11 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
 /**
- * Required scope for any route under the protected resource boundary
- * (`/ai/*`, `/workspaces/*`, `/documents/*`, `/api/billing/*`,
- * `/api/assets/*`). The workspace-identity endpoint enforces it for
- * key release; protected resource middleware enforces it before the
- * route handler runs.
+ * Required scope for the app resource endpoint family (`/ai/*`,
+ * `/workspaces/*`, `/documents/*`, `/api/billing/*`, `/api/assets/*`).
+ * The `/workspace-identity` endpoint enforces it for key release;
+ * `requireAppAccessToken` enforces it on every other gated path before
+ * the route handler runs.
  */
 export const WORKSPACES_OPEN_SCOPE = 'workspaces:open';
 
