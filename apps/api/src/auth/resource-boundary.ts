@@ -7,14 +7,8 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import * as schema from '../db/schema';
-import {
-	hasScope,
-	OAuthError,
-	WORKSPACES_OPEN_SCOPE,
-} from './oauth-error.js';
+import { OAuthError, WORKSPACES_OPEN_SCOPE } from './oauth-error.js';
 import { createOAuthIssuerURL, createOAuthJwksURL } from './oauth-metadata.js';
-
-export { WORKSPACES_OPEN_SCOPE };
 
 type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
@@ -140,6 +134,18 @@ export function resolveRequestWorkspaceIdentity<E extends RequestOAuthEnv>(
 		...createResolverDeps(c),
 		deriveUserEncryptionKeys,
 	});
+}
+
+/**
+ * Read the `scope` claim from a verified access-token payload and check
+ * whether the required scope is present. Treats anything that is not a
+ * space-separated string of scopes as "no scopes granted".
+ */
+function hasScope(payload: unknown, required: string): boolean {
+	if (payload === null || typeof payload !== 'object') return false;
+	const raw = (payload as { scope?: unknown }).scope;
+	if (typeof raw !== 'string') return false;
+	return raw.split(/\s+/).filter(Boolean).includes(required);
 }
 
 function createResolverDeps<E extends RequestOAuthEnv>(

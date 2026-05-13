@@ -35,15 +35,3 @@ export const OAuthError = defineErrors({
 	}),
 });
 export type OAuthError = InferErrors<typeof OAuthError>;
-
-/**
- * Read the `scope` claim from a verified access-token payload and
- * check whether the required scope is present. Treats anything that
- * is not a space-separated string of scopes as "no scopes granted".
- */
-export function hasScope(payload: unknown, required: string): boolean {
-	if (payload === null || typeof payload !== 'object') return false;
-	const raw = (payload as { scope?: unknown }).scope;
-	if (typeof raw !== 'string') return false;
-	return raw.split(/\s+/).filter(Boolean).includes(required);
-}
