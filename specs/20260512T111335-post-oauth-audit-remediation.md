@@ -14,7 +14,7 @@ The live tree was audited against this spec. Result:
 | Phase | Status | Notes |
 | --- | --- | --- |
 | 0 | Live | 0.3 (machine auth decision) still required before Phase 4. |
-| 1 | Landed | `resolveBearerUser` enforces `workspaces:open`, returns an `InsufficientScope` error, and `createOAuthUnauthorizedResourceResponse` produces HTTP 403 / WS 4403 with `Bearer error="insufficient_scope" scope="workspaces:open"`. Coverage in `app-access-token-auth.test.ts` and `oauth-resource.test.ts`. JSDoc corrected. |
+| 1 | Landed | `resolveRequestAppAccessTokenUser` enforces `workspaces:open`, returns an `InsufficientScope` error, and `createOAuthUnauthorizedResourceResponse` produces HTTP 403 / WS 4403 with `Bearer error="insufficient_scope" scope="workspaces:open"`. Coverage in `app-access-token-auth.test.ts` and `oauth-resource.test.ts`. The resolver now reads the Hono request directly instead of drilling a test-shaped dependency object. |
 | 2 | Landed | Fuji and Honeycrisp child sync use `/documents/` as of `52e5e668e` (`fix(fuji,honeycrisp): point child doc sync at /documents`). |
 | 3 | Superseded | Replaced by `specs/20260512T220000-session-two-axis-cohesive-reshape.md`. `Session<T>` is now `SessionPayload<T> \| null` and `createSession` disposes only on `signed-out` or different user. |
 | 4 | Live | `packages/auth/src/node/machine-auth.ts` still calls dead `device.code`, `device.token`, and `getSession` paths. Server has no `deviceAuthorization()`. |
@@ -107,7 +107,7 @@ if (!hasScope(payload, WORKSPACES_OPEN_SCOPE)) {
 }
 
 // app access token route middleware
-const result = await resolveBearerUser({ ... });
+const result = await resolveRequestAppAccessTokenUser(c);
 if (result.status !== 'resolved') {
 	return createOAuthUnauthorizedResourceResponse(c);
 }
@@ -182,7 +182,7 @@ DeepWiki against `better-auth/better-auth` confirmed three points that matter he
 
 | Question | Finding | Spec impact |
 | --- | --- | --- |
-| Does `verifyAccessToken` enforce scopes automatically? | No. Scopes are enforced when the caller passes `opts.scopes`. | `resolveBearerUser` must request the required scope, or it must do an equivalent local scope check. |
+| Does `verifyAccessToken` enforce scopes automatically? | No. Scopes are enforced when the caller passes `opts.scopes`. | `resolveRequestAppAccessTokenUser` must request the required scope, or it must do an equivalent local scope check. |
 | Does the OAuth provider expose refresh-token revocation? | Yes. The OAuth provider exposes `/oauth2/revoke`; revoking a refresh token also removes access tokens granted from it. | Machine logout should call the OAuth revoke endpoint instead of Better Auth `signOut` with a bearer header. |
 | Are `/auth/device/code` and `/auth/device/token` always present? | No. They come from the separate device authorization plugin. | Machine login cannot call those endpoints unless the server installs that plugin again. |
 
@@ -290,7 +290,7 @@ normalizeAppAccessToken
   lifts WS bearer into Authorization
         |
         v
-resolveBearerUser
+resolveRequestAppAccessTokenUser
   parse bearer
   verify issuer
   verify audience
@@ -340,11 +340,12 @@ The phases below are ordered patches, not parallel feature tracks. Do not start 
 
 ### Phase 1: Seal Current App Access Token Routes
 
-- [x] **1.1** Update `resolveBearerUser` (`apps/api/src/auth/app-access-token-auth.ts`) to require `workspaces:open` for the currently mounted app access token routes (`/ai/*`, `/workspaces/*`, `/documents/*`, `/api/billing/*`, `/api/assets/*` in `apps/api/src/app.ts`). Return `InsufficientScope` when the token misses the required scope.
-- [x] **1.2** Local `hasScope` check used by both `resolveBearerUser` and `resolveBearerIdentity`. Better Auth verifier `scopes` option was not used: the local check is already proven, it surfaces the exact missing scope to the caller, and it avoids speculating about distinguishable error shapes from the verifier.
+- [x] **1.1** Update `resolveRequestAppAccessTokenUser` (`apps/api/src/auth/app-access-token-auth.ts`) to require `workspaces:open` for the currently mounted app access token routes (`/ai/*`, `/workspaces/*`, `/documents/*`, `/api/billing/*`, `/api/assets/*` in `apps/api/src/app.ts`). Return `InsufficientScope` when the token misses the required scope.
+- [x] **1.2** Local `hasScope` check used by both `resolveRequestAppAccessTokenUser` and `resolveRequestWorkspaceIdentity`. Better Auth verifier `scopes` option was not used: the local check is already proven, it surfaces the exact missing scope to the caller, and it avoids speculating about distinguishable error shapes from the verifier.
 - [x] **1.3** Extended `createOAuthUnauthorizedResourceResponse` (`apps/api/src/auth/oauth-resource.ts`) with a `failure` parameter. App access token middleware in `app.ts` now returns HTTP 403 (`Bearer error="insufficient_scope" scope="workspaces:open"`) and closes WebSocket upgrades with `4403 insufficient_scope` carrying the same body. `invalid_token` keeps its existing 401 / 4401 path as the default.
 - [x] **1.4** `apps/api/src/auth/app-access-token-auth.test.ts` added with: valid scoped token, missing scope, wrong audience, wrong issuer, malformed bearer input, missing user. Run with `bun --cwd apps/api test`.
-- [x] **1.5** JSDoc on `resolveBearerUser` rewritten to state the enforced scope.
+- [x] **1.5** JSDoc on `resolveRequestAppAccessTokenUser` rewritten to state the enforced scope.
+- [x] **1.6** Inlined the old `ResolverDeps` adapter into the Hono-facing request resolvers. This keeps `Authorization`, `authBaseURL`, and `db` in the layer that already owns them. Tests now exercise the request resolver with a small context-shaped fake instead of preserving a pure helper only for testing independence.
 
 Acceptance: `bun --cwd apps/api test` passes (56 pass / 0 fail at landing); `apps/api` and `apps/fuji` typechecks are clean.
 
@@ -542,18 +543,18 @@ The highest-priority remaining item is Phase 1 (app access token route scope enf
 Goal
   Seal /ai/*, /workspaces/*, /documents/*, /api/billing/*, and /api/assets/*
   so they only accept OAuth access tokens that carry the workspaces:open
-  scope. Today resolveBearerUser verifies issuer + audience + user but
+  scope. Today resolveRequestAppAccessTokenUser verifies issuer + audience + user but
   not scope, so a token issued for a different audience passes.
 
 Files to edit
   apps/api/src/auth/app-access-token-auth.ts
     - Add 'insufficient_scope' variant to OAuthPrincipalResult (mirror
-      resolveBearerIdentity in app-access-token-auth.ts).
+      resolveRequestWorkspaceIdentity in app-access-token-auth.ts).
     - Pass scopes: [WORKSPACES_OPEN_SCOPE] to verifyOAuthAccessToken. If the
       Better Auth verifier does not surface scope failure distinctly, copy
       the local hasScope() helper and use
       it after the verify step.
-    - Replace the misleading JSDoc on resolveBearerUser.
+    - Replace the misleading JSDoc on resolveRequestAppAccessTokenUser.
       It must document that workspaces:open is enforced.
 
   apps/api/src/auth/oauth-resource.ts

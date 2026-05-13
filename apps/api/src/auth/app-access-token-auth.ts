@@ -14,17 +14,7 @@ type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
 >['verifyAccessToken'];
 
-type ResolverDeps = {
-	authorization: string | null;
-	audience: string;
-	issuer: string;
-	jwksUrl: string;
-	verifyOAuthAccessToken: VerifyOAuthAccessToken;
-	findUserById(userId: string): Promise<User | null>;
-};
-
 type RequestOAuthEnv = {
-	Bindings: object | undefined;
 	Variables: {
 		authBaseURL: string;
 		db: NodePgDatabase<typeof schema>;
@@ -52,21 +42,23 @@ export function parseBearer(value: string | null): string | null {
  * codebase.
  *
  * Wrappers project the user differently:
- * - `resolveBearerUser` returns the lean `AuthUser` for the middleware path.
- * - `resolveBearerIdentity` adds derived encryption keys for `/workspace-identity`.
+ * - `resolveRequestAppAccessTokenUser` returns the lean `AuthUser` for middleware.
+ * - `resolveRequestWorkspaceIdentity` adds derived keys for `/workspace-identity`.
  */
-async function verifyBearerToUser(
-	deps: ResolverDeps,
+async function verifyRequestBearerToUser<E extends RequestOAuthEnv>(
+	c: Context<E>,
 ): Promise<Result<User, OAuthError>> {
-	const accessToken = parseBearer(deps.authorization);
+	const accessToken = parseBearer(c.req.header('authorization') ?? null);
 	if (!accessToken) return OAuthError.InvalidToken();
 
-	const payload = await deps
-		.verifyOAuthAccessToken(accessToken, {
-			verifyOptions: { audience: deps.audience, issuer: deps.issuer },
-			jwksUrl: deps.jwksUrl,
-		})
-		.catch(() => null);
+	const audience = c.var.authBaseURL;
+	const payload = await verifyOAuthAccessToken(accessToken, {
+		verifyOptions: {
+			audience,
+			issuer: createOAuthIssuerURL(audience),
+		},
+		jwksUrl: createOAuthJwksURL(audience),
+	}).catch(() => null);
 	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
 	if (!userId) return OAuthError.InvalidToken();
 
@@ -74,11 +66,18 @@ async function verifyBearerToUser(
 		return OAuthError.InsufficientScope({ scope: WORKSPACES_OPEN_SCOPE });
 	}
 
-	const user = await deps.findUserById(userId);
+	const [user] = await c.var.db
+		.select()
+		.from(schema.user)
+		.where(eq(schema.user.id, userId))
+		.limit(1);
 	if (!user) return OAuthError.InvalidToken();
 
 	return Ok(user);
 }
+
+const verifyOAuthAccessToken: VerifyOAuthAccessToken =
+	oauthProviderResourceClient().getActions().verifyAccessToken;
 
 /**
  * Cheap resolver for the `requireAppAccessToken` middleware that gates
@@ -86,10 +85,10 @@ async function verifyBearerToUser(
  * `/api/assets/*`. Skips encryption-key derivation; only the calling user
  * is needed once the scope is proven.
  */
-export async function resolveBearerUser(
-	deps: ResolverDeps,
-): Promise<Result<AuthUser, OAuthError>> {
-	const { data: user, error } = await verifyBearerToUser(deps);
+export async function resolveRequestAppAccessTokenUser<
+	E extends RequestOAuthEnv,
+>(c: Context<E>): Promise<Result<AuthUser, OAuthError>> {
+	const { data: user, error } = await verifyRequestBearerToUser(c);
 	if (error) return Err(error);
 	return Ok({ id: user.id, email: user.email });
 }
@@ -99,65 +98,18 @@ export async function resolveBearerUser(
  * the apps need at boot: the calling user plus the per-user encryption key
  * set derived from the workspace identity secret.
  */
-export async function resolveBearerIdentity(
-	deps: ResolverDeps & {
-		deriveUserEncryptionKeys(userId: string): Promise<EncryptionKeys>;
-	},
+export async function resolveRequestWorkspaceIdentity<
+	E extends RequestOAuthEnv,
+>(
+	c: Context<E>,
+	deriveUserEncryptionKeys: (userId: string) => Promise<EncryptionKeys>,
 ): Promise<Result<WorkspaceIdentity, OAuthError>> {
-	const { data: user, error } = await verifyBearerToUser(deps);
+	const { data: user, error } = await verifyRequestBearerToUser(c);
 	if (error) return Err(error);
 	return Ok({
 		user: AuthUser.assert(user),
-		encryptionKeys: await deps.deriveUserEncryptionKeys(user.id),
+		encryptionKeys: await deriveUserEncryptionKeys(user.id),
 	});
-}
-
-/**
- * Resolve the OAuth app access token on the current request to the calling
- * user. Hono adapter around the pure bearer resolver above.
- */
-export function resolveRequestAppAccessTokenUser<E extends RequestOAuthEnv>(
-	c: Context<E>,
-) {
-	return resolveBearerUser(createResolverDeps(c));
-}
-
-/**
- * Resolve the OAuth app access token on the current request to the full
- * workspace identity payload. Key derivation stays injected so this module
- * remains free of Worker-only imports and easy to test through the pure
- * resolver.
- */
-export function resolveRequestWorkspaceIdentity<E extends RequestOAuthEnv>(
-	c: Context<E>,
-	deriveUserEncryptionKeys: (userId: string) => Promise<EncryptionKeys>,
-) {
-	return resolveBearerIdentity({
-		...createResolverDeps(c),
-		deriveUserEncryptionKeys,
-	});
-}
-
-function createResolverDeps<E extends RequestOAuthEnv>(
-	c: Context<E>,
-): ResolverDeps {
-	const audience = c.var.authBaseURL;
-	return {
-		authorization: c.req.header('authorization') ?? null,
-		audience,
-		issuer: createOAuthIssuerURL(audience),
-		jwksUrl: createOAuthJwksURL(audience),
-		verifyOAuthAccessToken:
-			oauthProviderResourceClient().getActions().verifyAccessToken,
-		findUserById: async (userId) => {
-			const [row] = await c.var.db
-				.select()
-				.from(schema.user)
-				.where(eq(schema.user.id, userId))
-				.limit(1);
-			return row ?? null;
-		},
-	};
 }
 
 /**

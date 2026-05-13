@@ -1,15 +1,15 @@
-import { oauthProvider } from '@better-auth/oauth-provider';
-import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import type { EncryptionKeys } from '@epicenter/encryption';
 import { expect, test } from 'bun:test';
+import { oauthProvider } from '@better-auth/oauth-provider';
+import type { EncryptionKeys } from '@epicenter/encryption';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import { jwt } from 'better-auth/plugins';
+import type { Context } from 'hono';
 import {
 	parseBearer,
-	resolveBearerIdentity,
-	resolveBearerUser,
+	resolveRequestAppAccessTokenUser,
+	resolveRequestWorkspaceIdentity,
 } from './app-access-token-auth.js';
 
 const redirectUri = 'http://localhost:5174/auth/callback';
@@ -35,7 +35,7 @@ test('parseBearer returns null for missing, empty, or non-bearer input', () => {
 	expect(parseBearer('Token abc')).toBeNull();
 });
 
-test('resolveBearerUser resolves a valid scoped token to the calling user', async () => {
+test('resolveRequestAppAccessTokenUser resolves a valid scoped token to the calling user', async () => {
 	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
@@ -51,7 +51,7 @@ test('resolveBearerUser resolves a valid scoped token to the calling user', asyn
 	}
 });
 
-test('resolveBearerUser rejects tokens missing the workspaces:open scope', async () => {
+test('resolveRequestAppAccessTokenUser rejects tokens missing the workspaces:open scope', async () => {
 	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
@@ -69,7 +69,7 @@ test('resolveBearerUser rejects tokens missing the workspaces:open scope', async
 	}
 });
 
-test('resolveBearerUser rejects tokens issued for the wrong audience as InvalidToken', async () => {
+test('resolveRequestAppAccessTokenUser rejects tokens issued for the wrong audience as InvalidToken', async () => {
 	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
@@ -84,12 +84,12 @@ test('resolveBearerUser rejects tokens issued for the wrong audience as InvalidT
 	}
 });
 
-test('resolveBearerUser rejects tokens verified against the wrong issuer as InvalidToken', async () => {
+test('resolveRequestAppAccessTokenUser rejects tokens verified against the wrong auth base URL as InvalidToken', async () => {
 	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
 		const { data, error } = await callUser(setup, accessToken, {
-			issuer: `${setup.baseURL}/some-other-issuer`,
+			authBaseURL: `${setup.baseURL}/some-other-resource`,
 		});
 
 		expect(data).toBeNull();
@@ -99,28 +99,22 @@ test('resolveBearerUser rejects tokens verified against the wrong issuer as Inva
 	}
 });
 
-test('resolveBearerUser rejects malformed bearer input before calling the verifier', async () => {
-	let verifierCalls = 0;
-	const { data, error } = await resolveBearerUser({
-		authorization: 'Token not-a-bearer',
-		audience: 'http://localhost:8787',
-		issuer: 'http://localhost:8787/auth',
-		jwksUrl: 'http://localhost:8787/auth/jwks',
-		verifyOAuthAccessToken: async () => {
-			verifierCalls += 1;
-			return null as never;
-		},
-		findUserById: async () => {
-			throw new Error('findUserById should not run');
-		},
-	});
+test('resolveRequestAppAccessTokenUser rejects malformed bearer input before user lookup', async () => {
+	const { data, error } = await resolveRequestAppAccessTokenUser(
+		createRequestContext({
+			authorization: 'Token not-a-bearer',
+			authBaseURL: 'http://localhost:8787',
+			selectUsers: async () => {
+				throw new Error('user lookup should not run');
+			},
+		}),
+	);
 
 	expect(data).toBeNull();
 	expect(error?.name).toBe('InvalidToken');
-	expect(verifierCalls).toBe(0);
 });
 
-test('resolveBearerUser rejects tokens whose user no longer exists as InvalidToken', async () => {
+test('resolveRequestAppAccessTokenUser rejects tokens whose user no longer exists as InvalidToken', async () => {
 	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
@@ -135,7 +129,7 @@ test('resolveBearerUser rejects tokens whose user no longer exists as InvalidTok
 	}
 });
 
-test('resolveBearerIdentity returns user and encryption keys for a valid token', async () => {
+test('resolveRequestWorkspaceIdentity returns user and encryption keys for a valid token', async () => {
 	const setup = createAppAccessTokenTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
@@ -149,22 +143,19 @@ test('resolveBearerIdentity returns user and encryption keys for a valid token',
 	}
 });
 
-test('resolveBearerIdentity short-circuits user lookup and key derivation on verifier failure', async () => {
-	const { data, error } = await resolveBearerIdentity({
-		authorization: 'Bearer expired-token',
-		audience: 'http://localhost:8787',
-		issuer: 'http://localhost:8787/auth',
-		jwksUrl: 'http://localhost:8787/auth/jwks',
-		verifyOAuthAccessToken: async () => {
-			throw new Error('JWTExpired');
-		},
-		findUserById: async () => {
-			throw new Error('findUserById should not run');
-		},
-		deriveUserEncryptionKeys: async () => {
+test('resolveRequestWorkspaceIdentity short-circuits user lookup and key derivation on verifier failure', async () => {
+	const { data, error } = await resolveRequestWorkspaceIdentity(
+		createRequestContext({
+			authorization: 'Bearer expired-token',
+			authBaseURL: 'http://localhost:8787',
+			selectUsers: async () => {
+				throw new Error('user lookup should not run');
+			},
+		}),
+		async () => {
 			throw new Error('deriveUserEncryptionKeys should not run');
 		},
-	});
+	);
 
 	expect(data).toBeNull();
 	expect(error?.name).toBe('InvalidToken');
@@ -226,7 +217,9 @@ function createAppAccessTokenTestServer() {
 		}
 	}
 
-	throw new Error('Failed to find an available app-access-token-auth test port.');
+	throw new Error(
+		'Failed to find an available app-access-token-auth test port.',
+	);
 }
 
 function isAddressInUse(error: unknown) {
@@ -237,40 +230,73 @@ function isAddressInUse(error: unknown) {
 	);
 }
 
-function commonResolverDeps(
+type RequestContextOptions = {
+	authorization: string;
+	authBaseURL: string;
+	selectUsers(): Promise<unknown[]>;
+};
+
+function createRequestContext({
+	authorization,
+	authBaseURL,
+	selectUsers,
+}: RequestContextOptions): Context<{
+	Variables: {
+		authBaseURL: string;
+		db: never;
+	};
+}> {
+	return {
+		req: {
+			header: (name: string) =>
+				name.toLowerCase() === 'authorization' ? authorization : undefined,
+		},
+		var: {
+			authBaseURL,
+			db: {
+				select: () => ({
+					from: () => ({
+						where: () => ({
+							limit: () => selectUsers(),
+						}),
+					}),
+				}),
+			},
+		},
+	} as never;
+}
+
+function createAppAccessTokenContext(
 	setup: ReturnType<typeof createAppAccessTokenTestServer>,
 	accessToken: string,
-	overrides: { audience?: string; issuer?: string } = {},
+	overrides: { authBaseURL?: string } = {},
 ) {
-	const resource = oauthProviderResourceClient();
-	return {
+	return createRequestContext({
 		authorization: `Bearer ${accessToken}`,
-		audience: overrides.audience ?? setup.baseURL,
-		issuer: overrides.issuer ?? `${setup.baseURL}/auth`,
-		jwksUrl: `${setup.baseURL}/auth/jwks`,
-		verifyOAuthAccessToken: resource.getActions().verifyAccessToken,
-		findUserById: async (userId: string) =>
-			setup.db.user?.find((user) => user.id === userId) ?? null,
-	};
+		authBaseURL: overrides.authBaseURL ?? setup.baseURL,
+		selectUsers: async () => setup.db.user ?? [],
+	});
 }
 
 async function callUser(
 	setup: ReturnType<typeof createAppAccessTokenTestServer>,
 	accessToken: string,
-	overrides: { audience?: string; issuer?: string } = {},
+	overrides: { authBaseURL?: string } = {},
 ) {
-	return resolveBearerUser(commonResolverDeps(setup, accessToken, overrides));
+	return resolveRequestAppAccessTokenUser(
+		createAppAccessTokenContext(setup, accessToken, overrides),
+	);
 }
 
 async function callIdentity(
 	setup: ReturnType<typeof createAppAccessTokenTestServer>,
 	accessToken: string,
-	overrides: { audience?: string; issuer?: string } = {},
+	overrides: { authBaseURL?: string } = {},
 ) {
-	return resolveBearerIdentity({
-		...commonResolverDeps(setup, accessToken, overrides),
-		deriveUserEncryptionKeys: async () => encryptionKeys,
-	});
+	return resolveRequestWorkspaceIdentity(
+		createAppAccessTokenContext(setup, accessToken, overrides),
+		async () => encryptionKeys,
+	);
 }
 
 async function issueOAuthTokens(

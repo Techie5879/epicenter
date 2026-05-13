@@ -195,7 +195,7 @@ type VerifyOAuthAccessToken = OAuthResourceActions['verifyAccessToken'];
 
 That is still derived, but now the type expression has a landmark.
 
-Another version names the capability in local language:
+Another version tries to name the capability in local language:
 
 ```typescript
 type VerifyOAuthAccessToken = (
@@ -213,6 +213,45 @@ type VerifyOAuthAccessToken = (
 ```
 
 That is worse. It pretends to be clearer while repeating the derived path in three places.
+
+The tempting local-language version moves the Better Auth shape into a pure
+resolver dependency:
+
+```typescript
+type AppAccessTokenDeps = {
+	authorization: string | null;
+	verifyAppAccessToken(accessToken: string): Promise<unknown>;
+	findUserById(userId: string): Promise<User | null>;
+};
+```
+
+That can be right, but it was wrong in this app access token case. The Hono
+request already owns `Authorization`, `authBaseURL`, and `db`; drilling those
+through a dependency object made production code harder to read so the tests
+could call a context-free helper. The cleaner version inlines the Hono adapter
+and verifies the request directly:
+
+```typescript
+export async function resolveRequestAppAccessTokenUser(c: Context<RequestOAuthEnv>) {
+	const accessToken = parseBearer(c.req.header('authorization') ?? null);
+	if (!accessToken) return OAuthError.InvalidToken();
+
+	const audience = c.var.authBaseURL;
+	const payload = await verifyOAuthAccessToken(accessToken, {
+		verifyOptions: {
+			audience,
+			issuer: createOAuthIssuerURL(audience),
+		},
+		jwksUrl: createOAuthJwksURL(audience),
+	}).catch(() => null);
+
+	// scope check, user lookup, projection
+}
+```
+
+The rule is not "always inject". Inject when the caller has a real alternate
+runtime to provide. Inline when the dependency object just re-packages values
+already owned by the current layer.
 
 So the problem is not "ReturnType exists." The problem is whether the derived type is shortening the path to the owner or hiding the fact that we never named the owner.
 
@@ -255,3 +294,4 @@ Existing notes that cover nearby ground:
 - [Copied Types Are Boundary Leaks](./copied-types-are-boundary-leaks.md)
 - [When Two Types Feel Wrong, Find the Owner](./20260503T120000-when-two-types-feel-wrong-find-the-owner.md)
 - [Factory Return Types Should Point Back To The Factory](./factory-return-types-should-point-back-to-the-factory.md)
+- [Shared Contract Over Derived Types](./shared-contract-over-derived-types.md)
