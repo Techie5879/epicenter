@@ -9,16 +9,19 @@ a simulated play/pause key:
 
 ```txt
 manual recording is requested
-  -> Whispering checks whether the current Now Playing target is playing
+  -> Whispering starts the media pause request
+  -> recording starts without waiting for the media state lookup
+  -> the media pause request checks whether the current Now Playing target is playing
   -> Whispering sends a one-way pause command when media is playing or unknown
   -> Whispering stores a local session token only when state was reliably playing
-  -> recording starts
 
 manual recording fails to start
+  -> Whispering waits for the media pause request to settle
   -> Whispering sends a one-way play command only if that token exists
   -> Whispering clears the token
 
 manual recording stops or cancels
+  -> Whispering waits for the media pause request to settle
   -> Whispering sends a one-way play command only if that token exists
   -> Whispering clears the token before transcription work continues
 
