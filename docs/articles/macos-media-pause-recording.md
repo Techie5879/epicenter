@@ -68,6 +68,13 @@ that exact owner later." The system media key is generic and works with more
 players, including browser media, but it is a toggle. That is why the setting is
 off by default.
 
+Bluetooth headset audio quality is a separate macOS behavior. If the same
+Bluetooth headset is selected for both output and microphone input, macOS may
+switch the headset into hands-free mode while recording. In that mode, playback
+can drop to one channel at 16 kHz until the microphone route is released. To keep
+music playback in stereo quality, use a built-in or external microphone for
+recording and keep the Bluetooth headset as the output device.
+
 The setting is stored in local device config:
 
 ```txt
