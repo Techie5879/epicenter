@@ -29,7 +29,7 @@ use markdown::{
 };
 
 pub mod media_control;
-use media_control::macos_toggle_system_media_play_pause;
+use media_control::{macos_pause_media_for_recording, macos_resume_media_after_recording};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
@@ -178,7 +178,8 @@ pub async fn run() {
         delete_files_in_directory,
         write_markdown_files,
         // Media control
-        macos_toggle_system_media_play_pause,
+        macos_pause_media_for_recording,
+        macos_resume_media_after_recording,
     ]);
 
     let app = builder
