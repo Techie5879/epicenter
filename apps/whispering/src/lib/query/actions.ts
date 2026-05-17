@@ -19,6 +19,10 @@ const ImportError = defineErrors({
 });
 
 import { delivery } from './delivery';
+import {
+	type MediaPauseSession,
+	recordingMediaController,
+} from './media-control';
 import { notify } from './notify';
 import { recorder } from './recorder';
 import { sound } from './sound';
@@ -37,6 +41,9 @@ import { transformer } from './transformer';
 
 // Track manual recording start time for duration calculation
 let manualRecordingStartTime: number | null = null;
+let manualMediaPauseSession: MediaPauseSession | null = null;
+let vadMediaPauseSession: MediaPauseSession | null = null;
+let vadMediaPausePromise: Promise<void> | null = null;
 
 /**
  * Mutex flag to prevent concurrent recording operations.
@@ -51,6 +58,27 @@ let manualRecordingStartTime: number | null = null;
  * when the core operation completes (after the recorder service call returns).
  */
 let isRecordingOperationBusy = false;
+
+async function pauseMediaForRecording(
+	setSession: (session: MediaPauseSession | null) => void,
+) {
+	const { data, error } = await recordingMediaController.pauseForRecording();
+	if (error) {
+		console.warn('Failed to pause media for recording', error);
+		return;
+	}
+	setSession(data);
+}
+
+async function resumeMediaAfterRecording(
+	session: MediaPauseSession | null,
+	clearSession: () => void,
+) {
+	clearSession();
+	const { error } =
+		await recordingMediaController.resumeAfterRecording(session);
+	if (error) console.warn('Failed to resume media after recording', error);
+}
 
 // Internal mutations for manual recording
 const startManualRecording = defineMutation({
@@ -72,6 +100,9 @@ const startManualRecording = defineMutation({
 			description: 'Setting up your recording environment...',
 		});
 
+		await pauseMediaForRecording((session) => {
+			manualMediaPauseSession = session;
+		});
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 			await recorder.startRecording({ toastId });
 
@@ -79,6 +110,9 @@ const startManualRecording = defineMutation({
 		isRecordingOperationBusy = false;
 
 		if (startRecordingError) {
+			await resumeMediaAfterRecording(manualMediaPauseSession, () => {
+				manualMediaPauseSession = null;
+			});
 			notify.error({ id: toastId, ...startRecordingError });
 			return Ok(undefined);
 		}
@@ -158,6 +192,10 @@ const stopManualRecording = defineMutation({
 		const { data, error: stopRecordingError } = await recorder.stopRecording({
 			toastId,
 		});
+		const mediaPauseSession = manualMediaPauseSession;
+		await resumeMediaAfterRecording(mediaPauseSession, () => {
+			manualMediaPauseSession = null;
+		});
 
 		// Release mutex after the actual stop operation completes
 		// This allows new recordings to start while pipeline runs
@@ -224,9 +262,18 @@ const startVadRecording = defineMutation({
 						title: '🎙️ Speech started',
 						description: 'Recording started. Speak clearly and loudly.',
 					});
+					vadMediaPausePromise = pauseMediaForRecording((session) => {
+						vadMediaPauseSession = session;
+					});
 				},
 				onSpeechEnd: async (blob) => {
 					const toastId = nanoid();
+					await vadMediaPausePromise;
+					vadMediaPausePromise = null;
+					const mediaPauseSession = vadMediaPauseSession;
+					await resumeMediaAfterRecording(mediaPauseSession, () => {
+						vadMediaPauseSession = null;
+					});
 					notify.success({
 						id: toastId,
 						title: '🎙️ Voice activated speech captured',
@@ -320,6 +367,12 @@ const stopVadRecording = defineMutation({
 			description: 'Finalizing your voice activated capture...',
 		});
 		const { error: stopVadError } = await vadRecorder.stopActiveListening();
+		await vadMediaPausePromise;
+		vadMediaPausePromise = null;
+		const mediaPauseSession = vadMediaPauseSession;
+		await resumeMediaAfterRecording(mediaPauseSession, () => {
+			vadMediaPauseSession = null;
+		});
 		if (stopVadError) {
 			notify.error({ id: toastId, ...stopVadError });
 			return Ok(undefined);
@@ -378,6 +431,10 @@ export const actions = {
 			});
 			const { data: cancelRecordingResult, error: cancelRecordingError } =
 				await recorder.cancelRecording({ toastId });
+			const mediaPauseSession = manualMediaPauseSession;
+			await resumeMediaAfterRecording(mediaPauseSession, () => {
+				manualMediaPauseSession = null;
+			});
 
 			// Release mutex after the actual cancel operation completes
 			isRecordingOperationBusy = false;

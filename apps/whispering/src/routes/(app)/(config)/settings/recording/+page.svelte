@@ -4,6 +4,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Link } from '@epicenter/ui/link';
 	import * as Select from '@epicenter/ui/select';
+	import { Switch } from '@epicenter/ui/switch';
 	import InfoIcon from '@lucide/svelte/icons/info';
 	import {
 		BITRATE_OPTIONS,
@@ -159,6 +160,30 @@
 				).join(', ')}
 			</Field.Description>
 		</Field.Field>
+
+		{#if window.__TAURI_INTERNALS__ && IS_MACOS}
+			<Field.Field orientation="horizontal">
+				<Switch
+					id="recording-macos-pause-media-during-recording"
+					bind:checked={() => deviceConfig.get(
+							'recording.macos.pauseMediaDuringRecording',
+						),
+						(value) =>
+							deviceConfig.set(
+								'recording.macos.pauseMediaDuringRecording',
+								value,
+							)}
+				/>
+				<div class="grid gap-1.5">
+					<Field.Label for="recording-macos-pause-media-during-recording">
+						Pause media while recording
+					</Field.Label>
+					<Field.Description>
+						Uses the system play/pause key when recording starts and stops.
+					</Field.Description>
+				</div>
+			</Field.Field>
+		{/if}
 
 		{#if window.__TAURI_INTERNALS__ && settings.get('recording.mode') === 'manual'}
 			<Field.Field>

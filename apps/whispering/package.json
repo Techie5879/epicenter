@@ -12,6 +12,7 @@
 		"dev": "bun run dev:local",
 		"dev:local": "bun tauri dev --config '{\"identifier\": \"com.bradenwong.whispering.dev\"}'",
 		"build": "NODE_ENV=production vite build",
+		"test": "bun test",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
