@@ -68,6 +68,10 @@ const DEVICE_DEFINITIONS = {
 		type('string'),
 		FFMPEG_DEFAULT_OUTPUT_OPTIONS,
 	),
+	'recording.macos.pauseMediaDuringRecording': defineEntry(
+		type('boolean'),
+		false,
+	),
 
 	// ── Local model paths ─────────────────────────────────────────────
 	'transcription.speaches.baseUrl': defineEntry(
@@ -146,7 +150,7 @@ export const deviceConfig: PersistedMap<typeof DEVICE_DEFINITIONS> =
 		onError: (key) => {
 			console.warn(`Invalid device config for "${key}", using default`);
 		},
-		onUpdateError: (key, error) => {
+		onUpdateError: (_key, error) => {
 			rpc.notify.error({
 				title: 'Error updating device config',
 				description: extractErrorMessage(error),
