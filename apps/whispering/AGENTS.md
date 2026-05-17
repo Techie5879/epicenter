@@ -9,6 +9,7 @@ Tauri + Svelte 5 desktop/web app for voice transcription.
 - Platform detection at build time via `window.__TAURI_INTERNALS__`
 - Query layer handles reactivity, caching, and error transformation
 - See `ARCHITECTURE.md` for detailed patterns
+- Desktop feedback sounds use Web Audio instead of `HTMLAudioElement.play()` so short app sounds do not become the macOS media key target. Keep this fix in the desktop sound service; do not add media pause/resume behavior to sound playback.
 
 ## Don'ts
 
