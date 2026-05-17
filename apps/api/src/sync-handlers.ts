@@ -6,9 +6,8 @@
  *
  * ## API surface
  *
- * - {@link registerConnection}: side-effectful, registers doc update listener
- * - {@link applyMessage}: mutates doc, returns additional effects
- * - {@link teardownConnection}: cleanup, unregisters listener
+ * {@link registerConnection}: side-effectful, registers doc update listener.
+ * {@link applyMessage}: mutates doc, returns additional effects.
  *
  * ## Error handling rationale (grounded in Yjs internals)
  *
@@ -50,10 +49,10 @@ import * as Y from 'yjs';
 /**
  * Errors from the sync handler layer.
  *
- * - `MessageDecode` covers all failures when processing untrusted WebSocket
+ * `MessageDecode` covers all failures when processing untrusted WebSocket
  *   binary frames: lib0 buffer underflow (truncated messages) and any other
  *   decode-time exceptions.
- * - `PresenceWriteForbidden` is returned when a client `SYNC` update writes
+ * `PresenceWriteForbidden` is returned when a client `SYNC` update writes
  *   to the reserved `PRESENCE_KEY` array. Only the server writes presence;
  *   the caller closes the socket with `4400` and reason
  *   `'presence-write-forbidden'`.
@@ -103,8 +102,8 @@ export type Connection = {
  * Discriminated union on `action`. Each variant maps to one routing pattern
  * in the DO caller:
  *
- * - `reply`: Send data back to the sender only.
- * - `broadcast`: Fan out to all other connections.
+ * `reply`: Send data back to the sender only.
+ * `broadcast`: Fan out to all other connections.
  *
  * `applyMessage` returns `Result<MessageResult | null>`: `null` means valid
  * message with no action needed (AUTH, unknown types).
@@ -141,11 +140,10 @@ export function updateTouchesPresence(payload: Uint8Array): boolean {
  *
  * Side-effectful: registers a `doc.on('updateV2')` handler that forwards
  * updates to the WebSocket. Returns a {@link Connection} with an
- * `unregister` closure that removes the listener; call it via
- * {@link teardownConnection} when the socket closes.
+ * `unregister` closure that removes the listener when the socket closes.
  *
- * @param options.doc - The shared Yjs document
- * @param options.ws - The WebSocket to register the listener for
+ * @param options.doc: The shared Yjs document
+ * @param options.ws: The WebSocket to register the listener for
  * @returns Per-connection state with cleanup handle
  */
 export function registerConnection({
@@ -187,9 +185,9 @@ export function registerConnection({
  * throw: it stores unresolved dependencies in `doc.store.pendingStructs`
  * automatically.
  *
- * @param options.data - Raw binary WebSocket message
- * @param options.room - The shared room context (doc + subject)
- * @param options.connection - The per-connection state (ws + cleanup)
+ * @param options.data: Raw binary WebSocket message
+ * @param options.room: The shared room context (doc + subject)
+ * @param options.connection: The per-connection state (ws + cleanup)
  */
 export function applyMessage({
 	data,
@@ -258,20 +256,4 @@ export function applyMessage({
 		return SyncHandlerError.PresenceWriteForbidden({});
 	}
 	return Ok(decoded.data.result);
-}
-
-/**
- * Clean up a closed WebSocket connection.
- *
- * Calls `connection.unregister()` to remove the `doc.on('updateV2')`
- * listener. Presence rows for the closed connection are deleted by
- * `webSocketClose` in `Room`, not here, because deletion needs
- * the room's `presence` store and the `SERVER_ORIGIN` transaction tag.
- */
-export function teardownConnection({
-	connection,
-}: {
-	connection: Connection;
-}): void {
-	connection.unregister();
 }

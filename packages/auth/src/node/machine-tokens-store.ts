@@ -35,11 +35,9 @@ export type MachineAuthStorageError = InferErrors<
 	typeof MachineAuthStorageError
 >;
 
-const DEFAULT_AUTH_FILE_PATH = path.join(
-	os.homedir(),
-	'.epicenter',
-	'auth.json',
-);
+function defaultAuthFilePath(): string {
+	return path.join(process.env.HOME ?? os.homedir(), '.epicenter', 'auth.json');
+}
 
 /**
  * Read the persisted auth cell from `~/.epicenter/auth.json` (or override).
@@ -50,7 +48,7 @@ const DEFAULT_AUTH_FILE_PATH = path.join(
  *   chmod hint. The user fixes once and is back in business.
  */
 export async function loadMachineTokens({
-	filePath = DEFAULT_AUTH_FILE_PATH,
+	filePath = defaultAuthFilePath(),
 	log = createLogger('machine-tokens-store'),
 }: {
 	filePath?: string;
@@ -102,7 +100,7 @@ export async function loadMachineTokens({
 export async function saveMachineTokens(
 	value: PersistedAuthType | null,
 	{
-		filePath = DEFAULT_AUTH_FILE_PATH,
+		filePath = defaultAuthFilePath(),
 	}: {
 		filePath?: string;
 	} = {},

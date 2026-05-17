@@ -1,6 +1,6 @@
 ---
 name: better-auth-best-practices
-description: Configure Better Auth server and client, set up database adapters, manage sessions, add plugins, and handle environment variables. Use when users mention Better Auth, betterauth, auth.ts, or need to set up TypeScript authentication with email/password, OAuth, or plugin configuration.
+description: Better Auth server/client, DB adapters, sessions, plugins, env vars. Use when mentioning Better Auth, betterauth, auth.ts, or setting up TS auth with email/password, OAuth, plugins.
 metadata:
   author: epicenter
   version: '1.0'

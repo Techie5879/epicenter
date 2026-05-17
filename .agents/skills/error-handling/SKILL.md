@@ -1,6 +1,6 @@
 ---
 name: error-handling
-description: Error handling patterns using wellcrafted trySync and tryAsync, and toastOnError for surfacing errors to users. Use when writing or reviewing try-catch blocks, refactoring try-catch to linear control flow, working with Result types, showing error toasts, or returning HTTP error responses from route handlers.
+description: Error handling with wellcrafted trySync/tryAsync and toastOnError. Use for try-catch, Result types, error toasts, HTTP errors.
 metadata:
   author: epicenter
   version: '2.0'

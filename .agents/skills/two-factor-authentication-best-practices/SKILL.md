@@ -1,6 +1,6 @@
 ---
 name: two-factor-authentication-best-practices
-description: Configure TOTP authenticator apps, send OTP codes via email/SMS, manage backup codes, handle trusted devices, and implement 2FA sign-in flows using Better Auth's twoFactor plugin. Use when users need MFA, multi-factor authentication, authenticator setup, or login security with Better Auth.
+description: Better Auth twoFactor plugin: TOTP, OTP via email/SMS, backup codes, trusted devices, 2FA sign-in. Use when needing MFA, multi-factor auth, authenticator setup.
 metadata:
   author: epicenter
   version: '1.0'

@@ -1,6 +1,6 @@
 ---
 name: logging
-description: Use `wellcrafted/logger` for structured library-side diagnostics. 5 levels (trace/debug/info/warn/error), typed errors on warn/error, DI-only sink. Use when wiring a new attach primitive, adding a background error path, or setting up a file-backed log. Do NOT use `console.*` in library code.
+description: wellcrafted/logger for library diagnostics: 5 levels, typed errors, DI sink. Use for attach primitives, background errors, file-backed logs. No console.* in library code.
 metadata:
   author: epicenter
   version: '2.0'

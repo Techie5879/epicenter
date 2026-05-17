@@ -1,6 +1,6 @@
 ---
 name: incremental-commits
-description: Break multi-file changes into atomic commits ordered by dependency. Use when the user says "split this into commits", "commit strategy", "break this up", or when making refactors, breaking API changes, or features touching 3+ files that need clean git history.
+description: Break multi-file changes into atomic commits ordered by dependency. Use for "split this into commits", "commit strategy", "break this up", refactors.
 metadata:
   author: epicenter
   version: '1.0'

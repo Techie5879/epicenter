@@ -1,9 +1,11 @@
-export { validateDaemonRouteNames } from './route-validation.js';
 export {
-	type DaemonRouteContext,
-	type DaemonRouteDefinition,
-	type DaemonRuntime,
-	defineConfig,
-	type EpicenterConfig,
-	type StartedDaemonRoute,
-} from './types.js';
+	type AttachDaemonInfrastructureOptions,
+	type DaemonInfrastructure,
+	attachDaemonInfrastructure,
+} from './attach-daemon-infrastructure.js';
+export {
+	type DaemonWorkspaceContext,
+	type DaemonWorkspaceModule,
+	defineDaemonWorkspace,
+} from './define-daemon-workspace.js';
+export { type DaemonRuntime, type StartedDaemonRoute } from './types.js';

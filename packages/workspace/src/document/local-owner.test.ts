@@ -1,12 +1,10 @@
 /**
  * LocalOwner behavior tests.
  *
- * Covers the three identity-scoped surfaces exposed by `createLocalOwner`:
- * - `attachIndexedDb`: encrypted persistence keyed by `(ownerId, ydoc.guid)`,
- *   including the round-trip and guid-bound storage key invariants moved
- *   here from `attach-encryption.test.ts`.
- * - `attachBroadcastChannel`: owner-scoped channel key without mutating
- *   `ydoc.guid`.
+ * Covers the identity-scoped surfaces exposed by `createLocalOwner`:
+ * - `attachLocal`: paired encrypted IndexedDB persistence + cross-tab
+ *   BroadcastChannel sync keyed by `(ownerId, ydoc.guid)`. Round-trip,
+ *   guid-bound storage key, and owner-scoped channel-name invariants.
  * - `wipeLocalYjsData`: deletes known guids and enumerated owner-scoped
  *   databases, leaves other owners and unscoped local docs alone.
  *
@@ -96,7 +94,7 @@ async function databaseNames(): Promise<string[]> {
 		.filter((name): name is string => typeof name === 'string');
 }
 
-describe('LocalOwner.attachIndexedDb', () => {
+describe('LocalOwner.attachLocal', () => {
 	test('throws when keyring throws', () => {
 		const ydoc = new Y.Doc({ guid: 'encrypted-idb-no-keys', gc: false });
 		const owner = createLocalOwner({
@@ -106,7 +104,7 @@ describe('LocalOwner.attachIndexedDb', () => {
 			},
 		});
 
-		expect(() => owner.attachIndexedDb(ydoc)).toThrow('not signed-in');
+		expect(() => owner.attachLocal(ydoc)).toThrow('not signed-in');
 		ydoc.destroy();
 	});
 
@@ -123,7 +121,7 @@ describe('LocalOwner.attachIndexedDb', () => {
 			ownerId,
 			keyring: () => keyring,
 		});
-		const firstIdb = firstOwner.attachIndexedDb(firstDoc);
+		const firstIdb = firstOwner.attachLocal(firstDoc);
 		await firstIdb.whenLoaded;
 		firstDoc.getText('body').insert(0, 'stored ciphertext');
 		await tick();
@@ -142,7 +140,7 @@ describe('LocalOwner.attachIndexedDb', () => {
 			ownerId,
 			keyring: () => keyring,
 		});
-		const secondIdb = secondOwner.attachIndexedDb(secondDoc);
+		const secondIdb = secondOwner.attachLocal(secondDoc);
 		await secondIdb.whenLoaded;
 
 		expect(secondDoc.getText('body').toString()).toBe('stored ciphertext');
@@ -157,7 +155,7 @@ describe('LocalOwner.attachIndexedDb', () => {
 		const keyring = toKeyring(randomBytes(32));
 		const ydoc = new Y.Doc({ guid: 'encrypted-idb-guid-a', gc: false });
 		const owner = createLocalOwner({ ownerId, keyring: () => keyring });
-		const idb = owner.attachIndexedDb(ydoc);
+		const idb = owner.attachLocal(ydoc);
 		await idb.whenLoaded;
 		ydoc.getText('body').insert(0, 'guid bound');
 		await tick();
@@ -186,7 +184,7 @@ describe('LocalOwner.attachIndexedDb', () => {
 			ownerId,
 			keyring: () => keyring,
 		});
-		const firstIdb = firstOwner.attachIndexedDb(firstDoc);
+		const firstIdb = firstOwner.attachLocal(firstDoc);
 		await firstIdb.whenLoaded;
 		firstDoc.getText('body').insert(0, 'clear me');
 		await tick();
@@ -199,7 +197,7 @@ describe('LocalOwner.attachIndexedDb', () => {
 			ownerId,
 			keyring: () => keyring,
 		});
-		const secondIdb = secondOwner.attachIndexedDb(secondDoc);
+		const secondIdb = secondOwner.attachLocal(secondDoc);
 		await secondIdb.whenLoaded;
 
 		expect(secondDoc.getText('body').toString()).toBe('');
@@ -223,7 +221,7 @@ class FakeBroadcastChannel {
 	close(): void {}
 }
 
-describe('LocalOwner.attachBroadcastChannel', () => {
+describe('LocalOwner.attachLocal BroadcastChannel naming', () => {
 	beforeEach(() => {
 		FakeBroadcastChannel.names = [];
 		Object.assign(globalThis, {
@@ -243,7 +241,7 @@ describe('LocalOwner.attachBroadcastChannel', () => {
 			keyring: noKeys,
 		});
 
-		owner.attachBroadcastChannel(ydoc);
+		owner.attachLocal(ydoc);
 
 		expect(FakeBroadcastChannel.names).toEqual([
 			'yjs.epicenter.owner.user-123.yjs.epicenter.fuji',

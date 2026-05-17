@@ -15,7 +15,7 @@ import {
 	roomWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import { opensidianTables } from 'opensidian';
+import { openOpensidianWorkspace } from 'opensidian';
 import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
 
@@ -28,13 +28,10 @@ export function openOpensidianBrowser({
 	replicaId: string;
 	openWebSocket?: OpenWebSocket;
 }) {
-	const rootYdoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
-	const encryption = owner.attachEncryption(rootYdoc);
-	const tables = encryption.attachTables(opensidianTables);
-	const kv = encryption.attachKv({});
+	const workspace = openOpensidianWorkspace(owner.attachEncryption);
+	const { ydoc: rootYdoc, tables, kv } = workspace;
 
-	const idb = owner.attachIndexedDb(rootYdoc);
-	owner.attachBroadcastChannel(rootYdoc);
+	const idb = owner.attachLocal(rootYdoc);
 
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
 		const ydoc = new Y.Doc({
@@ -47,8 +44,7 @@ export function openOpensidianBrowser({
 		onLocalUpdate(ydoc, () =>
 			tables.files.update(fileId, { updatedAt: Date.now() }),
 		);
-		const childIdb = owner.attachIndexedDb(ydoc);
-		owner.attachBroadcastChannel(ydoc);
+		const childIdb = owner.attachLocal(ydoc);
 		return {
 			ydoc,
 			content: attachTimeline(ydoc),
@@ -116,7 +112,7 @@ export function openOpensidianBrowser({
 		ydoc: rootYdoc,
 		tables,
 		kv,
-		batch: (fn: () => void) => rootYdoc.transact(fn),
+		batch: workspace.batch,
 		idb,
 		fileContentDocs,
 		sqliteIndex: sqliteIndexExports,

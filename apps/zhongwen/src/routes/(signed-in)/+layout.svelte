@@ -2,7 +2,7 @@
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { Loading } from '@epicenter/ui/loading';
 	import { goto } from '$app/navigation';
-	import { session } from '$lib/session';
+	import { requireZhongwen, session } from '$lib/session';
 	import { auth } from '$platform/auth';
 
 	let { children } = $props();
@@ -19,6 +19,7 @@
 {#if current}
 	<WorkspaceGate
 		pending={current.idb.whenLoaded}
+		onForgetDevice={() => requireZhongwen().wipe()}
 		onSignOut={() => auth.signOut()}
 	>
 		{@render children?.()}

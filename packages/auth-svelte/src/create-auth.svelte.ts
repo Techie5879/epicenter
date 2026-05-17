@@ -5,8 +5,6 @@ import {
 } from '@epicenter/auth';
 import { createSubscriber } from 'svelte/reactivity';
 
-export type { AuthClient };
-
 /**
  * Svelte 5 wrapper around `@epicenter/auth`.
  *

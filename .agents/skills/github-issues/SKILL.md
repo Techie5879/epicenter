@@ -1,6 +1,6 @@
 ---
 name: github-issues
-description: GitHub issue comment guidelines for community interaction. Use when the user says "respond to this issue", "reply to this bug report", "close this issue", or when responding to GitHub issues, bug reports, feature requests, or any GitHub discussion.
+description: GitHub issue comment guidelines for community interaction. Use when: "respond to this issue", "reply to this bug report", "close this issue", or any GitHub discussion.
 metadata:
   author: epicenter
   version: '1.0'

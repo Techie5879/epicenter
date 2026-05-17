@@ -1,6 +1,6 @@
 ---
 name: comparable-apps
-description: When planning a user-facing surface or framing a UX decision in Epicenter, list 3-5 comparable apps from the taxonomy below and ask what they do. Use the answer to find asymmetric wins (refuse a feature) or to validate that a choice is consistent with the category Epicenter belongs to. Triggers on "what do other apps do", "is this the right pattern", "how should we show X", "should we cache Y", "do we need this surface", and design questions about identity, account chrome, sync state, multi-tenancy, or local-first behavior.
+description: List 3-5 comparable apps when planning a UX surface to find asymmetric wins. Use for "what do other apps do", identity, sync state, local-first design.
 metadata:
   author: epicenter
   version: '1.0'

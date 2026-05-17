@@ -43,7 +43,7 @@ Two consequences fall out:
 - **Strong read-after-write happens inside the action.** If a script wants the side effect to be visible to its next read, it should await the action result rather than reading SQLite again immediately. The action handler sees fresh in-memory state; the materializer is eventually consistent.
 - **Type safety is opt-in.** `TActions` is the registry type the app's npm package exports (`FujiActions`, `HoneycrispActions`, etc.). The runtime never imports app code into the script process; only the type information flows across.
 
-`projectDir` defaults to `findEpicenterDir()`, which walks up from `process.cwd()` looking for `epicenter.config.ts` or a `.epicenter/` directory. Pass an explicit `projectDir` to opt out (cron jobs that run from `/` should).
+`projectDir` defaults to `findEpicenterDir()`, which walks up from `process.cwd()` looking for a `workspaces/` directory or a `.epicenter/` directory. Pass an explicit `projectDir` to opt out (cron jobs that run from `/` should).
 
 ## What if the daemon is not running?
 

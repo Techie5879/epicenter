@@ -8,8 +8,8 @@
  *   merging transport and domain failures into one tagged union the
  *   renderer narrows by `error.name`.
  * - {@link getDaemon}: dispatch decision for `run` / `list` / `peers`.
- *   Returns a typed client on success, or `MissingConfig` /
- *   `Required` when the project is not configured or has no live daemon.
+ *   Returns a typed client on success, or `MissingConfig` / `Required` when
+ *   the project has no workspace extensions or has no live daemon.
  *
  * The wire protocol is dead simple: POST a JSON body to a path on the unix
  * socket, get back a `Result<T, DomainErr>` JSON envelope from the handler.
@@ -19,6 +19,7 @@
  * gets a typed 400 instead of a confusing downstream cast failure.
  */
 
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	defineErrors,
@@ -31,8 +32,7 @@ import type { ActionManifest } from '../shared/actions.js';
 import type { PeerSnapshot, RunRequest } from './app.js';
 import { socketPathFor } from './paths.js';
 import type { RunError } from './run-errors.js';
-
-const CONFIG_FILENAME = 'epicenter.config.ts';
+import { WORKSPACES_DIRNAME } from './route-validation.js';
 
 /**
  * Tagged-error variants returned by daemon client surfaces. Domain errors
@@ -49,7 +49,7 @@ const CONFIG_FILENAME = 'epicenter.config.ts';
  */
 export const DaemonError = defineErrors({
 	MissingConfig: ({ projectDir }: { projectDir: string }) => ({
-		message: `No ${CONFIG_FILENAME} found in ${projectDir}`,
+		message: `No ${WORKSPACES_DIRNAME}/ directory found in ${projectDir}`,
 		projectDir,
 	}),
 	Required: ({ projectDir }: { projectDir: string }) => ({
@@ -187,10 +187,10 @@ export type DaemonClient = ReturnType<typeof daemonClient>;
 /**
  * Resolve the daemon client for `projectDir`, or surface why we can't.
  *
- *   - `MissingConfig`: no `epicenter.config.ts` in `projectDir`. Surfaced
- *     distinctly from `Required` so unconfigured users don't get pointed
- *     at `epicenter daemon up` (which would fail and mislead).
- *   - `Required`: config exists but no daemon is running. Renderer
+ *   - `MissingConfig`: no `workspaces/` in `projectDir`. Surfaced distinctly
+ *     from `Required` so unconfigured users don't get pointed at
+ *     `epicenter daemon up` (which would fail and mislead).
+ *   - `Required`: workspace extensions exist but no daemon is running. Renderer
  *     prints the start-with-`daemon up` hint.
  *
  * `run`, `list`, and `peers` are mandatory-daemon commands; if they hit
@@ -199,8 +199,8 @@ export type DaemonClient = ReturnType<typeof daemonClient>;
 export async function getDaemon(
 	projectDir: string,
 ): Promise<Result<DaemonClient, DaemonError>> {
-	const configPath = join(projectDir, CONFIG_FILENAME);
-	if (!(await Bun.file(configPath).exists())) {
+	const workspacesPath = join(projectDir, WORKSPACES_DIRNAME);
+	if (!existsSync(workspacesPath)) {
 		return DaemonError.MissingConfig({ projectDir });
 	}
 	const sock = socketPathFor(projectDir);

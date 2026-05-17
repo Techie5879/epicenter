@@ -1,6 +1,6 @@
 ---
 name: handoff-prompt
-description: Draft a self-contained implementation prompt that an agent can execute with zero prior context. Use when the user says "draft a prompt", "write a handoff", "make a prompt I can copy-paste", "create a delegation brief", or wants to hand off a task to another agent, tool, or conversation.
+description: Draft a self-contained implementation prompt for zero-context handoff. Use when: "draft a prompt", "write a handoff", "make a prompt I can copy-paste", "create a delegation brief".
 metadata:
   author: epicenter
   version: '2.0'

@@ -1,6 +1,6 @@
 ---
 name: workflow
-description: Standard workflow for implementing features with specs and planning documents. Use when the user says "start a new feature", "how should I plan this", "what's the process", or when starting implementation, planning work, closing out planned work, or working on any non-trivial task.
+description: Workflow for implementing features with specs and planning docs. Use when: "start a new feature", "how should I plan this", "what's the process", or any non-trivial task.
 metadata:
   author: epicenter
   version: '1.0'

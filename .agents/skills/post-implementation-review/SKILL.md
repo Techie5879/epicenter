@@ -1,6 +1,6 @@
 ---
 name: post-implementation-review
-description: "Use after implementing code, finishing a refactor, or before handing work back. Runs a second-read protocol: reread touched files, list files read as an ASCII tree, mentally inline helpers, wrappers, and components, then audit dead paths, stale boundaries, invariants, API shape, naming, file organization, tests, and related skill concerns."
+description: "Second-read protocol: reread files, inline helpers, audit dead paths, boundaries, invariants. Use after implementing or before handoff."
 metadata:
   author: epicenter
   version: '1.0'

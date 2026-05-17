@@ -22,11 +22,7 @@
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { createCommandPaletteItems } from '$lib/components/command-palette-items';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
-	import {
-		forgetTabManagerDevice,
-		requireTabManager,
-		tabManagerSession,
-	} from '$lib/session.svelte';
+	import { requireTabManager, tabManagerSession } from '$lib/session.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 
 	const tabManager = requireTabManager();
@@ -208,7 +204,7 @@
 					{auth}
 					collaboration={tabManager.collaboration}
 					syncNoun="tabs"
-					onForgetDevice={forgetTabManagerDevice}
+					onForgetDevice={() => tabManager.wipe()}
 				/>
 			</div>
 		</header>

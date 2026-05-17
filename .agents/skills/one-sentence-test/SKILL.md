@@ -1,6 +1,6 @@
 ---
 name: one-sentence-test
-description: "Use this skill before adding a surface, reviewing a wrapper, auditing a growing command or endpoint list, or explaining what a system is. Force one concrete sentence, then use it to find orphaned surfaces, duplicate verbs, inert abstractions, and asymmetric wins where refusing 10-20 percent of functionality collapses 80-90 percent of complexity. Triggers on \"what does X do\", \"in one sentence\", \"too many options\", \"is this useful\", and designs that need cohesion."
+description: "Force one concrete sentence to find orphaned surfaces, duplicate verbs, inert abstractions. Use for \"what does X do\", \"in one sentence\", \"too many options\"."
 metadata:
   author: epicenter
   version: '2.0'

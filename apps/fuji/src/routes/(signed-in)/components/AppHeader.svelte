@@ -61,10 +61,7 @@
 			{auth}
 			collaboration={fuji.collaboration}
 			syncNoun="entries"
-			onForgetDevice={async () => {
-				await fuji.wipe();
-				window.location.reload();
-			}}
+			onForgetDevice={() => fuji.wipe()}
 		/>
 		<GitHubButton
 			repo={{ owner: 'EpicenterHQ', repo: 'epicenter' }}

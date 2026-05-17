@@ -1,6 +1,6 @@
 ---
 name: agent-goal
-description: Write high-quality `/goal` prompts for long-running agent work in Codex or Claude Code. Use when the user asks for a slash goal, `/goal` prompt, agent goal, durable objective, autonomous coding run, long-running task, or completion condition.
+description: Write `/goal` prompts for long-running agent work in Codex or Claude Code. Use for slash goal, agent goal, durable objective, autonomous coding run.
 ---
 
 # Agent Goal

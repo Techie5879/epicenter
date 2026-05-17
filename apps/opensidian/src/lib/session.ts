@@ -65,9 +65,3 @@ export const requireOpensidian = session.require;
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());
 }
-
-export async function forgetOpensidianDevice(): Promise<void> {
-	const opensidian = requireOpensidian();
-	await opensidian.wipe();
-	window.location.reload();
-}

@@ -1,6 +1,6 @@
 ---
 name: method-shorthand-jsdoc
-description: Move helper functions into return objects using method shorthand for proper JSDoc preservation. Use when factory functions have internal helpers that should expose documentation to consumers, or when hovering over returned methods shows no JSDoc.
+description: Method shorthand in return objects for JSDoc preservation. Use when factory functions have internal helpers that should expose docs, or hovering over returned methods shows no JSDoc.
 metadata:
   author: epicenter
   version: '1.0'

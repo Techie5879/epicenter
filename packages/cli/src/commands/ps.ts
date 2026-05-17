@@ -11,16 +11,12 @@
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Process lifecycle".
  */
 
-import { existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
 import {
-	type DaemonMetadata,
 	enumerateDaemons,
 	pingDaemon,
 	socketPathFor,
 	sweepDaemonRuntimeFiles,
 } from '@epicenter/workspace/node';
-import { CONFIG_FILENAME } from '../load-config.js';
 import { cmd } from '../util/cmd.js';
 
 const PING_TIMEOUT_MS = 250;
@@ -41,22 +37,8 @@ type PsRow = {
 	dir: string;
 	pid: number;
 	uptime: string;
-	configChanged: boolean | '?';
+	discoveredAt: string;
 };
-
-/**
- * `'?'` when the config file is missing (e.g. project dir was renamed),
- * `true` when its mtime differs from the captured value, `false` otherwise.
- */
-function detectConfigChange(meta: DaemonMetadata): boolean | '?' {
-	const configPath = join(meta.dir, CONFIG_FILENAME);
-	if (!existsSync(configPath)) return '?';
-	try {
-		return statSync(configPath).mtimeMs !== meta.configMtime;
-	} catch {
-		return '?';
-	}
-}
 
 function humanUptime(startedAt: string): string {
 	const ms = Date.now() - new Date(startedAt).getTime();
@@ -95,7 +77,7 @@ export const psCommand = cmd({
 				dir: meta.dir,
 				pid: meta.pid,
 				uptime: humanUptime(meta.startedAt),
-				configChanged: detectConfigChange(meta),
+				discoveredAt: meta.discoveredAt,
 			});
 		}
 

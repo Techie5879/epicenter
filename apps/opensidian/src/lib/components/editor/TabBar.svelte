@@ -5,7 +5,7 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
 	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
-	import { forgetOpensidianDevice, requireOpensidian } from '$lib/session';
+	import { requireOpensidian } from '$lib/session';
 	import { auth } from '$platform/auth';
 
 	const opensidian = requireOpensidian();
@@ -59,7 +59,7 @@
 			{auth}
 			collaboration={opensidian.collaboration}
 			syncNoun="notes"
-			onForgetDevice={forgetOpensidianDevice}
+			onForgetDevice={() => opensidian.wipe()}
 		/>
 	</div>
 </div>

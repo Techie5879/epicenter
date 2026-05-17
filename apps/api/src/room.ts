@@ -8,8 +8,8 @@
  *
  * ## Module structure
  *
- * - {@link Room}: the Durable Object class wiring persistence + connections together
- * - {@link PresenceWriteForbidden}: thrown by `sync()` RPC when an HTTP
+ * {@link Room}: the Durable Object class wiring persistence and connections together.
+ * {@link PresenceWriteForbidden}: thrown by `sync()` RPC when an HTTP
  *   update tries to mutate the reserved presence array
  */
 
@@ -32,7 +32,6 @@ import {
 	type RoomContext,
 	registerConnection,
 	SyncHandlerError,
-	teardownConnection,
 	updateTouchesPresence,
 } from './sync-handlers';
 
@@ -82,11 +81,11 @@ export class PresenceWriteForbidden extends Error {
  *
  * The Hono Worker in `app.ts` calls into this DO via two mechanisms:
  *
- * - **RPC** (`stub.sync()`, `stub.getDoc()`): for HTTP sync and bootstrap.
+ * **RPC** (`stub.sync()`, `stub.getDoc()`): for HTTP sync and bootstrap.
  *   Direct method calls avoid Request/Response serialization overhead
  *   for binary payloads. The Worker handles HTTP concerns (status codes,
  *   content-type headers); the DO handles only Yjs logic.
- * - **fetch** (`stub.fetch(request)`): for WebSocket upgrades only, since
+ * **fetch** (`stub.fetch(request)`): for WebSocket upgrades only, since
  *   the 101 Switching Protocols handshake requires HTTP request/response
  *   semantics. After upgrade, all sync traffic flows through the Hibernation
  *   API callbacks (`webSocketMessage`, `webSocketClose`, `webSocketError`).
@@ -375,8 +374,8 @@ export class Room extends DurableObject {
 	 * raw message to a `Uint8Array`, then delegates to `applyMessage` from
 	 * `sync-handlers.ts` for protocol decoding. Routes the result:
 	 *
-	 * - `reply`: Send data back to the sender only.
-	 * - `broadcast`: Fan out to all other connections.
+	 * `reply`: Send data back to the sender only.
+	 * `broadcast`: Fan out to all other connections.
 	 *
 	 * A `PresenceWriteForbidden` error closes the socket with code `4400`
 	 * and reason `'presence-write-forbidden'`: only the server writes
@@ -441,10 +440,11 @@ export class Room extends DurableObject {
 	 * Clean up a closed WebSocket connection.
 	 *
 	 * Deletes the server-stamped presence row for this socket (if its
-	 * attachment is still readable), unregisters Yjs doc update handlers via
-	 * `teardownConnection`, removes the connection from the states map, and
-	 * attempts to close the underlying socket (no-op if already closed by
-	 * the remote end).
+	 * attachment is still readable), unregisters Yjs doc update handlers,
+	 * removes the connection from the states map, and attempts to close the
+	 * underlying socket (no-op if already closed by the remote end).
+	 * Presence deletion stays here because it needs the room's `presence`
+	 * store and the `SERVER_ORIGIN` transaction tag.
 	 *
 	 * When the last connection leaves, schedules a deferred compaction alarm.
 	 */
@@ -465,7 +465,7 @@ export class Room extends DurableObject {
 			}, SERVER_ORIGIN);
 		}
 
-		teardownConnection({ connection });
+		connection.unregister();
 		this.connections.delete(ws);
 
 		try {

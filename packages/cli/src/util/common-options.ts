@@ -10,7 +10,7 @@ import { resolve } from 'node:path';
 import { findEpicenterDir } from '@epicenter/workspace/node';
 import type { Options } from 'yargs';
 
-export function resolveProjectDir(start: string): string {
+function resolveProjectDir(start: string): string {
 	try {
 		return findEpicenterDir(start);
 	} catch {

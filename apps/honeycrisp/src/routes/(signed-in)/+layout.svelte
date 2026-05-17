@@ -3,7 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
-	import { session } from '$lib/session';
+	import { requireHoneycrisp, session } from '$lib/session';
 	import { auth } from '$platform/auth';
 
 	let { children } = $props();
@@ -26,6 +26,7 @@
 {#if session.current}
 	<WorkspaceGate
 		pending={session.current.idb.whenLoaded}
+		onForgetDevice={() => requireHoneycrisp().wipe()}
 		onSignOut={() => auth.signOut()}
 	>
 		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>

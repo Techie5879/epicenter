@@ -60,36 +60,36 @@ export function createPresenceSurface(
 	presence: YKeyValueLww<PresenceEntry>,
 	selfConnId: string,
 ) {
-	/**
-	 * All peers, self excluded, sorted by `connId` ascending. Deterministic
-	 * ordering lets multiple callers agree on "first match" without sharing
-	 * state, e.g. `peers.list().find((p) => p.replicaId === id)` picks the
-	 * same connection in every replica that runs the same query.
-	 */
-	function list(): PresenceEntry[] {
-		const out: PresenceEntry[] = [];
-		for (const [, entry] of presence.entries()) {
-			if (entry.val.connId === selfConnId) continue;
-			out.push(entry.val);
-		}
-		out.sort((a, b) =>
-			a.connId < b.connId ? -1 : a.connId > b.connId ? 1 : 0,
-		);
-		return out;
-	}
+	return {
+		/**
+		 * All peers, self excluded, sorted by `connId` ascending. Deterministic
+		 * ordering lets multiple callers agree on "first match" without sharing
+		 * state, e.g. `peers.list().find((p) => p.replicaId === id)` picks the
+		 * same connection in every replica that runs the same query.
+		 */
+		list(): PresenceEntry[] {
+			const out: PresenceEntry[] = [];
+			for (const [, entry] of presence.entries()) {
+				if (entry.val.connId === selfConnId) continue;
+				out.push(entry.val);
+			}
+			out.sort((a, b) =>
+				a.connId < b.connId ? -1 : a.connId > b.connId ? 1 : 0,
+			);
+			return out;
+		},
 
-	/**
-	 * Register a change listener. Returns an unobserve cleanup. The callback
-	 * receives no arguments: presence consumers typically re-derive their
-	 * view from `list()` rather than diff individual rows.
-	 */
-	function observe(cb: () => void): () => void {
-		const handler = () => cb();
-		presence.observe(handler);
-		return () => presence.unobserve(handler);
-	}
-
-	return { list, observe };
+		/**
+		 * Register a change listener. Returns an unobserve cleanup. The callback
+		 * receives no arguments: presence consumers typically re-derive their
+		 * view from `list()` rather than diff individual rows.
+		 */
+		observe(cb: () => void): () => void {
+			const handler = () => cb();
+			presence.observe(handler);
+			return () => presence.unobserve(handler);
+		},
+	};
 }
 
 /** The public surface returned by {@link createPresenceSurface}. */

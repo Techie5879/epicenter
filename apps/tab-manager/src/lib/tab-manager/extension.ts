@@ -38,8 +38,7 @@ export function openTabManagerBrowser({
 	const kv = encryption.attachKv({});
 	const batch = (fn: () => void) => ydoc.transact(fn);
 
-	const idb = owner.attachIndexedDb(ydoc);
-	owner.attachBroadcastChannel(ydoc);
+	const idb = owner.attachLocal(ydoc);
 
 	const actions = createTabManagerActions({
 		tables,

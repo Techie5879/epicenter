@@ -2,7 +2,7 @@
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { Button } from '@epicenter/ui/button';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
-	import { session } from '$lib/session';
+	import { requireFuji, session } from '$lib/session';
 	import { auth } from '$platform/auth';
 	import FujiAppShell from './components/FujiAppShell.svelte';
 
@@ -15,6 +15,7 @@
 {#if session.current}
 	<WorkspaceGate
 		pending={session.current.idb.whenLoaded}
+		onForgetDevice={() => requireFuji().wipe()}
 		onSignOut={() => auth.signOut()}
 	>
 		<FujiAppShell>{@render children?.()}</FujiAppShell>

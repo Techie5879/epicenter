@@ -1,6 +1,6 @@
 ---
 name: define-errors
-description: How to define and use defineErrors from wellcrafted. Use when creating new error types, updating error definitions, or reviewing error patterns. Covers variant factories, extractErrorMessage for cause, InferErrors/InferError for types, and call site patterns.
+description: defineErrors from wellcrafted: variant factories, extractErrorMessage, InferErrors/InferError, call site patterns. Use when creating error types or reviewing error patterns.
 metadata:
   author: epicenter
   version: '3.0'

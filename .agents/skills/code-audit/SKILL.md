@@ -1,6 +1,6 @@
 ---
 name: code-audit
-description: "Recurring smell categories in this codebase, with grep patterns to find them. Use when doing periodic code review, scoping a cleanup pass, or hunting for the kind of subtle smells that accumulate session-over-session: duck-typing leaks, untyped boundaries, ceremony tails, library logging discipline, union-churn signals."
+description: "Smell categories with grep patterns: duck-typing leaks, untyped boundaries, ceremony tails, union-churn. Use for periodic code review or cleanup pass."
 metadata:
   author: epicenter
   version: '1.0'

@@ -77,15 +77,6 @@ function createSkillsState() {
 		},
 
 		/**
-		 * Look up a skill by ID.
-		 *
-		 * @returns The skill row, or `undefined` if it doesn't exist.
-		 */
-		get(id: string) {
-			return skillsMap.get(id);
-		},
-
-		/**
 		 * Create a new skill and select it.
 		 *
 		 * Inserts a row with a placeholder description and auto-selects

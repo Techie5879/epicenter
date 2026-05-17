@@ -1,6 +1,6 @@
 ---
 name: workspace-app-layout
-description: How each app under apps/* lays out its workspace package, pure environment factories, daemon/script bindings, and app singleton. Use when creating workspace-backed apps, adding daemon or script consumers, or deciding where browser-only, Bun-only, or platform-specific imports belong.
+description: apps/* layout: workspace package, environment factories, daemon/script bindings, app singleton. Use for workspace-backed apps and platform-specific imports.
 metadata:
   author: epicenter
   version: '4.0'
@@ -19,7 +19,7 @@ apps/<app>/src/lib/
 `- session.svelte.ts                singleton: createSession + HMR + getSignedInSession()
 apps/<app>/src/routes/(signed-in)/<app>/
 |- index.ts                         iso doc factory: open<App>Doc({ encryptionKeys })
-|- browser.ts                       browser factory: open<App>({ userId, replicaId, openWebSocket, encryptionKeys })
+|- browser.ts                       browser factory: open<App>({ userId, peer, bearerToken, encryptionKeys })
 |- daemon.ts                        long-lived daemon factory (cli-side)
 |- script.ts                        one-shot script factory (cli-side)
 `- integration.test.ts
@@ -60,10 +60,10 @@ state, network) live only in the singleton (`session.svelte.ts` for shape A,
 | File | Shape | Job | Imports | Returns |
 | --- | --- | --- | --- | --- |
 | `index.ts` or `core.ts` | A + B | Isomorphic doc factory | Workspace core, schemas, pure action factories | `ydoc`, tables, kv, encryption, actions, batch, dispose |
-| `browser.ts` | A + B | Browser factory | Iso factory plus IndexedDB, BroadcastChannel, collaboration, browser caches | Doc bundle plus browser resources |
+| `browser.ts` | A + B | Browser factory | Iso factory plus IndexedDB, BroadcastChannel, sync, browser caches | Doc bundle plus browser resources |
 | `extension.ts` / `tauri.ts` | B | Env binding for non-web runtimes | Iso factory plus chrome.storage / Tauri APIs | Doc bundle plus runtime resources |
-| `daemon.ts` | A + B | Long-lived daemon factory | Iso factory plus `attachYjsLog`, `openCollaboration`, materializers | Doc bundle plus writer persistence and collaboration |
-| `script.ts` | A + B | One-shot script factory | Iso factory plus `attachYjsLogReader`, `openCollaboration` | Doc bundle plus readonly warm hydrate and collaboration |
+| `daemon.ts` | A + B | Long-lived daemon factory | Iso factory plus `attachYjsLog`, `attachSync`, materializers | Doc bundle plus writer persistence and sync |
+| `script.ts` | A + B | One-shot script factory | Iso factory plus `attachYjsLogReader`, `attachSync` | Doc bundle plus readonly warm hydrate and sync |
 | `auth.ts` | A | Auth client construction | `createCookieAuth` (or `createBearerAuth`) | `auth` |
 | `session.svelte.ts` | A | App singleton + lifecycle | `createSession` from `@epicenter/svelte`, env factory, auth | `session`, `InferSignedIn`, module-level `getSignedInSession()` |
 | `client.ts` | B | App singleton + auth wait | One env factory plus auth/session lifecycle | `auth` plus a running app singleton; module-level `await session.whenReady` |
@@ -122,37 +122,40 @@ Rules:
 
 ## Browser Factory
 
-Browser factories hydrate local IndexedDB first and then open collaboration
-with the current remote-action API.
+Browser factories hydrate local IndexedDB first and then attach sync with the
+current public remote-action API.
 
 ```ts
 export function openFuji({
 	userId,
-	replicaId,
-	openWebSocket,
+	peer,
+	bearerToken,
 	encryptionKeys,
 }: {
 	userId: string;
-	replicaId: string;
-	openWebSocket?: OpenWebSocket;
+	peer: PeerIdentity;
+	bearerToken?: () => string | null;
 	encryptionKeys: () => EncryptionKeys;
 }) {
 	const doc = openFujiDoc({ encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
-	const collaboration = openCollaboration(doc.ydoc, {
-		url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb.whenLoaded,
-		openWebSocket,
-		replicaId,
-		actions: doc.actions,
+	const awareness = attachAwareness(doc.ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
 	});
-	return { ...doc, idb, collaboration };
+	const sync = attachSync(doc, {
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+		waitFor: idb,
+		bearerToken,
+		awareness,
+	});
+	return { ...doc, idb, awareness, sync };
 }
 ```
 
 Do not restore `sync.peer()` or `describePeer()`. Remote calls use
-`collaboration.dispatch()`; peer lookup uses `collaboration.peers`.
+`createRemoteActions`; manifest fetches use `describeRemoteActions`.
 
 ## Daemon Factory
 
@@ -160,16 +163,16 @@ Daemon factories own the writer side of local persistence.
 
 ```ts
 export function openFuji({
-	openWebSocket,
+	bearerToken,
 	encryptionKeys,
-	replicaId,
+	device,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(projectDir),
 	apiUrl = EPICENTER_API_URL,
 }: {
-	openWebSocket?: OpenWebSocket;
+	bearerToken?: () => string | null;
 	encryptionKeys: () => EncryptionKeys;
-	replicaId: string;
+	device: DeviceDescriptor;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
@@ -178,13 +181,11 @@ export function openFuji({
 	const persistence = attachYjsLog(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
-	const collaboration = openCollaboration(doc.ydoc, {
-		url: websocketUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		openWebSocket,
-		replicaId,
-		actions: doc.actions,
+	const sync = attachSync(doc, {
+		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+		bearerToken,
 	});
-	return { ...doc, persistence, collaboration };
+	return { ...doc, persistence, sync };
 }
 ```
 
@@ -199,21 +200,18 @@ factories as `epicenter serve` consumers.
 
 ## Script Factory
 
-Script factories read the daemon's local Yjs log and write through
-collaboration.
+Script factories read the daemon's local Yjs log and write through sync.
 
 ```ts
 export function openFuji({
-	openWebSocket,
+	bearerToken,
 	encryptionKeys,
-	replicaId,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 	apiUrl = EPICENTER_API_URL,
 }: {
-	openWebSocket?: OpenWebSocket;
+	bearerToken?: () => string | null;
 	encryptionKeys: () => EncryptionKeys;
-	replicaId: string;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
@@ -222,13 +220,11 @@ export function openFuji({
 	const persistence = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
-	const collaboration = openCollaboration(doc.ydoc, {
-		url: websocketUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		openWebSocket,
-		replicaId,
-		actions: doc.actions,
+	const sync = attachSync(doc, {
+		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+		bearerToken,
 	});
-	return { ...doc, persistence, collaboration };
+	return { ...doc, persistence, sync };
 }
 ```
 

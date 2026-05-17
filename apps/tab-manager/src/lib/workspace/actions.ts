@@ -10,6 +10,7 @@ import {
 	defineActions,
 	defineMutation,
 	defineQuery,
+	type Tables,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 import {
@@ -22,8 +23,8 @@ import {
 	type DeviceId,
 	generateBookmarkId,
 	generateSavedTabId,
+	type tabManagerTables,
 } from './definition';
-import type { Tables } from './tables';
 
 export const TabError = defineErrors({
 	BrowserApiFailed: ({
@@ -68,7 +69,7 @@ export function createTabManagerActions({
 	batch,
 	deviceId,
 }: {
-	tables: Tables;
+	tables: Tables<typeof tabManagerTables>;
 	batch: (fn: () => void) => void;
 	deviceId: Promise<DeviceId>;
 }) {

@@ -1,6 +1,6 @@
 ---
 name: documentation
-description: In-code documentation, folder READMEs, and code comments. Use when the user says "document this", "add JSDoc", "write a README", "explain this code", or when writing README.md files, JSDoc comments, or code organization docs.
+description: In-code documentation, folder READMEs, code comments. Use when: "document this", "add JSDoc", "write a README", "explain this code", or writing README.md/JSDoc.
 metadata:
   author: epicenter
   version: '1.0'

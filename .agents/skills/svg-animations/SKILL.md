@@ -1,6 +1,6 @@
 ---
 name: svg-animations
-description: Create beautiful, performant SVG animations and illustrations. Use this skill when the user asks to create SVG graphics, icons, illustrations, animated logos, path animations, morphing shapes, loading spinners, or any animated SVG content. Covers SMIL animations, CSS-driven SVG animation, path drawing effects, shape morphing, motion paths, gradients, masks, and filters.
+description: SVG animations: SMIL, CSS, path drawing, shape morphing, motion paths, gradients, masks, filters. Use for SVG graphics, icons, animated logos, spinners.
 ---
 
 This skill guides creation of handcrafted SVG animations — from simple animated icons to complex multi-stage path animations. SVGs are a markup language for images; every element is a DOM node you can style, animate, and script.

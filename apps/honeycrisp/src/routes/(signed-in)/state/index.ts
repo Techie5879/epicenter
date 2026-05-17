@@ -1,4 +1,4 @@
-import type { HoneycrispBrowser } from '../honeycrisp/browser';
+import type { HoneycrispBrowser } from '../../../browser';
 import { createFolders } from './folders.svelte';
 import { createNotes } from './notes.svelte';
 import { createView } from './view.svelte';

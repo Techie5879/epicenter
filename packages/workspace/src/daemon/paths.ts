@@ -45,8 +45,8 @@ export function runtimeDir(): string {
  * Truncated to 16 hex chars (64 bits) so the resulting socket path stays
  * comfortably under the 104-char Unix-socket limit on macOS. Symlinks are
  * resolved via `realpathSync` so two equivalent paths always hash the same.
- * The dir must exist; every production caller hashes a project directory that
- * `loadDaemonConfig` has already accepted, so this contract is safe to enforce.
+ * The dir must exist; every production caller hashes a resolved project
+ * directory that daemon discovery or project lookup has already accepted.
  */
 export function dirHash(dir: string): string {
 	return createHash('sha256')

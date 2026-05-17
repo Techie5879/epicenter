@@ -1,6 +1,6 @@
 ---
 name: typebox
-description: TypeBox and TypeMap patterns for runtime schema validation and JSON Schema generation. Use when the user mentions TypeBox, TypeMap, Standard Schema, or when working with runtime type validation, JSON Schema, or schema-based validation.
+description: TypeBox and TypeMap patterns for runtime schema validation and JSON Schema generation. Use when mentioning TypeBox, TypeMap, Standard Schema, or schema-based validation.
 metadata:
   author: epicenter
   version: '1.0'

@@ -15,12 +15,12 @@ import {
 	makeEpicenterLink,
 } from '@epicenter/workspace/links';
 import { parseMarkdownFile } from '@epicenter/workspace/markdown';
-import type { opensidian } from './epicenter.config';
+import type { OpensidianPlaygroundRuntime } from './workspaces/opensidian/daemon';
 
 const MARKDOWN_DIR = join(import.meta.dir, 'data');
 
 export async function pushFromMarkdown(ctx: {
-	tables: (typeof opensidian)['tables'];
+	tables: OpensidianPlaygroundRuntime['tables'];
 	writeContent(fileId: FileRow['id'], text: string): Promise<void>;
 	filesDir?: string;
 }): Promise<{ imported: number; skipped: number; errors: string[] }> {

@@ -1,8 +1,8 @@
 /**
  * Sync Handler Integration Tests
  *
- * Exercises the slimmed `applyMessage` / `registerConnection` /
- * `teardownConnection` surface that survived the RPC-on-Yjs-state collapse.
+ * Exercises the slimmed `applyMessage` / `registerConnection` surface that
+ * survived the RPC-on-Yjs-state collapse.
  * Only SYNC frames produce traffic; AUTH is a reserved sentinel; client
  * writes to the reserved `PRESENCE_KEY` array are rejected at the boundary.
  */
@@ -26,7 +26,6 @@ import {
 	type RoomContext,
 	registerConnection,
 	SyncHandlerError,
-	teardownConnection,
 	updateTouchesPresence,
 } from './sync-handlers';
 
@@ -132,10 +131,31 @@ describe('registerConnection', () => {
 
 		expect(ws.sent.length).toBe(2);
 	});
+
+	test('unregister stops forwarding doc updates', () => {
+		const room = makeRoom();
+		const ws = new MockWebSocket();
+		const connection = registerConnection({
+			doc: room.doc,
+			ws: ws as unknown as WebSocket,
+		});
+
+		room.doc.transact(() => {
+			room.doc.getMap('data').set('pre', 1);
+		}, 'other-origin');
+		expect(ws.sent.length).toBe(1);
+
+		connection.unregister();
+
+		room.doc.transact(() => {
+			room.doc.getMap('data').set('post', 2);
+		}, 'other-origin');
+		expect(ws.sent.length).toBe(1);
+	});
 });
 
 // ============================================================================
-// applyMessage - SYNC
+// applyMessage: SYNC
 // ============================================================================
 
 describe('applyMessage SYNC STEP1', () => {
@@ -310,35 +330,6 @@ describe('updateTouchesPresence', () => {
 		doc.getMap('data').set('key', 'value');
 		const update = Y.encodeStateAsUpdateV2(doc);
 		expect(updateTouchesPresence(update)).toBe(false);
-	});
-});
-
-// ============================================================================
-// teardownConnection
-// ============================================================================
-
-describe('teardownConnection', () => {
-	test('stops forwarding doc updates after unregister', () => {
-		const room = makeRoom();
-		const ws = new MockWebSocket();
-		const connection = registerConnection({
-			doc: room.doc,
-			ws: ws as unknown as WebSocket,
-		});
-
-		// Pre-teardown: an update should be forwarded.
-		room.doc.transact(() => {
-			room.doc.getMap('data').set('pre', 1);
-		}, 'other-origin');
-		expect(ws.sent.length).toBe(1);
-
-		teardownConnection({ connection });
-
-		// Post-teardown: no further forwarding.
-		room.doc.transact(() => {
-			room.doc.getMap('data').set('post', 2);
-		}, 'other-origin');
-		expect(ws.sent.length).toBe(1);
 	});
 });
 

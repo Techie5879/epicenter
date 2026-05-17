@@ -155,7 +155,7 @@ describe('bindOrRecover', () => {
 			dir: workDir,
 			startedAt: new Date(0).toISOString(),
 			cliVersion: '0.0.0-test',
-			configMtime: 0,
+			discoveredAt: new Date(0).toISOString(),
 		});
 
 		const result = await bindOrRecover({
@@ -182,7 +182,7 @@ describe('bindOrRecover', () => {
 			dir: workDir,
 			startedAt: new Date(0).toISOString(),
 			cliVersion: '0.0.0-test',
-			configMtime: 0,
+			discoveredAt: new Date(0).toISOString(),
 		});
 
 		const result = await bindOrRecover({

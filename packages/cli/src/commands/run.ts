@@ -13,7 +13,7 @@
  *
  * Exit codes:
  *   1: usage error (unknown route, unknown action, invalid input for
- *      `--peer`), or no daemon / config (`MissingConfig`, `Required`,
+ *      `--peer`), or no daemon / workspace folder (`MissingConfig`, `Required`,
  *      transport error)
  *   2: runtime error (local action returned Err, or remote RPC failed)
  *   3: peer not found (`--peer <target>` did not resolve within `--wait`)
@@ -36,7 +36,6 @@ import {
 	formatOptions,
 	type OutputFormat,
 	output,
-	outputError,
 } from '../util/format-output.js';
 import { parseJsonInput, readStdin } from '../util/parse-input.js';
 
@@ -84,7 +83,7 @@ export const runCommand = cmd({
 
 		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
-			outputError(daemonErr.message);
+			console.error(daemonErr.message);
 			process.exitCode = 1;
 			return;
 		}
@@ -103,17 +102,17 @@ function renderRunResult(
 	}
 	switch (result.error.name) {
 		case 'UsageError': {
-			outputError(result.error.message);
+			console.error(result.error.message);
 			if (result.error.suggestions && result.error.suggestions.length > 0) {
-				outputError('');
-				outputError('Exposed actions at this key:');
-				for (const line of result.error.suggestions) outputError(line);
+				console.error('');
+				console.error('Exposed actions at this key:');
+				for (const line of result.error.suggestions) console.error(line);
 			}
 			process.exitCode = 1;
 			return;
 		}
 		case 'RuntimeError':
-			outputError(result.error.message);
+			console.error(result.error.message);
 			process.exitCode = 2;
 			return;
 		case 'PeerNotFound':
@@ -134,7 +133,7 @@ function renderRunResult(
 		case 'Timeout':
 		case 'Unreachable':
 		case 'HandlerCrashed':
-			outputError(`error: ${result.error.message}`);
+			console.error(`error: ${result.error.message}`);
 			process.exitCode = 1;
 			return;
 	}
@@ -151,10 +150,10 @@ function emitPeerNotFound(
 	waitMs: number,
 	syncStatus: RunSyncStatus,
 ): void {
-	outputError(`error: no peer matches peer id "${target}" after ${waitMs}ms`);
-	outputError(`  reason: ${describePeerMissReason(syncStatus)}`);
+	console.error(`error: no peer matches peer id "${target}" after ${waitMs}ms`);
+	console.error(`  reason: ${describePeerMissReason(syncStatus)}`);
 	if (syncStatus.phase === 'connected') {
-		outputError('run `epicenter peers` to see connected peers');
+		console.error('run `epicenter peers` to see connected peers');
 	}
 }
 
@@ -172,19 +171,19 @@ export function emitRemoteCallError(
 		case 'Cancelled': {
 			const reason = cause.reason;
 			if (reason instanceof DOMException && reason.name === 'TimeoutError') {
-				outputError(`error: timeout calling ${peerTarget}`);
+				console.error(`error: timeout calling ${peerTarget}`);
 			} else {
-				outputError(
+				console.error(
 					`error: dispatch to ${peerTarget} was cancelled: ${extractErrorMessage(reason)}`,
 				);
 			}
 			return;
 		}
 		case 'ActionNotFound':
-			outputError(`error: ActionNotFound "${cause.action}" on ${peerTarget}`);
+			console.error(`error: ActionNotFound "${cause.action}" on ${peerTarget}`);
 			return;
 		case 'ActionFailed':
-			outputError(
+			console.error(
 				`error: "${cause.action}" failed on ${peerTarget}: ${extractErrorMessage(cause.cause)}`,
 			);
 			return;

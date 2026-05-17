@@ -34,7 +34,7 @@ type PersistedMapOptions<
 	syncTabs?: boolean;
 	/**
 	 * Called when a value read from storage fails to parse or validate.
-	 * Fire-and-forget — `defaultValue` is used as the fallback regardless.
+	 * Fire-and-forget. `defaultValue` is used as the fallback regardless.
 	 */
 	onError?: (key: string, error: PersistedError) => void;
 	/**
@@ -49,24 +49,7 @@ type PersistedMapOptions<
  */
 export type PersistedMap<
 	TDefs extends Record<string, PersistedMapDefinition<StandardSchemaV1>>,
-> = {
-	get<TKey extends string & keyof TDefs>(
-		key: TKey,
-	): InferDefinitionValue<TDefs[TKey]>;
-	set<TKey extends string & keyof TDefs>(
-		key: TKey,
-		value: InferDefinitionValue<TDefs[TKey]>,
-	): void;
-	getDefault<TKey extends string & keyof TDefs>(
-		key: TKey,
-	): InferDefinitionValue<TDefs[TKey]>;
-	reset(): void;
-	update(
-		partial: Partial<{
-			[TKey in string & keyof TDefs]: InferDefinitionValue<TDefs[TKey]>;
-		}>,
-	): void;
-};
+> = ReturnType<typeof createPersistedMap<TDefs>>;
 
 // ── defineEntry ──────────────────────────────────────────────────────────────
 
@@ -95,13 +78,13 @@ export function defineEntry<TSchema extends StandardSchemaV1>(
 /**
  * Create a reactive persisted map backed by Web Storage with per-key schema validation.
  *
- * Uses `SvelteMap` for fine-grained per-key reactivity — reading one key
+ * Uses `SvelteMap` for fine-grained per-key reactivity. Reading one key
  * doesn't trigger re-renders for components reading another key.
  * Shares a single `storage` event listener and a single `focus` listener
  * for all keys, regardless of how many definitions exist.
  *
  * **Singleton assumption:** Event listeners (`storage`, `focus`) are never removed.
- * Call once at module scope—not inside components or reactive blocks.
+ * Call once at module scope, not inside components or reactive blocks.
  *
  * @example
  * ```ts
@@ -147,7 +130,7 @@ export function createPersistedMap<
 		// All `as InferDefinitionValue<...>` casts in this function exist because TS cannot prove
 		// that `definitions[key].defaultValue` or `result.value` matches the return type. The
 		// inference chain crosses a `NoInfer` wrapper and conditional type extraction that TS
-		// can't resolve when `key` is a union (`string & keyof TDefs`). Structurally correct—we
+		// can't resolve when `key` is a union (`string & keyof TDefs`). Structurally correct: we
 		// control the data flow from schema → validate → return.
 		// `!`: key is constrained to `keyof TDefs`, so the lookup always exists.
 		const def = definitions[key]!;
@@ -208,7 +191,7 @@ export function createPersistedMap<
 	}
 
 	// Cross-tab sync: ONE listener for all keys, filtered by prefix.
-	// Listeners are never removed—this function assumes singleton/module-scope usage.
+	// Listeners are never removed: this function assumes singleton/module-scope usage.
 	if (syncTabs) {
 		window.addEventListener('storage', (e) => {
 			if (!e.key?.startsWith(prefix)) return;
@@ -248,7 +231,7 @@ export function createPersistedMap<
 				[TKey in string & keyof TDefs]: InferDefinitionValue<TDefs[TKey]>;
 			}>,
 		) {
-			// Object.entries() returns [string, unknown][], losing the key–value type relationship.
+			// Object.entries() returns [string, unknown][], losing the key/value type relationship.
 			for (const [key, value] of Object.entries(updates)) {
 				this.set(
 					key as string & keyof TDefs,

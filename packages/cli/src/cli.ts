@@ -10,8 +10,9 @@ const REMOVED_DAEMON_COMMANDS = new Set(['up', 'down', 'ps', 'logs']);
 /**
  * Create the Epicenter CLI instance.
  *
- * Introspect and invoke `defineQuery` / `defineMutation` actions in
- * `epicenter.config.ts`, either locally or on a peer that's online right now.
+ * Introspect and invoke `defineQuery` / `defineMutation` actions exposed by
+ * folder-routed daemon extensions, either locally or on a peer that's online
+ * right now.
  *
  *   - `auth`:  manage the local machine auth session (pre-workspace)
  *   - `daemon`: operate daemon lifecycle commands

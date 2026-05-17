@@ -1,9 +1,9 @@
 import type { Options } from 'yargs';
 
-export const outputFormats = ['json', 'jsonl'] as const;
+const outputFormats = ['json', 'jsonl'] as const;
 export type OutputFormat = (typeof outputFormats)[number];
 
-export type FormatOptions = {
+type FormatOptions = {
 	/** Override format (default: json, auto-pretty for TTY) */
 	format?: OutputFormat;
 };
@@ -29,13 +29,6 @@ export function output(value: unknown, { format }: FormatOptions = {}): void {
 	} else {
 		console.log(formatJson(value, { format }));
 	}
-}
-
-/**
- * Output an error message to stderr
- */
-export function outputError(message: string): void {
-	console.error(message);
 }
 
 /** Yargs options for the shared format flag. */

@@ -43,7 +43,7 @@ import { billingRoutes } from './billing-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
-import { TRUSTED_ORIGINS } from './trusted-origins';
+import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
 export { Room } from './room';
@@ -163,11 +163,12 @@ const factory = createFactory<Env>({
 
 		// Layer 2: Auth: pure, reads db from context.
 		// Wrangler dev uses the custom domain from routes config as the Host header,
-		// producing http://api.epicenter.so (no TLS). Detect this and use localhost.
+		// producing http://api.epicenter.so (no TLS). Detect this via the named
+		// WRANGLER_DEV_API_ORIGIN constant and use localhost.
 		app.use('*', async (c, next) => {
 			const origin = new URL(c.req.url).origin;
 			const baseURL =
-				origin === `http://${new URL(APPS.API.urls[0]).host}`
+				origin === WRANGLER_DEV_API_ORIGIN
 					? `http://localhost:${APPS.API.port}`
 					: origin;
 			await ensureTrustedOAuthClients(c.var.db);

@@ -1,6 +1,6 @@
 ---
 name: typescript
-description: TypeScript code style, type co-location, naming conventions (including acronym casing), and arktype patterns. Use when the user mentions TypeScript types, naming conventions, or when writing .ts files, defining types, naming variables/functions, or organizing test files.
+description: TypeScript style, type co-location, naming conventions (acronym casing), arktype patterns. Use when mentioning TS types, naming, or writing .ts files, defining types, organizing tests.
 metadata:
   author: epicenter
   version: '2.0'

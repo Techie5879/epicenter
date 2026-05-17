@@ -50,6 +50,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	rmSync,
+	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -68,6 +69,28 @@ function makeEnv(): EnvOverrides {
 	const xdgRoot = mkdtempSync(join(tmpdir(), 'ep-e2e-xdg-'));
 	const home = mkdtempSync(join(tmpdir(), 'ep-e2e-home-'));
 	mkdirSync(join(xdgRoot, 'epicenter'), { recursive: true });
+	mkdirSync(join(home, '.epicenter'), { recursive: true });
+	writeFileSync(
+		join(home, '.epicenter', 'auth.json'),
+		JSON.stringify({
+			grant: {
+				accessToken: 'access-stored',
+				refreshToken: 'refresh-stored',
+				accessTokenExpiresAt: Date.now() + 3_600_000,
+			},
+			localIdentity: {
+				subject: 'user-1',
+				keyring: [
+					{
+						version: 1,
+						subjectKeyBase64:
+							'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+					},
+				],
+			},
+		}),
+		{ mode: 0o600 },
+	);
 	return {
 		xdgRoot,
 		home,

@@ -1,6 +1,6 @@
 ---
 name: arktype
-description: Arktype patterns for runtime validation, schema/type naming, discriminated unions with .merge() and .or(), spread key syntax, and type composition. Use when the user mentions arktype, type(), shared schema/type names, or when building union types, combining schemas with variants, or defining command/event schemas.
+description: Arktype: runtime validation, discriminated unions with .merge()/.or(), spread keys. Use when mentioning arktype, type(), union types, command/event schemas.
 metadata:
   author: epicenter
   version: '1.0'

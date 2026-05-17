@@ -1,3 +1,12 @@
+/**
+ * Folder name under each project root that holds folder-routed daemon
+ * extension subfolders (`<projectDir>/workspaces/<route>/daemon.ts`). The
+ * daemon discovery scanner, the daemon client's `getDaemon`, and the
+ * project-root detector all key off this name; keeping the constant in
+ * exactly one place is the whole point.
+ */
+export const WORKSPACES_DIRNAME = 'workspaces';
+
 const ROUTE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 // Route names become object keys in `/list` action manifests.
 const RESERVED_OBJECT_ROUTE_KEYS = new Set([

@@ -1,6 +1,6 @@
 ---
 name: svelte
-description: Svelte 5 patterns including runes ($state, $derived, $props), TanStack Query, SvelteMap reactive state, shadcn-svelte components, and component composition. Use when the user mentions .svelte files, Svelte components, or when using TanStack Query, fromTable/fromKv, or shadcn-svelte UI.
+description: Svelte 5 patterns: runes ($state, $derived, $props), TanStack Query, SvelteMap, shadcn-svelte, fromTable/fromKv. Use when mentioning .svelte files or Svelte components.
 metadata:
   author: epicenter
   version: '2.1'

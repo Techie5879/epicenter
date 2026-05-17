@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -23,9 +23,9 @@ afterEach(() => {
 });
 
 describe('findEpicenterDir', () => {
-	test('finds via epicenter.config.ts marker', () => {
-		writeFileSync(join(root, 'epicenter.config.ts'), '');
-		// Cast on the expected side: after the marker is written, `root`
+	test('finds via workspaces directory marker', () => {
+		mkdirSync(join(root, 'workspaces'));
+		// Cast on the expected side: after the marker is created, `root`
 		// genuinely is a project root, so claiming the brand is honest.
 		expect(findEpicenterDir(root)).toBe(root as ProjectDir);
 	});
@@ -36,7 +36,7 @@ describe('findEpicenterDir', () => {
 	});
 
 	test('walks up from a nested subdirectory', () => {
-		writeFileSync(join(root, 'epicenter.config.ts'), '');
+		mkdirSync(join(root, 'workspaces'));
 		const nested = join(root, 'a', 'b', 'c');
 		mkdirSync(nested, { recursive: true });
 		expect(findEpicenterDir(nested)).toBe(root as ProjectDir);
@@ -44,7 +44,7 @@ describe('findEpicenterDir', () => {
 
 	test('throws if no marker is found', () => {
 		expect(() => findEpicenterDir(root)).toThrow(
-			/no epicenter\.config\.ts or \.epicenter\/ directory/,
+			/no workspaces\/ or \.epicenter\/ directory/,
 		);
 	});
 });

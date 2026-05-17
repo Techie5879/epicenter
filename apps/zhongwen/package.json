@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./blocks/workspace.ts"
+		".": "./workspace.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

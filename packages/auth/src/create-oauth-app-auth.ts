@@ -1,18 +1,17 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import { subjectKeyringsEqual } from '@epicenter/encryption';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient, AuthState } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
-import { createAuthStateStore } from './auth-state-store.js';
 import {
 	ApiMeResponse,
 	type OAuthTokenGrant,
 	type PersistedAuth as PersistedAuthType,
 } from './auth-types.js';
 import { parseOAuthTokenGrant } from './oauth-token-response.js';
-import { headersFromRequest } from './request-headers.js';
 
 /**
  * Storage adapter for the single `PersistedAuth` cell (grant + localIdentity).
@@ -50,6 +49,13 @@ export type CreateOAuthAppAuthConfig = {
 
 const REFRESH_SKEW_MS = 60_000;
 
+const AuthStateChangeError = defineErrors({
+	SubscriberThrew: ({ cause }: { cause: unknown }) => ({
+		message: `Auth state subscriber threw: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+
 export function createOAuthAppAuth({
 	baseURL = EPICENTER_API_URL,
 	clientId,
@@ -66,7 +72,8 @@ export function createOAuthAppAuth({
 	let refreshPromise: Promise<boolean> | null = null;
 	let identityPromise: Promise<Result<ApiMeResponse, AuthError>> | null = null;
 
-	const stateStore = createAuthStateStore(deriveState(), { log });
+	let state = deriveState();
+	const stateChangeListeners = new Set<(state: AuthState) => void>();
 
 	function deriveState(): AuthState {
 		if (persisted === null) return { status: 'signed-out' };
@@ -83,12 +90,38 @@ export function createOAuthAppAuth({
 	}
 
 	function publishState() {
-		stateStore.setState(deriveState());
+		const next = deriveState();
+		if (state.status === next.status) {
+			if (state.status === 'signed-out') return;
+			if (
+				next.status !== 'signed-out' &&
+				state.localIdentity.subject === next.localIdentity.subject &&
+				subjectKeyringsEqual(
+					state.localIdentity.keyring,
+					next.localIdentity.keyring,
+				)
+			) {
+				return;
+			}
+		}
+		state = next;
+		for (const listener of stateChangeListeners) {
+			try {
+				listener(next);
+			} catch (error) {
+				log.error(AuthStateChangeError.SubscriberThrew({ cause: error }));
+			}
+		}
 	}
 
 	async function refreshGrant(force: boolean): Promise<boolean> {
 		if (persisted === null || networkAuthPaused) return false;
-		if (!force && !shouldRefreshGrant(persisted.grant, now())) return true;
+		if (
+			!force &&
+			persisted.grant.accessTokenExpiresAt > now() + REFRESH_SKEW_MS
+		) {
+			return true;
+		}
 		if (refreshPromise) return refreshPromise;
 
 		const startedFrom = persisted;
@@ -237,7 +270,12 @@ export function createOAuthAppAuth({
 		} else {
 			headers.delete('Authorization');
 		}
-		const normalizedInput = normalizeFetchInput(input, baseURL);
+		let normalizedInput: AuthFetchInput = input;
+		if (input instanceof Request) {
+			normalizedInput = input.clone() as Request;
+		} else if (typeof input === 'string' && input.startsWith('/')) {
+			normalizedInput = new URL(input, baseURL).toString();
+		}
 		return fetchImpl(normalizedInput, {
 			...init,
 			headers,
@@ -267,9 +305,14 @@ export function createOAuthAppAuth({
 
 	return {
 		get state() {
-			return stateStore.state;
+			return state;
 		},
-		onStateChange: stateStore.onStateChange,
+		onStateChange(fn) {
+			stateChangeListeners.add(fn);
+			return () => {
+				stateChangeListeners.delete(fn);
+			};
+		},
 		async startSignIn() {
 			try {
 				const result = await launcher.startSignIn();
@@ -324,24 +367,69 @@ export function createOAuthAppAuth({
 			return new WebSocketImpl(String(url), authProtocols);
 		},
 		[Symbol.dispose]() {
-			stateStore.clearListeners();
+			stateChangeListeners.clear();
 		},
 	};
 }
 
-function shouldRefreshGrant(grant: OAuthTokenGrant, now: number) {
-	return grant.accessTokenExpiresAt <= now + REFRESH_SKEW_MS;
+function headersFromRequest(input: Request | string | URL, init?: RequestInit) {
+	const headers = new Headers(
+		input instanceof Request ? input.headers : undefined,
+	);
+	copyHeaders(headers, init?.headers);
+	return headers;
 }
 
-function normalizeFetchInput(
-	input: AuthFetchInput,
-	baseURL: string,
-): AuthFetchInput {
-	if (input instanceof Request) return input.clone() as Request;
-	if (typeof input === 'string' && input.startsWith('/')) {
-		return new URL(input, baseURL).toString();
+function copyHeaders(target: Headers, source: RequestInit['headers']) {
+	if (!source) return;
+
+	if (source instanceof Headers) {
+		source.forEach((value, key) => target.set(key, value));
+		return;
 	}
-	return input;
+
+	const value = source as unknown;
+
+	if (Array.isArray(value)) {
+		for (const [key, headerValue] of value) {
+			setHeaderValue(target, key, headerValue);
+		}
+		return;
+	}
+
+	if (isHeaderIterable(value)) {
+		for (const [key, headerValue] of value) {
+			setHeaderValue(target, key, headerValue);
+		}
+		return;
+	}
+
+	for (const [key, headerValue] of Object.entries(
+		value as Record<string, string | readonly string[] | undefined>,
+	)) {
+		setHeaderValue(target, key, headerValue);
+	}
+}
+
+function setHeaderValue(
+	target: Headers,
+	key: string,
+	value: string | readonly string[] | undefined,
+) {
+	if (value === undefined) return;
+	if (typeof value === 'string') {
+		target.set(key, value);
+		return;
+	}
+	for (const item of value) target.append(key, item);
+}
+
+function isHeaderIterable(
+	value: unknown,
+): value is Iterable<readonly [string, string]> {
+	return (
+		value !== null && typeof value === 'object' && Symbol.iterator in value
+	);
 }
 
 async function refreshOAuthTokenWithEndpoint({

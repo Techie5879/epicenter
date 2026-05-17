@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./blocks/workspace.ts"
+		".": "./workspace.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",
@@ -13,7 +13,7 @@
 		"build": "NODE_ENV=production vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"test": "bun test ./src/routes/'(signed-in)'/fuji",
+		"test": "bun test",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"devDependencies": {

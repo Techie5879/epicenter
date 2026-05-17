@@ -1,6 +1,6 @@
 ---
 name: testing
-description: Test file conventions for setup functions, factory patterns, test organization, type testing, and naming. Use when the user says "write tests", "add a test", "fix this test", or when writing or modifying *.test.ts files, creating test setup functions, or reviewing test structure.
+description: Test file conventions: setup functions, factories, organization, type testing, naming. Use when: "write tests", "add a test", "fix this test", or modifying *.test.ts files.
 metadata:
   author: epicenter
   version: '2.0'

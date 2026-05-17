@@ -1,6 +1,6 @@
 ---
 name: cohesive-clean-breaks
-description: "Use this skill when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Also use when a smell keeps growing, a defensive mechanism compensates for a missing invariant, or a small feature promise forces a large implementation graph. Run the asymmetric wins pass: refuse 10-20 percent of functionality when it collapses 80-90 percent of complexity. Move invariants to the owning boundary, reject hybrid APIs, delete stale names, and leave one obvious product sentence."
+description: "Asymmetric-wins pass: refuse 10-20% of functionality to collapse 80-90% of complexity. Use for architecture decisions, API redesigns, breaking changes, migrations."
 ---
 
 # Cohesive Clean Breaks

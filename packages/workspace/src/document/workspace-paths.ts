@@ -33,7 +33,7 @@ function epicenterProjectDir(projectDir: string): string {
  * implementation detail; you never query this file with `sqlite3`. For
  * the queryable surface, see `sqlitePath`.
  *
- * `projectDir` is the project root (where `epicenter.config.ts` lives);
+ * `projectDir` is the project root (where `workspaces/` lives);
  * `workspaceId` is `ws.ydoc.guid`.
  *
  * @example

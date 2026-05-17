@@ -37,8 +37,8 @@ export type DaemonMetadata = {
 	/** ISO 8601 timestamp. */
 	startedAt: string;
 	cliVersion: string;
-	/** `epicenter.config.ts` mtime in ms at daemon start. */
-	configMtime: number;
+	/** ISO 8601 timestamp for the extension discovery pass. */
+	discoveredAt: string;
 };
 
 /** Read metadata for `dir`, or `null` if the sidecar is absent or unreadable. */

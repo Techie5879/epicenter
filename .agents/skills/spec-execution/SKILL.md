@@ -1,6 +1,6 @@
 ---
 name: spec-execution
-description: Execute a specification document through planned waves of parallel and sequential changes, keeping each wave working, updating the spec as reality changes, and committing either by wave or by logical grouping. Use when the user says "execute this spec", "implement this plan", "run the spec", or when given a specs/*.md file to implement.
+description: Execute a spec through planned waves of parallel/sequential changes. Use for "execute this spec", "implement this plan", "run the spec", a specs/*.md file.
 metadata:
   author: epicenter
   version: '1.0'

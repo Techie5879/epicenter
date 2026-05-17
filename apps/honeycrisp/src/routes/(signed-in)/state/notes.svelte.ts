@@ -23,7 +23,7 @@
 import type { FolderId, NoteId } from '@epicenter/honeycrisp';
 import { fromTable } from '@epicenter/svelte';
 import { DateTimeString, generateId } from '@epicenter/workspace';
-import type { HoneycrispBrowser } from '../honeycrisp/browser';
+import type { HoneycrispBrowser } from '../../../browser';
 import type { createFolders } from './folders.svelte';
 import { searchParams } from './search-params.svelte';
 

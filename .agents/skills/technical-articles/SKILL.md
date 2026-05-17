@@ -1,6 +1,6 @@
 ---
 name: technical-articles
-description: Write technical articles and blog posts with depth and honest trade-offs. Use when the user says "write a blog post", "draft an article", "write about this", or when creating articles in docs/articles/ explaining patterns, techniques, or lessons learned.
+description: Technical articles and blog posts with honest trade-offs. Use when: "write a blog post", "draft an article", "write about this", creating articles in docs/articles/.
 metadata:
   author: epicenter
   version: '1.0'

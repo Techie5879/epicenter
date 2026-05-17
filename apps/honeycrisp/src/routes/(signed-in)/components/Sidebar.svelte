@@ -10,11 +10,6 @@
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
 	const honeycrisp = requireHoneycrisp();
-
-	async function forgetHoneycrispDevice(): Promise<void> {
-		await honeycrisp.wipe();
-		window.location.reload();
-	}
 </script>
 
 <Sidebar.Root>
@@ -26,7 +21,7 @@
 					{auth}
 					collaboration={honeycrisp.collaboration}
 					syncNoun="notes"
-					onForgetDevice={forgetHoneycrispDevice}
+					onForgetDevice={() => honeycrisp.wipe()}
 				/>
 				<Sidebar.Trigger />
 			</div>

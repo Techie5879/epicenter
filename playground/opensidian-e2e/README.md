@@ -14,7 +14,7 @@ epicenter auth login
 bun epicenter auth login http://localhost:8787
 ```
 
-This stores your credentials at `~/.epicenter/auth/credentials.json`.
+This stores your credentials at `~/.epicenter/auth.json`.
 
 ## Usage
 
@@ -22,28 +22,24 @@ Run the workspace:
 
 ```bash
 # Production (syncs from api.epicenter.so)
-bun run playground/opensidian-e2e/epicenter.config.ts
+epicenter daemon up -C playground/opensidian-e2e
 
 # Local dev (syncs from localhost:8787)
 EPICENTER_SERVER=http://localhost:8787 \
-  bun run playground/opensidian-e2e/epicenter.config.ts
+  epicenter daemon up -C playground/opensidian-e2e
 ```
 
-Importing the config opens the handle, which kicks off persistence, sync, markdown materialization, and the SQLite mirror. The process stays alive as long as the sync socket is open; hit Ctrl+C to stop. Leave it running alongside the Opensidian app if you want real-time materialization.
+Daemon startup imports `workspaces/opensidian/daemon.ts`, which kicks off persistence, sync, markdown materialization, and the SQLite mirror. The process stays alive until Ctrl+C or `epicenter daemon down`.
 
 Invoke a defined action:
 
 ```bash
 # Scan a directory for markdown files and inject IDs into frontmatter.
-epicenter run opensidian.markdown.prepare '{"directory":"./some/dir"}' \
+epicenter run opensidian.markdown_prepare '{"directory":"./some/dir"}' \
   -C playground/opensidian-e2e
 ```
 
-Inspect workspace data from a script by importing the app workspace package or
-a script-specific helper. Do not import `epicenter.config.ts` as a reusable
-client module; the config is the daemon host manifest. If this playground needs
-table-level scripts, first extract the composition into a `script.ts` helper and
-let both the script and config call that helper.
+Inspect workspace data from a script by importing the app workspace package or a script-specific helper. Do not import `workspaces/opensidian/daemon.ts` as a reusable client module; it is the long-lived daemon entrypoint. If this playground needs table-level scripts, first extract the composition into a `script.ts` helper and let both the script and daemon call that helper.
 
 ```ts
 // scripts/list-files.ts
@@ -69,7 +65,9 @@ bun run scripts/list-files.ts
 
 ```
 playground/opensidian-e2e/
-├── epicenter.config.ts              # Workspace config
+├── workspaces/
+│   └── opensidian/
+│       └── daemon.ts                # Folder-routed daemon extension
 ├── .epicenter/
 │   └── persistence/
 │       └── opensidian.db            # SQLite persistence (files table)
@@ -99,7 +97,7 @@ The actual document content from the editor.
 
 ## How it works
 
-The config chains four extensions onto the Opensidian workspace:
+The daemon chains four extensions onto the Opensidian workspace:
 
 1. **Persistence**: workspace-only SQLite. Persists the files table so it survives daemon restarts without re-downloading everything from the server.
 

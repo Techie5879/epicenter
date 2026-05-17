@@ -1,6 +1,6 @@
 ---
 name: services-layer
-description: Service layer patterns with defineErrors, namespace exports, and Result types. Use when the user says "create a service", "service layer", or when creating new services, defining domain-specific errors, or understanding the service architecture.
+description: Service layer patterns: defineErrors, namespace exports, Result types. Use when: "create a service", "service layer", creating services, defining domain-specific errors.
 metadata:
   author: epicenter
   version: '2.0'

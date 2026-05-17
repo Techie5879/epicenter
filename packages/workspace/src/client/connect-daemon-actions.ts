@@ -35,17 +35,17 @@ import { findEpicenterDir } from './find-epicenter-dir.js';
 /**
  * Connect to a workspace's public actions hosted by a running daemon.
  *
- * `route` is the hosted daemon route from `epicenter.config.ts`. The daemon
- * prefixes each snake_case action key with `${route}.`, then dispatches the
- * remaining key against that workspace.
+ * `route` is the folder name under `workspaces/`. The daemon prefixes each
+ * snake_case action key with `${route}.`, then dispatches the remaining key
+ * against that workspace.
  *
  * `projectDir` defaults to walking up from `process.cwd()` for an
- * `epicenter.config.ts` file or a `.epicenter/` directory.
+ * `workspaces/` directory or a `.epicenter/` directory.
  *
- * Throws `DaemonError.MissingConfig` when the project has no config, or
- * `DaemonError.Required` when no daemon is listening on the resolved socket.
- * Start one with `epicenter daemon up`. There is no auto-spawn: explicit
- * lifecycle is the contract.
+ * Throws `DaemonError.MissingConfig` when the project has no `workspaces/`
+ * directory, or `DaemonError.Required` when no daemon is listening on the
+ * resolved socket. Start one with `epicenter daemon up`. There is no
+ * auto-spawn: explicit lifecycle is the contract.
  */
 export async function connectDaemonActions<TActions extends ActionRegistry>({
 	route,
@@ -54,9 +54,8 @@ export async function connectDaemonActions<TActions extends ActionRegistry>({
 	route: string;
 	/**
 	 * Project root. Defaults to the nearest ancestor of `process.cwd()`
-	 * containing `epicenter.config.ts` or `.epicenter/`. Throws via
-	 * `findEpicenterDir` if no such ancestor exists; pass an explicit
-	 * `projectDir` to opt out.
+	 * containing `workspaces/` or `.epicenter/`. Throws via `findEpicenterDir`
+	 * if no such ancestor exists; pass an explicit `projectDir` to opt out.
 	 */
 	projectDir?: ProjectDir;
 }): Promise<DaemonActions<TActions>> {

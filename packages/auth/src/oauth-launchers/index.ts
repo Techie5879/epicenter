@@ -98,7 +98,7 @@ export function createBrowserOAuthLauncher({
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {
-			const callbackResult = await client.handleCallback(currentUrl());
+			const callbackResult = await client.handleCallback(window.location.href);
 			if (callbackResult.data) return callbackResult;
 			if (callbackResult.error?.name !== 'MissingCallbackTransaction') {
 				return callbackResult;
@@ -311,8 +311,4 @@ function parseTokenResult(
 		}
 		return OAuthClientError.TokenExchangeFailed({ cause });
 	}
-}
-
-function currentUrl() {
-	return window.location.href;
 }

@@ -1,6 +1,6 @@
 ---
 name: monorepo
-description: Monorepo script commands, package boilerplate, and conventions for this codebase. Use when the user says "how do I run", "bun run", "build this", "run tests", "typecheck", "create a new package", or when running builds, tests, formatting, linting, type checking, or scaffolding new packages.
+description: Monorepo scripts, package boilerplate, conventions. Use when: "how do I run", "bun run", "build this", "run tests", "typecheck", "create a new package", linting, scaffolding packages.
 metadata:
   author: epicenter
   version: '2.0'

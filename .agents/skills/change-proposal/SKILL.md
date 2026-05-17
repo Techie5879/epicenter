@@ -1,6 +1,6 @@
 ---
 name: change-proposal
-description: Present proposed code changes visually before implementing. Use when the user says "show me options", "compare approaches", "what should we do", or when multiple approaches exist, changes span multiple files, or architecture decisions need before/after comparison.
+description: Present proposed code changes visually before implementing. Use when: "show me options", "compare approaches", "what should we do", or when changes need before/after comparison.
 ---
 
 # Change Proposal

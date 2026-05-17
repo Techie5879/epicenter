@@ -1,6 +1,6 @@
 import type { OAuthTokenGrant } from './auth-types.js';
 
-export type OAuthTokenResponseIssue =
+type OAuthTokenResponseIssue =
 	| 'missing_access_token'
 	| 'missing_refresh_token'
 	| 'missing_expires_in'
@@ -27,7 +27,17 @@ export function parseOAuthTokenGrant(
 		fallbackRefreshToken?: string;
 	},
 ): OAuthTokenGrant {
-	const record = readRecord(payload);
+	if (
+		payload === null ||
+		typeof payload !== 'object' ||
+		Array.isArray(payload)
+	) {
+		throw new OAuthTokenResponseError(
+			'invalid_response',
+			'Expected OAuth token response to be an object.',
+		);
+	}
+	const record = payload as Record<string, unknown>;
 	const tokenType = record['token_type'];
 	if (typeof tokenType !== 'string' || tokenType.toLowerCase() !== 'bearer') {
 		throw new OAuthTokenResponseError(
@@ -75,14 +85,4 @@ export function parseOAuthTokenGrant(
 		refreshToken: refreshToken ?? fallbackRefreshToken!,
 		accessTokenExpiresAt: now() + expiresIn * 1000,
 	};
-}
-
-function readRecord(value: unknown): Record<string, unknown> {
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		throw new OAuthTokenResponseError(
-			'invalid_response',
-			'Expected OAuth token response to be an object.',
-		);
-	}
-	return value as Record<string, unknown>;
 }

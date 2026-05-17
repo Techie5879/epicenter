@@ -1,24 +1,24 @@
 /**
  * `epicenter daemon up`: start the long-lived foreground daemon for one project.
  *
- * Loads every daemon route declared by `epicenter.config.ts` and exposes a
- * Unix-socket IPC channel for that project. `peers`, `list`, and `run`
- * dispatch to this daemon over IPC; without `daemon up` they error with a hint
- * pointing back here.
+ * Discovers every daemon extension under `<projectDir>/workspaces/*`, opens
+ * each one in parallel, and exposes a Unix-socket IPC channel for that
+ * project. `peers`, `list`, and `run` dispatch to this daemon over IPC;
+ * without `daemon up` they error with a hint pointing back here.
  *
- * One daemon per project; that daemon serves every route in the config.
- * Resource isolation between routes is expressed by splitting them into
- * different config dirs, not by a flag.
+ * One daemon per project; that daemon serves every folder-routed extension.
+ * Resource isolation between extensions is expressed by splitting them into
+ * different projects, not by a flag.
  *
  * Foreground by design; backgrounding is the user's job (see Invariant 5
  * in the design spec).
  *
- * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Process lifecycle",
- * § "Logging", § "Invariants".
+ * See `specs/20260516T180000-folder-routed-daemon-extensions.md`.
  */
 
-import { realpathSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { createMachineAuthClient } from '@epicenter/auth/node';
 import {
 	claimDaemonLease,
 	type DaemonMetadata,
@@ -26,27 +26,16 @@ import {
 	StartupError,
 	type StartupError as StartupErrorType,
 	startDaemonServer,
+	startDaemonWorkspaceApps,
+	type WorkspaceAppError,
 	unlinkMetadata,
 	writeMetadata,
 } from '@epicenter/workspace/node';
 import { Ok, type Result, trySync } from 'wellcrafted/result';
-/**
- * Read once at module load. Bun resolves the JSON import relative to this
- * file at build/run time, so no runtime fs work happens per `daemon up`
- * invocation.
- */
 import packageJson from '../../package.json' with { type: 'json' };
-import {
-	CONFIG_FILENAME,
-	DaemonConfigError,
-	disposeStartedDaemonRoutes,
-	type LoadedDaemonConfig,
-	loadDaemonConfig,
-	type StartedDaemonRoute,
-	startDaemonRoutes,
-} from '../load-config.js';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
+import type { StartedDaemonRoute } from '@epicenter/workspace/daemon';
 
 const CLI_VERSION = packageJson.version;
 
@@ -72,74 +61,50 @@ export type UpOptions = {
  * startup, exercise the IPC handler in-process, and call `teardown()` to
  * release resources without spawning a child.
  *
- * - `runtimes` is every hosted daemon runtime the config declares; the daemon
- *   serves them all and routes IPC requests by route.
+ * - `runtimes` is every daemon extension runtime the project declares; the
+ *   daemon serves them all and routes IPC requests by route.
  * - `metadata` is what was written to disk.
- * - `teardown()` closes the server, asyncDisposes the config, and unlinks
- *   metadata + socket. Idempotent.
+ * - `teardown()` closes the server, asyncDisposes the runtimes, releases the
+ *   lease, and unlinks metadata + socket. Idempotent.
  */
 export type UpHandle = {
 	runtimes: StartedDaemonRoute[];
-	config: LoadedDaemonConfig;
 	metadata: DaemonMetadata;
 	socketPath: string;
 	teardown: () => Promise<void>;
 };
 
 /**
- * Surface for swapping out config/server construction in tests. The yargs
- * handler passes the production defaults; `up.test.ts` passes fakes.
- */
-export type RunUpDeps = {
-	loadDaemonConfig?: (
-		dir: string,
-	) => Promise<Result<LoadedDaemonConfig, DaemonConfigError>>;
-	startDaemonRoutes?: (
-		config: LoadedDaemonConfig,
-	) => Promise<Result<StartedDaemonRoute[], DaemonConfigError>>;
-};
-
-/**
- * Daemon body. Idempotently sets up disk state, loads every hosted daemon runtime,
- * binds the IPC socket, and returns a handle. The
- * yargs `handler` calls this, prints the operator-facing banner, installs
- * SIGINT/SIGTERM, and parks the process; tests call it directly and
- * assert on the returned handle.
+ * Daemon body. Idempotently sets up disk state, opens every discovered daemon
+ * extension, binds the IPC socket, and returns a handle. The yargs `handler`
+ * calls this, prints the operator-facing banner, installs SIGINT/SIGTERM,
+ * and parks the process; tests call it directly and assert on the returned
+ * handle.
  *
- * A SQLite daemon lease claims ownership before user config import. After that,
- * host factories perform local setup and `startDaemonServer` binds the route
- * app to the socket.
+ * A SQLite daemon lease claims ownership before any extension import. After
+ * that, `startDaemonWorkspaceApps` opens every folder-routed extension and
+ * `startDaemonServer` binds the socket.
  */
 export async function runUp(
 	options: UpOptions,
-	deps: RunUpDeps = {},
-): Promise<Result<UpHandle, DaemonConfigError | StartupErrorType>> {
-	const requestedProjectDir = resolve(options.projectDir);
-	const configPath = join(requestedProjectDir, CONFIG_FILENAME);
-
-	if (!(await Bun.file(configPath).exists())) {
-		return DaemonConfigError.MissingFile({ configPath });
-	}
-
-	const projectDir = realpathSync(requestedProjectDir);
+): Promise<Result<UpHandle, WorkspaceAppError | StartupErrorType>> {
+	const projectDir = realpathSync(resolve(options.projectDir));
 	const leaseResult = claimDaemonLease(projectDir);
 	if (leaseResult.error !== null) return leaseResult;
 	const lease = leaseResult.data;
 
-	const loader = deps.loadDaemonConfig ?? loadDaemonConfig;
-	const starter = deps.startDaemonRoutes ?? startDaemonRoutes;
-	const configMtime = readConfigMtime(projectDir);
 	const metadata: DaemonMetadata = {
 		pid: process.pid,
 		dir: projectDir,
 		startedAt: new Date().toISOString(),
 		cliVersion: options.cliVersion ?? CLI_VERSION,
-		configMtime,
+		discoveredAt: new Date().toISOString(),
 	};
 
 	let metadataWritten = false;
 	let runtimes: StartedDaemonRoute[] = [];
 	let daemonServer: DaemonServer | null = null;
+	let auth: Awaited<ReturnType<typeof createMachineAuthClient>> | null = null;
 	let teardownPromise: Promise<void> | null = null;
 	const teardown = (): Promise<void> => {
 		if (teardownPromise) return teardownPromise;
@@ -151,6 +116,7 @@ export async function runUp(
 				closeError = cause;
 			}
 			await safeDisposeStartedRoutes(runtimes);
+			if (auth) auth[Symbol.dispose]();
 			if (metadataWritten) unlinkMetadata(projectDir);
 			lease.release();
 			if (closeError) throw closeError;
@@ -158,19 +124,17 @@ export async function runUp(
 		return teardownPromise;
 	};
 
-	const loadResult = await loader(projectDir);
-	if (loadResult.error) {
-		await teardown();
-		return loadResult;
-	}
-	const config = loadResult.data;
-
-	const startResult = await starter(config);
+	auth = await createMachineAuthClient();
+	const startResult = await startDaemonWorkspaceApps({
+		projectDir,
+		auth,
+	});
 	if (startResult.error) {
 		await teardown();
 		return startResult;
 	}
-	runtimes = startResult.data;
+	runtimes = startResult.data.routes;
+
 	const serverResult = await startDaemonServer({
 		lease,
 		routes: runtimes,
@@ -194,7 +158,6 @@ export async function runUp(
 
 	return Ok({
 		runtimes,
-		config,
 		metadata,
 		socketPath: lease.socketPath,
 		teardown,
@@ -204,13 +167,13 @@ export async function runUp(
 /**
  * Yargs `daemon up` command. Thin glue: parses argv, calls {@link runUp}, prints
  * the operator-facing banner + initial peers snapshot, wires SIGINT/SIGTERM,
- * subscribes to presence/status across every loaded workspace, and parks
+ * subscribes to presence/status across every loaded extension, and parks
  * until a signal triggers teardown.
  */
 export const upCommand = cmd({
 	command: 'up',
 	describe:
-		'Bring this config online as a long-lived peer for every hosted daemon route (foreground).',
+		'Open every daemon extension under <projectDir>/workspaces/ and serve them on the project socket (foreground).',
 	builder: {
 		C: projectOption,
 		quiet: {
@@ -259,23 +222,14 @@ export const upCommand = cmd({
 // Helpers
 // ---------------------------------------------------------------------------
 
-function readConfigMtime(absDir: string): number {
-	const configPath = join(absDir, CONFIG_FILENAME);
-	try {
-		return statSync(configPath).mtimeMs;
-	} catch {
-		return 0;
-	}
-}
-
 async function safeDisposeStartedRoutes(
 	runtimes: readonly StartedDaemonRoute[],
 ): Promise<void> {
-	try {
-		await disposeStartedDaemonRoutes(runtimes);
-	} catch {
-		// Best-effort cleanup; the daemon is exiting anyway.
-	}
+	await Promise.allSettled(
+		runtimes.map((entry) =>
+			Promise.resolve(entry.runtime[Symbol.asyncDispose]()),
+		),
+	);
 }
 
 function printPeersSnapshot(entry: StartedDaemonRoute): void {

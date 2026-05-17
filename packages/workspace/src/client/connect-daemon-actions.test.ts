@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,7 +18,7 @@ let root: string;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), 'connect-daemon-'));
-	writeFileSync(join(root, 'epicenter.config.ts'), '');
+	mkdirSync(join(root, 'workspaces'));
 });
 
 afterEach(() => {
@@ -26,8 +26,8 @@ afterEach(() => {
 });
 
 describe('connectDaemonActions', () => {
-	test('throws DaemonError.MissingConfig when explicit project has no config', async () => {
-		rmSync(join(root, 'epicenter.config.ts'), { force: true });
+	test('throws DaemonError.MissingConfig when explicit project has no workspaces directory', async () => {
+		rmSync(join(root, 'workspaces'), { recursive: true, force: true });
 
 		let caught: unknown;
 		try {

@@ -1,6 +1,6 @@
 ---
 name: sync-construction-async-property-ui-render-gate-pattern
-description: Sync construction with async property pattern for module-exportable clients. Use when the user says "async init", "module-level async", or when creating clients that need async initialization but must be exportable from modules and usable synchronously in UI components.
+description: Sync construction with async property for module-exportable clients. Use when: "async init", "module-level async", or creating clients needing async init but synchronous UI use.
 metadata:
   author: epicenter
   version: '1.0'

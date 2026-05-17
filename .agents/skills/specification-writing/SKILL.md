@@ -1,6 +1,6 @@
 ---
 name: specification-writing
-description: Write technical specifications that give agents enough context to implement features autonomously. Use when the user says "write a spec", "plan this feature", "create a planning doc", or when planning features, documenting architecture decisions, or creating implementation guides.
+description: Write technical specs that let agents implement autonomously. Use for "write a spec", "plan this feature", "create a planning doc".
 metadata:
   author: epicenter
   version: '1.0'

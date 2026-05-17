@@ -85,20 +85,15 @@ export async function bindOrRecover({
 }: BindOrRecoverOptions): Promise<
 	Result<Bun.Server<undefined>, StartupErrorType>
 > {
-	if (!existsSync(socketPath)) {
-		return trySync({
-			try: () => bindUnixSocket({ socketPath, fetch }),
-			catch: (cause) => StartupError.BindFailed({ cause }),
-		});
+	if (existsSync(socketPath)) {
+		if (await isSocketResponsive(socketPath, 250)) {
+			return StartupError.AlreadyRunning({
+				pid: readMetadata(projectDir)?.pid,
+			});
+		}
+		sweepDaemonRuntimeFiles(projectDir);
 	}
 
-	if (await isSocketResponsive(socketPath, 250)) {
-		return StartupError.AlreadyRunning({
-			pid: readMetadata(projectDir)?.pid,
-		});
-	}
-
-	sweepDaemonRuntimeFiles(projectDir);
 	return trySync({
 		try: () => bindUnixSocket({ socketPath, fetch }),
 		catch: (cause) => StartupError.BindFailed({ cause }),

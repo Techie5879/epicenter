@@ -1,15 +1,16 @@
 /**
- * Wave 5 unit-level tests for `epicenter daemon up`.
+ * Unit-level tests for `epicenter daemon up`.
  *
- * These tests run `runUp` in-process with a fake `DaemonRuntime` /
- * `SyncAttachment` so we never spawn a child or call `process.exit`. The
- * cross-process e2e (real CLI binary, real relay) lands in Wave 8.
+ * These tests run `runUp` in-process against tiny folder-routed daemon
+ * fixtures. They never spawn a child or call `process.exit`; each test owns a
+ * temp project, temp runtime root, and temp home.
  *
  * Key behaviors:
- * - happy path writes metadata, binds the socket, and replies to ping
- * - startup failures release the claimed daemon lease
- * - responsive legacy sockets return AlreadyRunning and dispose started routes
- * - held SQLite leases short-circuit before config import or route startup
+ * - happy path discovers workspaces/demo/daemon.ts, writes metadata, binds the
+ *   socket, and replies to ping
+ * - startup failures release the daemon lease
+ * - responsive legacy sockets return AlreadyRunning and dispose opened routes
+ * - held SQLite leases short-circuit before daemon module import
  * - orphan socket files are swept and replaced by a fresh daemon
  */
 
@@ -18,16 +19,12 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type {
-	DaemonRouteDefinition,
-	DaemonRuntime,
-	StartedDaemonRoute,
-} from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
 	metadataPathFor,
@@ -37,10 +34,10 @@ import {
 } from '@epicenter/workspace/node';
 import { Hono } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
-import { DaemonConfigError, type LoadedDaemonConfig } from '../load-config';
 import { runUp } from './up';
 
 let originalXdg: string | undefined;
+let originalHome: string | undefined;
 let runtimeRoot: string;
 let workDir: string;
 let homeRoot: string;
@@ -56,8 +53,6 @@ function expectOk<T>(result: Result<T, unknown>): T {
 	return result.data as T;
 }
 
-let originalHome: string | undefined;
-
 beforeEach(() => {
 	originalXdg = process.env.XDG_RUNTIME_DIR;
 	originalHome = process.env.HOME;
@@ -68,10 +63,30 @@ beforeEach(() => {
 
 	homeRoot = mkdtempSync(join(tmpdir(), 'ep-home-'));
 	process.env.HOME = homeRoot;
+	mkdirSync(join(homeRoot, '.epicenter'), { recursive: true });
+	writeFileSync(
+		join(homeRoot, '.epicenter', 'auth.json'),
+		JSON.stringify({
+			grant: {
+				accessToken: 'access-stored',
+				refreshToken: 'refresh-stored',
+				accessTokenExpiresAt: Date.now() + 3_600_000,
+			},
+			localIdentity: {
+				subject: 'user-1',
+				keyring: [
+					{
+						version: 1,
+						subjectKeyBase64:
+							'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+					},
+				],
+			},
+		}),
+		{ mode: 0o600 },
+	);
 
 	workDir = mkdtempSync(join(tmpdir(), 'ep-dir-'));
-	// Seed an empty config so readConfigMtime succeeds (the file exists path).
-	writeFileSync(join(workDir, 'epicenter.config.ts'), 'export {};\n');
 });
 
 afterEach(() => {
@@ -85,13 +100,33 @@ afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
 });
 
-function makeFakeRuntime(onDispose?: () => void): DaemonRuntime {
-	return {
-		collaboration: {
-			actions: {},
-			whenConnected: new Promise(() => {
-				/* sync connects in the background */
-			}),
+function markerPath(name: string): string {
+	return join(workDir, `${name}.marker`);
+}
+
+function writeDemoDaemon(source: string): string {
+	const dir = join(workDir, 'workspaces', 'demo');
+	mkdirSync(dir, { recursive: true });
+	const path = join(dir, 'daemon.ts');
+	writeFileSync(path, source);
+	return path;
+}
+
+function writeRuntimeDaemon({
+	onImportMarker,
+	onDisposeMarker,
+}: {
+	onImportMarker?: string;
+	onDisposeMarker?: string;
+} = {}) {
+	writeDemoDaemon(`
+		import { writeFileSync } from 'node:fs';
+		${onImportMarker ? `writeFileSync(${JSON.stringify(onImportMarker)}, 'imported');` : ''}
+
+		const actions = {};
+		const collaboration = {
+			actions,
+			whenConnected: new Promise(() => {}),
 			status: { phase: 'connected' },
 			onStatusChange: () => () => {},
 			peers: {
@@ -99,51 +134,41 @@ function makeFakeRuntime(onDispose?: () => void): DaemonRuntime {
 				find: () => undefined,
 				observe: () => () => {},
 			},
-		} as unknown as DaemonRuntime['collaboration'],
-		async [Symbol.asyncDispose]() {
-			onDispose?.();
-		},
-	};
-}
+			dispatch: async () => {
+				throw new Error('fixture does not dispatch');
+			},
+		};
 
-function makeFakeConfig(runtime: DaemonRuntime): LoadedDaemonConfig {
-	const routes: DaemonRouteDefinition[] = [
-		{
-			route: 'default',
-			start: async () => runtime,
-		},
-	];
-	return {
-		projectDir: workDir as LoadedDaemonConfig['projectDir'],
-		configPath: join(workDir, 'epicenter.config.ts'),
-		routes,
-	};
+		export default {
+			async open() {
+				return {
+					collaboration,
+					async [Symbol.asyncDispose]() {
+						${onDisposeMarker ? `writeFileSync(${JSON.stringify(onDisposeMarker)}, 'disposed');` : ''}
+					},
+				};
+			},
+		};
+	`);
 }
 
 describe('runUp: happy path', () => {
 	test('writes metadata, binds socket, replies to ping', async () => {
-		const workspace = makeFakeRuntime();
-		const config = makeFakeConfig(workspace);
+		writeRuntimeDaemon();
 
 		const handle = expectOk(
-			await runUp(
-				{
-					projectDir: workDir,
-					quiet: true,
-				},
-				{
-					loadDaemonConfig: async () => Ok(config),
-				},
-			),
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+			}),
 		);
 		try {
-			// Metadata was written.
 			expect(existsSync(metadataPathFor(workDir))).toBe(true);
 			expect(handle.metadata.pid).toBe(process.pid);
+			expect(handle.metadata.discoveredAt).toEqual(expect.any(String));
 			expect(handle.runtimes).toHaveLength(1);
-			expect(handle.runtimes[0]?.route).toBe('default');
+			expect(handle.runtimes[0]?.route).toBe('demo');
 
-			// Socket is bound; ping it via a fresh connect using the real client.
 			const sockPath = socketPathFor(workDir);
 			expect(existsSync(sockPath)).toBe(true);
 			const ok = await pingDaemon(sockPath, 1000);
@@ -151,71 +176,56 @@ describe('runUp: happy path', () => {
 		} finally {
 			await handle.teardown();
 		}
-		// Cleanup: metadata and socket gone.
-		const sockPath = socketPathFor(workDir);
 		expect(existsSync(metadataPathFor(workDir))).toBe(false);
-		expect(existsSync(sockPath)).toBe(false);
+		expect(existsSync(socketPathFor(workDir))).toBe(false);
 	});
 });
 
 describe('runUp: failure cleanup', () => {
-	test('releases the daemon lease when config loading fails', async () => {
-		const configPath = join(workDir, 'epicenter.config.ts');
+	test('starts with no routes when no workspace daemon entrypoints exist', async () => {
+		mkdirSync(join(workDir, 'workspaces', 'demo'), { recursive: true });
 
-		const { error } = await runUp(
-			{
+		const handle = expectOk(
+			await runUp({
 				projectDir: workDir,
 				quiet: true,
-			},
-			{
-				loadDaemonConfig: async () =>
-					DaemonConfigError.InvalidConfig({ configPath }),
-			},
+			}),
 		);
 
-		expect(error?.name).toBe('InvalidConfig');
-		const lease = expectOk(claimDaemonLease(workDir));
-		lease.release();
+		try {
+			expect(handle.runtimes).toEqual([]);
+		} finally {
+			await handle.teardown();
+		}
 	});
 
-	test('releases the daemon lease when route startup fails', async () => {
-		const config = makeFakeConfig(makeFakeRuntime());
+	test('releases the daemon lease when workspace startup fails', async () => {
+		writeDemoDaemon(`
+			export default {
+				async open() {
+					throw new Error('route failed');
+				},
+			};
+		`);
 
-		const { error } = await runUp(
-			{
-				projectDir: workDir,
-				quiet: true,
-			},
-			{
-				loadDaemonConfig: async () => Ok(config),
-				startDaemonRoutes: async () =>
-					DaemonConfigError.RouteFailed({
-						configPath: config.configPath,
-						route: 'default',
-						cause: new Error('route failed'),
-					}),
-			},
-		);
+		const { error } = await runUp({
+			projectDir: workDir,
+			quiet: true,
+		});
 
-		expect(error?.name).toBe('RouteFailed');
+		expect(error?.name).toBe('WorkspaceOpenFailed');
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
 	});
 
 	test('returns MetadataWriteFailed and tears down when metadata path is blocked', async () => {
-		const workspace = makeFakeRuntime();
-		const config = makeFakeConfig(workspace);
+		writeRuntimeDaemon();
 		mkdirSync(metadataPathFor(workDir));
 
-		const { error } = await runUp(
-			{
-				projectDir: workDir,
-				quiet: true,
-			},
-			{
-				loadDaemonConfig: async () => Ok(config),
-			},
-		);
+		const { error } = await runUp({
+			projectDir: workDir,
+			quiet: true,
+		});
 
 		expect(error?.name).toBe('MetadataWriteFailed');
 		expect(existsSync(socketPathFor(workDir))).toBe(false);
@@ -230,49 +240,27 @@ describe('runUp: already running', () => {
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
 		const server = servePingDaemon(sockPath);
+		const disposeMarker = markerPath('dispose');
+		writeRuntimeDaemon({ onDisposeMarker: disposeMarker });
 
 		writeMetadata(workDir, {
 			pid: process.pid,
 			dir: workDir,
 			startedAt: new Date().toISOString(),
 			cliVersion: '0.0.0',
-			configMtime: 0,
+			discoveredAt: new Date().toISOString(),
 		});
 
-		let loadCalls = 0;
-		let startCalls = 0;
-		let disposeCalls = 0;
 		try {
-			const { error } = await runUp(
-				{
-					projectDir: workDir,
-					quiet: true,
-				},
-				{
-					loadDaemonConfig: async () => {
-						loadCalls++;
-						return Ok(makeFakeConfig(makeFakeRuntime()));
-					},
-					startDaemonRoutes: async () => {
-						startCalls++;
-						return Ok([
-							{
-								route: 'default',
-								runtime: makeFakeRuntime(() => {
-									disposeCalls++;
-								}),
-							},
-						] satisfies StartedDaemonRoute[]);
-					},
-				},
-			);
+			const { error } = await runUp({
+				projectDir: workDir,
+				quiet: true,
+			});
 			expect(error).toMatchObject({
 				name: 'AlreadyRunning',
 				pid: process.pid,
 			});
-			expect(loadCalls).toBe(1);
-			expect(startCalls).toBe(1);
-			expect(disposeCalls).toBe(1);
+			expect(readFileSync(disposeMarker, 'utf8')).toBe('disposed');
 		} finally {
 			await server.stop(true).catch(() => {
 				// best-effort
@@ -280,32 +268,19 @@ describe('runUp: already running', () => {
 		}
 	});
 
-	test('does not import config when the daemon lease is held', async () => {
+	test('does not import workspace daemons when the daemon lease is held', async () => {
 		const lease = expectOk(claimDaemonLease(workDir));
+		const importMarker = markerPath('import');
+		writeRuntimeDaemon({ onImportMarker: importMarker });
 
-		let loadCalls = 0;
-		let startCalls = 0;
 		try {
-			const { error } = await runUp(
-				{
-					projectDir: workDir,
-					quiet: true,
-				},
-				{
-					loadDaemonConfig: async () => {
-						loadCalls++;
-						return Ok(makeFakeConfig(makeFakeRuntime()));
-					},
-					startDaemonRoutes: async () => {
-						startCalls++;
-						return Ok([] satisfies StartedDaemonRoute[]);
-					},
-				},
-			);
+			const { error } = await runUp({
+				projectDir: workDir,
+				quiet: true,
+			});
 
 			expect(error?.name).toBe('AlreadyRunning');
-			expect(loadCalls).toBe(0);
-			expect(startCalls).toBe(0);
+			expect(existsSync(importMarker)).toBe(false);
 		} finally {
 			lease.release();
 		}
@@ -317,33 +292,24 @@ describe('runUp: orphan path', () => {
 		const sockPath = socketPathFor(workDir);
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
-		// Phantom (regular file, not a real socket) + dead-pid metadata.
 		writeFileSync(sockPath, '');
 		writeMetadata(workDir, {
 			pid: 99999999,
 			dir: workDir,
 			startedAt: new Date().toISOString(),
 			cliVersion: '0.0.0',
-			configMtime: 0,
+			discoveredAt: new Date().toISOString(),
 		});
-
-		const workspace = makeFakeRuntime();
-		const config = makeFakeConfig(workspace);
+		writeRuntimeDaemon();
 
 		const handle = expectOk(
-			await runUp(
-				{
-					projectDir: workDir,
-					quiet: true,
-				},
-				{
-					loadDaemonConfig: async () => Ok(config),
-				},
-			),
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+			}),
 		);
 
 		try {
-			// Daemon came up; fresh metadata for *this* pid was written.
 			expect(handle.metadata.pid).toBe(process.pid);
 			expect(existsSync(socketPathFor(workDir))).toBe(true);
 		} finally {

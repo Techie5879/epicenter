@@ -1,8 +1,24 @@
 # Folder Routed Workspace Apps Clean Break
 
 **Date**: 2026-05-15
-**Status**: Draft (design pivot, ready for implementation review)
+**Status**: Superseded by `20260516T130000-hosted-apps-with-optional-daemon-extensions.md`
 **Author**: Braden + AI-assisted
+
+## Supersession Note
+
+This spec captured the source-installed app package path: copy one full app
+folder into `workspaces/<route>/`, build its SPA locally, and let the daemon
+serve the generated files.
+
+The product direction has changed. The default app distribution path is now
+hosted UI over local core. Source-installed apps stay useful for app authors,
+private/internal apps, and local development, but they are no longer the
+primary user path. See
+`specs/20260516T130000-hosted-apps-with-optional-daemon-extensions.md`.
+
+Treat the implementation plan below as historical context, not a backlog. Do
+not implement the local-build or daemon-served SPA tasks as the default product
+path.
 
 ## One Sentence
 
@@ -780,14 +796,14 @@ apps/<app>/blocks/
 
 ### Phase 3: Convert first-party apps into workspace app packages
 
-- [ ] **3.1** Create the minimal Fuji reproduction first. Move `apps/fuji/blocks/workspace.ts` to `apps/fuji/workspace.ts` and add `openFujiWorkspace(owner)` as the public opener.
-- [ ] **3.2** Keep `createFujiYdoc` and `attachFujiWorkspace` as private helpers below the exported opener unless a concrete caller needs the lower-level escape hatch.
-- [ ] **3.3** Refactor `openFujiBrowser` to call `openFujiWorkspace`, then add only browser attachments: IndexedDB, BroadcastChannel, browser collaboration, and wipe.
-- [ ] **3.4** Move `apps/fuji/blocks/daemon-route.ts` to `apps/fuji/daemon.ts`; convert it to a default `defineDaemonWorkspace({ open })` export with no route parameter. It should call `openFujiWorkspace(owner, { clientId: hashClientId(projectDir) })`, then add daemon attachments: Yjs log, collaboration, SQLite, Markdown, and CLI/script actions.
+- [x] **3.1** Create the minimal Fuji reproduction first. Move `apps/fuji/blocks/workspace.ts` to `apps/fuji/workspace.ts` and add `openFujiWorkspace(owner)` as the public opener.
+- [x] **3.2** Keep `createFujiYdoc` and `attachFujiWorkspace` as private helpers below the exported opener unless a concrete caller needs the lower-level escape hatch.
+- [x] **3.3** Refactor `openFujiBrowser` to call `openFujiWorkspace`, then add only browser attachments: IndexedDB, BroadcastChannel, browser collaboration, and wipe. **Deviation:** browser collaboration still gets `actions: createFujiActions(tables)` because Fuji's UI components call `fuji.collaboration.actions.entries_*` for local writes. These are local action handlers, not daemon RPC. Browser code does not import `connectDaemonActions` and does not use `runPath`. Migrating components to call `tables.entries.*` directly is deferred to a follow-up wave so Wave 1 stays scoped to the opener boundary.
+- [x] **3.4** Move `apps/fuji/blocks/daemon-route.ts` to `apps/fuji/daemon.ts`. **Deviation:** kept the existing `DaemonRouteDefinition` shape (`{ route, start({ auth, projectDir }) }`) instead of switching to `defineDaemonWorkspace({ open })` because Phase 1.1 (which adds `defineDaemonWorkspace`) has not landed yet. The composition is right: `daemon.ts` builds a tiny owner adapter, calls `openFujiWorkspace(owner, { clientId: hashClientId(projectDir) })`, then attaches Yjs log, collaboration, SQLite, and Markdown around `workspace.ydoc`.
 - [ ] **3.5** Update Fuji SPA imports to use a local `$workspace` alias instead of importing from `@epicenter/fuji` when source lives inside the app package.
-- [ ] **3.6** Update `apps/fuji/package.json` so the package root export points to `./workspace.ts`, scripts remain Bun/Vite based, and no route metadata is added.
-- [ ] **3.7** Add `apps/fuji/architecture.test.ts` to lock the boundary: `workspace.ts` exports `openFujiWorkspace`, does not export `createFujiYdoc` or `attachFujiWorkspace`, browser code calls `openFujiWorkspace`, browser code does not construct the root Fuji Y.Doc directly, browser code does not call `connectDaemonActions`, and daemon code passes `{ clientId: hashClientId(projectDir) }`.
-- [ ] **3.8** Add behavior tests for `openFujiWorkspace`: it creates a Y.Doc with `FUJI_WORKSPACE_ID`, applies an optional `clientId`, attaches Fuji tables/kv, and exposes browser-safe domain helpers.
+- [x] **3.6** Update `apps/fuji/package.json` so the package root export points to `./workspace.ts`, scripts remain Bun/Vite based, and no route metadata is added.
+- [x] **3.7** Add `apps/fuji/architecture.test.ts` to lock the boundary: `workspace.ts` exports `openFujiWorkspace`, does not export `createFujiYdoc` or `attachFujiWorkspace`, browser code calls `openFujiWorkspace`, browser code does not construct the root Fuji Y.Doc directly, browser code does not call `connectDaemonActions`, and daemon code passes `{ clientId: hashClientId(projectDir) }`.
+- [x] **3.8** Add behavior tests for `openFujiWorkspace`: it creates a Y.Doc with `FUJI_WORKSPACE_ID`, applies an optional `clientId`, attaches Fuji tables/kv, and exposes browser-safe domain helpers.
 - [ ] **3.9** Add a Fuji smoke path that proves the same root workspace opener works in both places: browser can create/update an entry through local workspace state, and CLI can still call a daemon `/run` action.
 - [ ] **3.10** Repeat for `honeycrisp`, `opensidian`, and `zhongwen` after Fuji proves the pattern. `tab-manager` stays separate because it has no daemon workspace today.
 - [ ] **3.11** Update first-party static builds to be relocatable under `/apps/<route>/`. Add a build-and-serve smoke test for at least Fuji.
@@ -837,6 +853,15 @@ describe('Fuji workspace architecture', () => {
 The source-shape test is deliberately narrow. It protects the v1 boundary without pretending to validate all runtime behavior.
 
 ### Phase 4: Rewrite jsrepo packaging
+
+> **Known broken until this phase lands.** Wave 1 deleted `apps/fuji/blocks/`
+> as part of moving the install unit to the app root. `jsrepo.config.ts` still
+> declares `epicenter/fuji/workspace` and `epicenter/fuji/daemon-route` at the
+> old paths, so `bun x jsrepo build` fails with "File not found" for the Fuji
+> entries. This is intentional: Fuji is the template, the per-fragment registry
+> shape is being replaced, and patching the old paths would lock in a layout
+> that 4.1 deletes a few PRs later. Honeycrisp, Opensidian, and Zhongwen
+> entries still build because their `blocks/` folders have not been moved yet.
 
 - [ ] **4.1** Replace `BLOCKS = { app: ['workspace', 'daemon-route'] }` with one registry item per app: `workspaces/fuji`, `workspaces/honeycrisp`, `workspaces/opensidian`, `workspaces/zhongwen`.
 - [ ] **4.2** Copy a curated whole-app allowlist: `package.json`, `daemon.ts`, `workspace.ts`, `src/**`, `static/**`, `svelte.config.js`, `vite.config.ts`, `tsconfig.json`, and app-local config files needed to build.

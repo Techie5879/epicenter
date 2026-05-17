@@ -1,6 +1,6 @@
 ---
 name: query-layer
-description: Query layer patterns for consuming services with TanStack Query, error transformation, and runtime dependency injection. Use when the user mentions createQuery, createMutation, TanStack Query, or when implementing queries/mutations, transforming errors for UI, or adding reactive data management.
+description: Query layer with TanStack Query, error transformation, runtime DI. Use for createQuery, createMutation, queries/mutations, reactive data management.
 metadata:
   author: epicenter
   version: '2.0'

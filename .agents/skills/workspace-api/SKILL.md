@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), createDisposableCache, attach* primitives, openCollaboration, and action composition. Use when the user mentions workspace, defineTable, defineKv, createDisposableCache, attachTables, openCollaboration, attachIndexedDb, attachYjsLog, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
+description: Workspace API: defineTable, defineKv, attach* primitives, openCollaboration, defineQuery/Mutation, connectWorkspace. Use for workspace schemas and attachments.
 metadata:
   author: epicenter
   version: '6.0'
@@ -434,7 +434,7 @@ await workspace.dispose();
 
 Writes propagate through sync to the daemon, which owns the materializer (markdown, SQLite mirror, etc.).
 
-Use `connectWorkspace` for one-off scripts and agent-written automation. Use `epicenter.config.ts` for long-running daemons and materializers that need persistence and custom workspace-specific extensions.
+Use `connectWorkspace` for one-off scripts and agent-written automation. Use a folder-routed `workspaces/<route>/daemon.ts` (`defineDaemonWorkspace({ open })`) for long-running daemons and materializers that need persistence and custom workspace-specific extensions.
 
 
 ## The `_v` Convention

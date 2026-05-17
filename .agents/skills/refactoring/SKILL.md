@@ -1,6 +1,6 @@
 ---
 name: refactoring
-description: "Systematic code audit and refactoring methodology: caller counting, type safety boundaries, inlining single-use extractions, keeping trivial duplications inline over premature extraction, collapsing duplicate branches, and surgical commits. Use when cleaning up code, auditing for code smells, refactoring modules, or reviewing internal function structure."
+description: "Refactoring: caller counting, type safety boundaries, inlining single-use extractions, collapsing duplicate branches. Use when cleaning up code or auditing smells."
 metadata:
   author: epicenter
   version: '1.0'

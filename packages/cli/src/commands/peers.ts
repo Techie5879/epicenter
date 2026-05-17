@@ -19,7 +19,6 @@ import {
 	formatOptions,
 	type OutputFormat,
 	output,
-	outputError,
 } from '../util/format-output.js';
 
 export const peersCommand = cmd({
@@ -32,13 +31,13 @@ export const peersCommand = cmd({
 	handler: async (argv) => {
 		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
-			outputError(daemonErr.message);
+			console.error(daemonErr.message);
 			process.exitCode = 1;
 			return;
 		}
 		const { data: rows, error } = await daemon.peers();
 		if (error) {
-			outputError(`error: ${error.message}`);
+			console.error(`error: ${error.message}`);
 			process.exitCode = 1;
 			return;
 		}

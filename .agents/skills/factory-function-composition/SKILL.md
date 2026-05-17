@@ -1,6 +1,6 @@
 ---
 name: factory-function-composition
-description: Apply factory function patterns to compose clients and services with proper separation of concerns. Use when creating functions that depend on external clients, wrapping resources with domain-specific methods, or refactoring code that mixes client/service/method options together.
+description: Factory function patterns to compose clients and services. Use when wrapping resources with domain methods or refactoring mixed client/service/method options.
 metadata:
   author: epicenter
   version: '1.0'

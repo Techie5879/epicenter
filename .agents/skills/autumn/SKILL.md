@@ -1,6 +1,6 @@
 ---
 name: autumn
-description: Integrate Autumn billing—define features/plans in autumn.config.ts, use autumn-js SDK for credit checks/tracking, manage the atmn CLI for push/pull. Use when working on billing, pricing, credits, plan gating, or metered usage.
+description: Autumn billing: autumn.config.ts, autumn-js SDK for credit checks, atmn CLI. Use when working on billing, pricing, credits, plan gating, metered usage.
 metadata:
   author: epicenter
   version: '1.2'

@@ -55,7 +55,14 @@
 		>;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
-		/** Optional destructive cleanup for this account's local device cache. */
+		/**
+		 * If provided, exposes a Forget this device button. The callback is
+		 * the destructive primitive (typically the workspace bundle's
+		 * `wipe()`). The popover confirms with the user, awaits the
+		 * callback, then reloads the page; reload after wipe is universal
+		 * in this context so the component owns it rather than asking
+		 * every caller to remember.
+		 */
 		onForgetDevice?: () => void | Promise<void>;
 	};
 
@@ -155,6 +162,7 @@
 				forgettingDevice = true;
 				try {
 					await onForgetDevice();
+					window.location.reload();
 				} catch (error) {
 					toast.error('Failed to forget this device', {
 						description: extractErrorMessage(error),

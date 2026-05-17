@@ -51,24 +51,21 @@ export function createLocalOwner({
 			return attachEncryption(ydoc, { keyring });
 		},
 		/**
-		 * Attach encrypted local IndexedDB persistence. The database name is
-		 * `createOwnedYjsKey(ownerId, ydoc.guid)`. Another signed-in owner in
-		 * the same browser profile gets a different database name for the same
-		 * document guid.
+		 * Attach owner-scoped browser-local Yjs wiring: encrypted IndexedDB
+		 * persistence plus cross-tab BroadcastChannel sync. Both names are
+		 * `createOwnedYjsKey(ownerId, ydoc.guid)`, so two signed-in subjects in
+		 * the same browser profile neither share local storage nor exchange
+		 * plaintext updates over BroadcastChannel.
+		 *
+		 * Always paired in browser bundles, so the facade exposes one call
+		 * instead of two. Returns the IDB attachment for `whenLoaded` /
+		 * `whenDisposed` barriers.
 		 */
-		attachIndexedDb(ydoc: Y.Doc) {
-			return attachEncryptedIndexedDb(ydoc, {
-				databaseName: createOwnedYjsKey(ownerId, ydoc.guid),
-				keyring,
-			});
-		},
-		/**
-		 * Attach owner-scoped cross-tab BroadcastChannel sync. Two signed-in
-		 * subjects in the same browser profile cannot exchange plaintext
-		 * updates through BroadcastChannel.
-		 */
-		attachBroadcastChannel(ydoc: Y.Doc) {
-			attachBroadcastChannel(ydoc, createOwnedYjsKey(ownerId, ydoc.guid));
+		attachLocal(ydoc: Y.Doc) {
+			const databaseName = createOwnedYjsKey(ownerId, ydoc.guid);
+			const idb = attachEncryptedIndexedDb(ydoc, { databaseName, keyring });
+			attachBroadcastChannel(ydoc, databaseName);
+			return idb;
 		},
 		/**
 		 * Delete every owner-scoped IndexedDB database currently visible to

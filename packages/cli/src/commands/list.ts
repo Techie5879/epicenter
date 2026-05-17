@@ -1,8 +1,8 @@
 /**
  * `epicenter list [route.action_key]`: render actions exposed by this project.
  *
- * The daemon returns route-qualified snake_case action keys for every host in
- * `epicenter.config.ts`. The CLI only filters and renders that manifest.
+ * The daemon returns route-qualified snake_case action keys for every opened
+ * workspace extension. The CLI only filters and renders that manifest.
  *
  * Per-peer schema introspection is a script concern. The CLI lists the local
  * daemon's route-qualified action surface only.
@@ -23,7 +23,6 @@ import {
 	formatOptions,
 	type OutputFormat,
 	output,
-	outputError,
 } from '../util/format-output.js';
 
 export const listCommand = cmd({
@@ -42,7 +41,7 @@ export const listCommand = cmd({
 
 		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
-			outputError(daemonErr.message);
+			console.error(daemonErr.message);
 			process.exitCode = 1;
 			return;
 		}
@@ -63,7 +62,7 @@ function renderResult(
 			case 'Timeout':
 			case 'Unreachable':
 			case 'HandlerCrashed':
-				outputError(`error: ${result.error.message}`);
+				console.error(`error: ${result.error.message}`);
 				process.exitCode = 1;
 				return;
 		}
@@ -121,7 +120,7 @@ function renderText(entries: ActionManifest, path: string): void {
 }
 
 function fail(message: string): void {
-	outputError(`error: ${message}`);
+	console.error(`error: ${message}`);
 	process.exitCode = 1;
 }
 

@@ -1,6 +1,6 @@
 ---
 name: single-or-array-pattern
-description: Pattern for functions that accept either a single item or an array. Use when creating CRUD operations, batch processing APIs, or factory functions that should flexibly handle one or many inputs.
+description: Pattern for functions accepting a single item or array. Use when creating CRUD operations, batch processing APIs, or factories handling one or many inputs.
 metadata:
   author: epicenter
   version: '1.0'

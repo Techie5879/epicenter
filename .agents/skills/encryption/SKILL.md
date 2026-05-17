@@ -1,6 +1,6 @@
 ---
 name: encryption
-description: Encryption patterns for HKDF key derivation, XChaCha20-Poly1305 symmetric encryption, encrypted blob formats, key hierarchy, and key rotation. Use when the user says "encrypt this", "add encryption", "key management", or when working with crypto primitives, encrypted CRDT values, or the EncryptedBlob type.
+description: Encryption: HKDF, XChaCha20-Poly1305, blob formats, key hierarchy/rotation. Use for "encrypt this", "key management", crypto primitives, EncryptedBlob.
 ---
 
 # Encryption Patterns
