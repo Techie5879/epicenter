@@ -179,7 +179,8 @@
 						Pause media while recording
 					</Field.Label>
 					<Field.Description>
-						Uses the system play/pause key when recording starts and stops.
+						Pauses the current macOS media target before recording and resumes
+						when macOS reports that media was playing.
 					</Field.Description>
 				</div>
 			</Field.Field>

@@ -5,33 +5,39 @@
  * resume around recording sessions.
  *
  * Key behaviors:
- * - Disabled or non-desktop environments do not send media key events
- * - A successful pause returns a resumable session token
- * - Resume only toggles media once for the session this app paused
+ * - Disabled or non-desktop environments do not send media commands
+ * - A successful pause returns a session only when the native layer paused media
+ * - Resume only runs once for the session this app paused
  * - Pause failures return errors without creating resume state
  */
 import { describe, expect, test } from 'bun:test';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { createRecordingMediaController } from './media-control-controller';
 
-type ToggleCall = 'toggle';
+type MediaCall = 'pause' | 'resume';
 
 function setup({
 	enabled = true,
 	isMacos = true,
 	isDesktop = true,
-	result = Ok(undefined),
+	pauseResult = Ok({ shouldResume: true }),
+	resumeResult = Ok(undefined),
 }: {
 	enabled?: boolean;
 	isMacos?: boolean;
 	isDesktop?: boolean;
-	result?: Result<void, unknown>;
+	pauseResult?: Result<{ shouldResume: boolean }, unknown>;
+	resumeResult?: Result<void, unknown>;
 } = {}) {
-	const calls: ToggleCall[] = [];
+	const calls: MediaCall[] = [];
 	const controller = createRecordingMediaController({
-		toggleSystemPlayPause: async () => {
-			calls.push('toggle');
-			return result;
+		pauseSystemMedia: async () => {
+			calls.push('pause');
+			return pauseResult;
+		},
+		resumeSystemMedia: async () => {
+			calls.push('resume');
+			return resumeResult;
 		},
 		isEnabled: () => enabled,
 		isMacos,
@@ -53,24 +59,36 @@ describe('createRecordingMediaController', () => {
 		expect(calls).toEqual([]);
 	});
 
-	test('pauseForRecording toggles media and returns a resumable session', async () => {
+	test('pauseForRecording returns a session when native media was paused', async () => {
 		const { controller, calls } = setup();
 
 		const { data, error } = await controller.pauseForRecording();
 
 		expect(error).toBeNull();
 		expect(data).toEqual({ id: 'test-session-id', resumePending: true });
-		expect(calls).toEqual(['toggle']);
+		expect(calls).toEqual(['pause']);
 	});
 
-	test('resumeAfterRecording toggles media once for a paused session', async () => {
+	test('pauseForRecording returns null when native media was already paused', async () => {
+		const { controller, calls } = setup({
+			pauseResult: Ok({ shouldResume: false }),
+		});
+
+		const { data, error } = await controller.pauseForRecording();
+
+		expect(error).toBeNull();
+		expect(data).toBeNull();
+		expect(calls).toEqual(['pause']);
+	});
+
+	test('resumeAfterRecording resumes media once for a paused session', async () => {
 		const { controller, calls } = setup();
 
 		const { data: session } = await controller.pauseForRecording();
 		await controller.resumeAfterRecording(session);
 		await controller.resumeAfterRecording(session);
 
-		expect(calls).toEqual(['toggle', 'toggle']);
+		expect(calls).toEqual(['pause', 'resume']);
 	});
 
 	test('resumeAfterRecording does nothing without a paused session', async () => {
@@ -84,17 +102,17 @@ describe('createRecordingMediaController', () => {
 
 	test('pauseForRecording returns error without creating session state', async () => {
 		const pauseError = {
-			name: 'TogglePlayPauseFailed',
-			message: 'Failed to toggle system media playback: test failure',
+			name: 'PauseMediaFailed',
+			message: 'Failed to pause system media playback: test failure',
 			cause: 'test failure',
 		};
-		const { controller, calls } = setup({ result: Err(pauseError) });
+		const { controller, calls } = setup({ pauseResult: Err(pauseError) });
 
 		const { data, error } = await controller.pauseForRecording();
 
 		expect(data).toBeNull();
 		expect(error).toBe(pauseError);
-		expect(calls).toEqual(['toggle']);
+		expect(calls).toEqual(['pause']);
 	});
 
 	test('pauseForRecording returns null outside macOS desktop', async () => {

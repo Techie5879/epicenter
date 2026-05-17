@@ -42,6 +42,7 @@ import { transformer } from './transformer';
 // Track manual recording start time for duration calculation
 let manualRecordingStartTime: number | null = null;
 let manualMediaPauseSession: MediaPauseSession | null = null;
+let manualMediaPausePromise: Promise<void> | null = null;
 let vadMediaPauseSession: MediaPauseSession | null = null;
 let vadMediaPausePromise: Promise<void> | null = null;
 
@@ -100,7 +101,7 @@ const startManualRecording = defineMutation({
 			description: 'Setting up your recording environment...',
 		});
 
-		await pauseMediaForRecording((session) => {
+		manualMediaPausePromise = pauseMediaForRecording((session) => {
 			manualMediaPauseSession = session;
 		});
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
@@ -110,6 +111,8 @@ const startManualRecording = defineMutation({
 		isRecordingOperationBusy = false;
 
 		if (startRecordingError) {
+			await manualMediaPausePromise;
+			manualMediaPausePromise = null;
 			await resumeMediaAfterRecording(manualMediaPauseSession, () => {
 				manualMediaPauseSession = null;
 			});
@@ -192,6 +195,8 @@ const stopManualRecording = defineMutation({
 		const { data, error: stopRecordingError } = await recorder.stopRecording({
 			toastId,
 		});
+		await manualMediaPausePromise;
+		manualMediaPausePromise = null;
 		const mediaPauseSession = manualMediaPauseSession;
 		await resumeMediaAfterRecording(mediaPauseSession, () => {
 			manualMediaPauseSession = null;
@@ -431,6 +436,8 @@ export const actions = {
 			});
 			const { data: cancelRecordingResult, error: cancelRecordingError } =
 				await recorder.cancelRecording({ toastId });
+			await manualMediaPausePromise;
+			manualMediaPausePromise = null;
 			const mediaPauseSession = manualMediaPauseSession;
 			await resumeMediaAfterRecording(mediaPauseSession, () => {
 				manualMediaPauseSession = null;

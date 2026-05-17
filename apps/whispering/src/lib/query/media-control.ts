@@ -10,8 +10,8 @@ import {
 export { createRecordingMediaController, type MediaPauseSession };
 
 export const recordingMediaController = createRecordingMediaController({
-	toggleSystemPlayPause: () =>
-		desktopServices.mediaControl.toggleSystemPlayPause(),
+	pauseSystemMedia: () => desktopServices.mediaControl.pauseForRecording(),
+	resumeSystemMedia: () => desktopServices.mediaControl.resumeAfterRecording(),
 	isEnabled: () =>
 		deviceConfig.get('recording.macos.pauseMediaDuringRecording'),
 	isMacos: IS_MACOS,

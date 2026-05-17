@@ -8,13 +8,15 @@ export type MediaPauseSession = {
 type PauseForRecordingResult = Result<MediaPauseSession | null, unknown>;
 
 export function createRecordingMediaController({
-	toggleSystemPlayPause,
+	pauseSystemMedia,
+	resumeSystemMedia,
 	isEnabled,
 	isMacos,
 	isDesktop,
 	createId,
 }: {
-	toggleSystemPlayPause: () => Promise<Result<void, unknown>>;
+	pauseSystemMedia: () => Promise<Result<{ shouldResume: boolean }, unknown>>;
+	resumeSystemMedia: () => Promise<Result<void, unknown>>;
 	isEnabled: () => boolean;
 	isMacos: boolean;
 	isDesktop: () => boolean;
@@ -23,8 +25,9 @@ export function createRecordingMediaController({
 	async function pauseForRecording(): Promise<PauseForRecordingResult> {
 		if (!isEnabled() || !isMacos || !isDesktop()) return Ok(null);
 
-		const { error } = await toggleSystemPlayPause();
+		const { data, error } = await pauseSystemMedia();
 		if (error) return Err(error);
+		if (!data?.shouldResume) return Ok(null);
 
 		return Ok({ id: createId(), resumePending: true });
 	}
@@ -36,7 +39,7 @@ export function createRecordingMediaController({
 			return Ok(undefined);
 
 		session.resumePending = false;
-		return await toggleSystemPlayPause();
+		return await resumeSystemMedia();
 	}
 
 	return {
