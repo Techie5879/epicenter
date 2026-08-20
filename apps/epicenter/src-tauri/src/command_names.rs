@@ -47,4 +47,5 @@ pub const COMMANDS: &[&str] = &[
     "replace_global_shortcuts",
     "is_autostart_enabled",
     "set_autostart_enabled",
+    "complete_codex_oauth_login",
 ];

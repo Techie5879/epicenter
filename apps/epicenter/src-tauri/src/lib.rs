@@ -30,6 +30,9 @@ mod command_names;
 
 pub mod app_data;
 
+pub mod codex_oauth;
+use codex_oauth::{complete_codex_oauth_login, CodexOAuthCallbackState};
+
 pub mod audio;
 use audio::encode_recording_for_upload;
 
@@ -374,6 +377,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             replace_global_shortcuts,
             is_autostart_enabled,
             set_autostart_enabled,
+            complete_codex_oauth_login,
         ])
         .events(tauri_specta::collect_events![
             keyboard::DictationCapabilityEvent,
@@ -709,7 +713,8 @@ pub fn run() {
         .manage(HostState::new(port))
         .manage(GlobalShortcutRegistry::default())
         .manage(Mutex::new(Recorder::new()))
-        .manage(DownloadManager::default());
+        .manage(DownloadManager::default())
+        .manage(CodexOAuthCallbackState::default());
 
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());

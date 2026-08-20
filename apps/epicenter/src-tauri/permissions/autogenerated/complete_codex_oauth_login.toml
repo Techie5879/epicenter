@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-complete-codex-oauth-login"
+description = "Enables the complete_codex_oauth_login command without any pre-configured scope."
+commands.allow = ["complete_codex_oauth_login"]
+
+[[permission]]
+identifier = "deny-complete-codex-oauth-login"
+description = "Denies the complete_codex_oauth_login command without any pre-configured scope."
+commands.deny = ["complete_codex_oauth_login"]
