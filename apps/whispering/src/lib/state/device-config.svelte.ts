@@ -24,6 +24,14 @@ const globalBinding = type({
 	keys: 'string[]',
 }).or('null');
 
+const codexOAuthSession = type({
+	accessToken: 'string',
+	refreshToken: 'string',
+	expiresAt: 'number',
+	'accountId?': 'string',
+	'email?': 'string',
+}).or('null');
+
 // Default global gestures, not mnemonic app hotkeys. These are plain chords the
 // `tauri-plugin-global-shortcut` backend registers with no Accessibility grant,
 // the only global-shortcut backend on every platform (ADR-0117). Every default
@@ -99,6 +107,8 @@ const DEVICE_DEFINITIONS = {
 	// Empty `endpoint` means the provider's official API; Custom and Speaches
 	// have no official API, so their endpoints carry real defaults.
 	...SECRET_DEFINITIONS,
+	// Structured OAuth state is device-local but is not a string secret facade key.
+	'auth.codex': defineEntry(codexOAuthSession, null),
 	'providers.openai.endpoint': defineEntry(type('string'), ''),
 	'providers.groq.endpoint': defineEntry(type('string'), ''),
 	'providers.custom.endpoint': defineEntry(
