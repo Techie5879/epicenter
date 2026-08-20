@@ -12,6 +12,9 @@ const CodexAccountError = defineErrors({
 	ConnectFailed: () => ({
 		message: 'Could not connect ChatGPT. Try again.',
 	}),
+	Superseded: () => ({
+		message: 'This ChatGPT connection attempt was replaced.',
+	}),
 });
 type CodexAccountError = InferErrors<typeof CodexAccountError>;
 
@@ -26,32 +29,45 @@ export function createCodexAccountOperations({
 	getTauri,
 	setSession,
 }: CodexAccountDependencies) {
+	let activeAttempt: symbol | null = null;
+
 	async function connect(): Promise<
 		Result<CodexOAuthSession, CodexAccountError>
 	> {
-		const activeTauri = getTauri();
-		if (!activeTauri) return CodexAccountError.Unsupported();
+		const attempt = Symbol();
+		activeAttempt = attempt;
+		try {
+			const activeTauri = getTauri();
+			if (!activeTauri) return CodexAccountError.Unsupported();
 
-		const authorization = await codex.createAuthorization();
-		if (authorization.error !== null) return CodexAccountError.ConnectFailed();
+			const authorization = await codex.createAuthorization();
+			if (activeAttempt !== attempt) return CodexAccountError.Superseded();
+			if (authorization.error !== null)
+				return CodexAccountError.ConnectFailed();
 
-		const callback = await activeTauri.codex.completeOAuthLogin(
-			authorization.data.authorizeUrl,
-			authorization.data.state,
-		);
-		if (callback.error !== null) return CodexAccountError.ConnectFailed();
+			const callback = await activeTauri.codex.completeOAuthLogin(
+				authorization.data.authorizeUrl,
+				authorization.data.state,
+			);
+			if (activeAttempt !== attempt) return CodexAccountError.Superseded();
+			if (callback.error !== null) return CodexAccountError.ConnectFailed();
 
-		const exchange = await codex.exchangeAuthorizationCode({
-			code: callback.data,
-			verifier: authorization.data.verifier,
-		});
-		if (exchange.error !== null) return CodexAccountError.ConnectFailed();
+			const exchange = await codex.exchangeAuthorizationCode({
+				code: callback.data,
+				verifier: authorization.data.verifier,
+			});
+			if (activeAttempt !== attempt) return CodexAccountError.Superseded();
+			if (exchange.error !== null) return CodexAccountError.ConnectFailed();
 
-		setSession(exchange.data);
-		return exchange;
+			setSession(exchange.data);
+			return exchange;
+		} finally {
+			if (activeAttempt === attempt) activeAttempt = null;
+		}
 	}
 
 	function disconnect(): void {
+		activeAttempt = null;
 		codex.clearSessionCache();
 		setSession(null);
 	}

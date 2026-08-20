@@ -1,7 +1,8 @@
 # Codex subscription transformations
 
 **Date**: 2026-08-20
-**Status**: Implemented at `5f00ba03be6d82e67c69201ebeb9d6f1fb4e6f27`
+**Status**: In Progress
+**Implementation checkpoint**: `5f00ba03be6d82e67c69201ebeb9d6f1fb4e6f27`
 **Owner**: Whispering
 
 ## One sentence
@@ -87,11 +88,15 @@ At `5f00ba03be6d82e67c69201ebeb9d6f1fb4e6f27`:
 - [ ] Complete a live ChatGPT subscription login.
 - [ ] Run a real `gpt-5.3-codex-spark` transformation.
 
+These live checks keep this spec in progress.
+
 The broader Rust library run had 137 passing tests and one unrelated pre-existing failure in `one_verb_opens_compiled_and_admitted_applications_alike`. The base commit contains the same contradictory `"0-"` fixture and edge validator.
 
 ## Review history
 
-The cumulative implementation was [approved at exact head `5f00ba03be`](https://github.com/Techie5879/epicenter/pull/3#issuecomment-5350232454) after the native cancellation and rebind fixes and the current-upstream service reachability integration. The review found no blockers or non-blockers.
+The cumulative implementation at `5f00ba03be6d82e67c69201ebeb9d6f1fb4e6f27` passed review after the native cancellation and rebind fixes and the current-upstream service reachability integration. That review found no blockers or non-blockers. This SHA remains the implementation checkpoint recorded above.
+
+A later review of `c6dae1caa9256d3ff817b2aeb3d98712fb642793` found that account-operation ownership ended too early and that the spec status was terminal while live checks remained. The current branch includes the lifecycle ownership fix and keeps this document in progress until those live checks pass.
 
 ## Deviation from the old branch
 
