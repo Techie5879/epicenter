@@ -24,7 +24,10 @@
 		"#platform/dictation-indicator": "./src/lib/dictation-indicator/DictationIndicator.tauri.svelte",
 		"#platform/text": "./src/lib/services/text/index.tauri.ts",
 		"#platform/manual-recorder-config": "./src/lib/state/manual-recorder-config.tauri.ts",
-		"#platform/tauri": "./src/lib/tauri.tauri.ts",
+		"#platform/tauri": {
+			"tauri": "./src/lib/tauri.tauri.ts",
+			"default": "./src/lib/tauri.browser.ts"
+		},
 		"#platform/os-notify": "./src/lib/report/os-notify.tauri.ts",
 		"#platform/auth": {
 			"epicenter-host": "./src/lib/platform/auth.epicenter-host.ts",

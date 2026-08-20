@@ -548,6 +548,7 @@ test('complete forwards Spark exactly and parses LF, CRLF, and multiline SSE dat
 		],
 	});
 	const session = createSession();
+	const controller = new AbortController();
 
 	const text = expectOk(
 		await service.complete({
@@ -555,6 +556,7 @@ test('complete forwards Spark exactly and parses LF, CRLF, and multiline SSE dat
 			model: 'gpt-5.3-codex-spark',
 			systemPrompt: 'Rewrite clearly.',
 			userPrompt: 'Input text',
+			signal: controller.signal,
 		}),
 	);
 
@@ -562,6 +564,7 @@ test('complete forwards Spark exactly and parses LF, CRLF, and multiline SSE dat
 	expect(calls[0]?.input.toString()).toBe(
 		'https://chatgpt.com/backend-api/codex/responses',
 	);
+	expect(calls[0]?.init?.signal).toBe(controller.signal);
 	expect(JSON.parse(calls[0]?.init?.body?.toString() ?? '')).toEqual({
 		model: 'gpt-5.3-codex-spark',
 		instructions: 'Rewrite clearly.',

@@ -5,6 +5,7 @@ import {
 	type CompletionState,
 	resolveCompletionStateFromConfig,
 } from '$lib/operations/completion-target';
+import { services } from '$lib/services';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import type { WhisperingApp } from '$lib/whispering/app';
 
@@ -14,24 +15,90 @@ import type { WhisperingApp } from '$lib/whispering/app';
  * (`textStaysOnDevice`). All three are derived together from the global
  * `completion.*` setting and deviceConfig, read at use (ADR 0012) so nothing goes
  * stale. `target` is null when there is no base URL to talk to (Custom with no
- * endpoint configured), the one genuinely un-runnable state.
+ * endpoint configured), the one genuinely un-runnable route.
  */
 export function resolveCompletionState(app: WhisperingApp): CompletionState {
 	return resolveCompletionStateFromConfig({
 		provider: app.settings.get('completionProvider'),
 		getDeviceConfig: deviceConfig.get,
+		codexConnected: deviceConfig.get('auth.codex') !== null,
 	});
+}
+
+type PrivateCodexError = {
+	name: string;
+	message: string;
+	status?: number;
+};
+
+function mapCodexError(
+	error: PrivateCodexError,
+): Result<string, CompleteError> {
+	if (error.name === 'RequestFailed' && error.status !== undefined) {
+		return CompleteError.RequestFailed({
+			status: error.status,
+			detail: 'Codex subscription rejected the request.',
+		});
+	}
+	return CompleteError.TransportFailed({ cause: new Error(error.message) });
+}
+
+async function completeWithCodex({
+	model,
+	systemPrompt,
+	userPrompt,
+	signal,
+}: {
+	model: string;
+	systemPrompt: string;
+	userPrompt: string;
+	signal?: AbortSignal;
+}): Promise<Result<string, CompleteError>> {
+	const capturedSession = deviceConfig.get('auth.codex');
+	if (!capturedSession) {
+		return CompleteError.TransportFailed({
+			cause: new Error('Connect ChatGPT to use Codex subscription.'),
+		});
+	}
+
+	const activeResult =
+		await services.codex.ensureActiveSession(capturedSession);
+	if (activeResult.error !== null) return mapCodexError(activeResult.error);
+
+	const activeSession = activeResult.data;
+	const currentSession = deviceConfig.get('auth.codex');
+	if (currentSession?.refreshToken === capturedSession.refreshToken) {
+		deviceConfig.set('auth.codex', activeSession);
+	} else if (currentSession?.refreshToken !== activeSession.refreshToken) {
+		return CompleteError.TransportFailed({
+			cause: new Error(
+				'The ChatGPT account changed before the request could start.',
+			),
+		});
+	}
+
+	const completionResult = await services.codex.complete({
+		session: activeSession,
+		model,
+		systemPrompt,
+		userPrompt,
+		signal,
+	});
+	if (completionResult.error !== null) {
+		return mapCodexError(completionResult.error);
+	}
+	return completionResult;
 }
 
 /**
  * Run one completion against the single global AI default. Both the Polish pass
- * and every Recipe share this one call path, so provider/model/key resolution
- * lives here once. Every provider speaks the OpenAI completion wire (Anthropic
- * and Google through their OpenAI-compatibility endpoints, ADR-0060), so there is
- * no per-provider client and no wire-vs-bespoke branch: resolve a connection from
- * the `INFERENCE` table and hand it to the shared `complete()`. Provider and model
- * come from `completion.*` in settings, the key and endpoint from deviceConfig,
- * all read at use (ADR 0012) so nothing goes stale; pasted strings are trimmed.
+ * and every Recipe share this one call path, so provider, model, and credential
+ * resolution live here once. API-key providers use the shared OpenAI-compatible
+ * client. Codex uses its subscription protocol service. Provider and model come
+ * from `completion.*` in settings. API-key providers resolve their key and
+ * endpoint from deviceConfig. Codex activates its device-local session and
+ * verifies storage ownership before sending text. All state is read at use
+ * (ADR 0012), and pasted strings are trimmed.
  *
  * `signal` aborts the in-flight request (the Polish HUD's "ship raw" control).
  */
@@ -47,6 +114,14 @@ export function completeWithGlobalDefault(
 		signal?: AbortSignal;
 	},
 ): Promise<Result<string, CompleteError>> {
+	if (app.settings.get('completionProvider') === 'Codex') {
+		return completeWithCodex({
+			model: app.settings.get('completionModel').trim(),
+			systemPrompt,
+			userPrompt,
+			signal,
+		});
+	}
 	const { target } = resolveCompletionState(app);
 	if (!target) {
 		const provider = app.settings.get('completionProvider');
@@ -55,6 +130,13 @@ export function completeWithGlobalDefault(
 				cause: new Error(
 					`No base URL set for the ${provider} completion provider. Add an endpoint in settings.`,
 				),
+			}),
+		);
+	}
+	if (!('baseUrl' in target)) {
+		return Promise.resolve(
+			CompleteError.TransportFailed({
+				cause: new Error('The completion provider is not available.'),
 			}),
 		);
 	}

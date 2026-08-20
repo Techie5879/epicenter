@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import type { InferenceProviderId } from '$lib/constants/inference';
+	import type { ApiKeyInferenceProviderId } from '$lib/constants/inference';
 	import type { KeyProviderId } from '$lib/services/transcription/providers';
 	import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
 
@@ -21,7 +21,7 @@
 	 * union keeps PROVIDER_FIELDS exhaustive: adding a provider to either
 	 * registry is a compile error here until its fields exist.
 	 */
-	export type ProviderConfigId = InferenceProviderId | KeyProviderId;
+	export type ProviderConfigId = ApiKeyInferenceProviderId | KeyProviderId;
 
 	const PROVIDER_FIELDS: Record<ProviderConfigId, ProviderField[]> = {
 		OpenAI: [

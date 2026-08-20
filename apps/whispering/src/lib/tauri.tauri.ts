@@ -422,6 +422,11 @@ const transcription = {
 	},
 };
 
+// Codex OAuth -------------------------------------------------------
+const codex = {
+	completeOAuthLogin: commands.completeCodexOauthLogin,
+};
+
 // opener ------------------------------------------------------------
 const OpenerError = defineErrors({
 	OpenPathFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
@@ -470,6 +475,7 @@ export const tauriOnly = {
 	autostart,
 	media,
 	transcription,
+	codex,
 	opener,
 	mainWindow,
 };

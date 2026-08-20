@@ -299,11 +299,13 @@ export function createCodexService({
 			model,
 			systemPrompt,
 			userPrompt,
+			signal,
 		}: {
 			session: CodexOAuthSession;
 			model: string;
 			systemPrompt: string;
 			userPrompt: string;
+			signal?: AbortSignal;
 		}): Promise<Result<string, CodexCompletionError>> {
 			const headers = new Headers({
 				Accept: 'text/event-stream',
@@ -331,6 +333,7 @@ export function createCodexService({
 							store: false,
 							stream: true,
 						}),
+						signal,
 					}),
 				catch: () =>
 					CodexCompletionError.TransportFailed({
