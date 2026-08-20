@@ -30,7 +30,7 @@ mod command_names;
 
 pub mod app_data;
 
-pub mod codex_oauth;
+mod codex_oauth;
 use codex_oauth::{complete_codex_oauth_login, CodexOAuthCallbackState};
 
 pub mod audio;

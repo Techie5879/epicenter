@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{io::ErrorKind, sync::Mutex, time::Duration};
+use std::{future::Future, io::ErrorKind, sync::Mutex, time::Duration};
 use tauri::Url;
 use tauri_plugin_opener::OpenerExt;
 use thiserror::Error;
@@ -21,13 +21,7 @@ const BIND_ATTEMPTS: usize = 20;
 
 #[derive(Default)]
 pub struct CodexOAuthCallbackState {
-    active: Mutex<ActiveCallback>,
-}
-
-#[derive(Default)]
-struct ActiveCallback {
-    generation: u64,
-    cancel: Option<oneshot::Sender<()>>,
+    cancel: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 #[derive(Error, Debug, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
@@ -36,70 +30,39 @@ pub enum CodexOAuthCallbackError {
     #[error("Invalid Codex authorization URL: {message}")]
     InvalidAuthorizeUrl { message: String },
 
-    #[error("Could not start the Codex sign-in callback: {message}")]
-    CallbackBindFailed { message: String },
-
-    #[error("Could not open the Codex sign-in page: {message}")]
-    BrowserOpenFailed { message: String },
+    #[error("Codex sign-in failed: {message}")]
+    CallbackFailed { message: String },
 
     #[error("Codex sign-in timed out: {message}")]
     CallbackTimeout { message: String },
 
-    #[error("Could not read the Codex sign-in callback: {message}")]
-    CallbackReadFailed { message: String },
-
-    #[error("Invalid Codex sign-in callback: {message}")]
-    InvalidCallbackRequest { message: String },
-
     #[error("Codex sign-in was rejected: {message}")]
     OAuthError { message: String },
 
-    #[error("Codex sign-in state did not match: {message}")]
-    StateMismatch { message: String },
-
-    #[error("Codex sign-in did not return a code: {message}")]
-    MissingCode { message: String },
-
     #[error("Codex sign-in was replaced: {message}")]
     CallbackReplaced { message: String },
-
-    #[error("Could not manage the Codex sign-in callback: {message}")]
-    CallbackLifecycleFailed { message: String },
 }
 
 impl CodexOAuthCallbackState {
-    fn replace_active(&self) -> Result<(u64, oneshot::Receiver<()>), CodexOAuthCallbackError> {
+    fn replace_active(&self) -> oneshot::Receiver<()> {
         let (cancel, cancel_receiver) = oneshot::channel();
-        let mut active = self
-            .active
+        let previous = self
+            .cancel
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let generation = active.generation.checked_add(1).ok_or_else(|| {
-            CodexOAuthCallbackError::CallbackLifecycleFailed {
-                message: "The callback generation limit was reached".to_string(),
-            }
-        })?;
-
-        if let Some(previous_cancel) = active.cancel.take() {
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .replace(cancel);
+        if let Some(previous_cancel) = previous {
             let _ = previous_cancel.send(());
         }
 
-        active.generation = generation;
-        active.cancel = Some(cancel);
-
-        Ok((generation, cancel_receiver))
+        cancel_receiver
     }
+}
 
-    fn clear_if_current(&self, generation: u64) {
-        let mut active = self
-            .active
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        if active.generation == generation {
-            active.cancel = None;
-        }
-    }
+#[derive(Debug, PartialEq, Eq)]
+enum CallbackRequestError {
+    Invalid,
+    OAuth(String),
 }
 
 #[tauri::command]
@@ -111,59 +74,43 @@ pub async fn complete_codex_oauth_login(
     expected_state: String,
 ) -> Result<String, CodexOAuthCallbackError> {
     validate_authorization_url(&authorize_url, &expected_state)?;
-    let (generation, cancel_receiver) = callback_state.replace_active()?;
+    let cancel_receiver = callback_state.replace_active();
 
-    run_callback_attempt(
-        &callback_state,
-        generation,
-        cancel_receiver,
-        CALLBACK_ADDRESS,
-        &expected_state,
-        CALLBACK_TIMEOUT,
-        move || {
-            app.opener()
-                .open_url(authorize_url, None::<String>)
-                .map_err(|error| CodexOAuthCallbackError::BrowserOpenFailed {
-                    message: error.to_string(),
-                })
-        },
-    )
+    settle_callback_attempt(cancel_receiver, async move {
+        let listener = bind_callback_listener(CALLBACK_ADDRESS).await?;
+        app.opener()
+            .open_url(authorize_url, None::<String>)
+            .map_err(|error| CodexOAuthCallbackError::CallbackFailed {
+                message: format!("Could not open the authorization URL: {error}"),
+            })?;
+
+        timeout(
+            CALLBACK_TIMEOUT,
+            receive_callback(listener, &expected_state),
+        )
+        .await
+        .map_err(|_| CodexOAuthCallbackError::CallbackTimeout {
+            message: "No callback arrived within five minutes".to_string(),
+        })?
+    })
     .await
 }
 
-async fn run_callback_attempt<F>(
-    callback_state: &CodexOAuthCallbackState,
-    generation: u64,
+async fn settle_callback_attempt<F>(
     mut cancel_receiver: oneshot::Receiver<()>,
-    address: &str,
-    expected_state: &str,
-    callback_timeout: Duration,
-    on_bound: F,
+    callback: F,
 ) -> Result<String, CodexOAuthCallbackError>
 where
-    F: FnOnce() -> Result<(), CodexOAuthCallbackError>,
+    F: Future<Output = Result<String, CodexOAuthCallbackError>>,
 {
-    let callback = async move {
-        let listener = bind_callback_listener(address).await?;
-        on_bound()?;
-
-        timeout(callback_timeout, receive_callback(listener, expected_state))
-            .await
-            .map_err(|_| CodexOAuthCallbackError::CallbackTimeout {
-                message: "No callback arrived within five minutes".to_string(),
-            })?
-    };
-
     tokio::pin!(callback);
-    let result = tokio::select! {
+    tokio::select! {
+        biased;
         _ = &mut cancel_receiver => Err(CodexOAuthCallbackError::CallbackReplaced {
             message: "A newer Codex sign-in attempt replaced this one".to_string(),
         }),
         result = &mut callback => result,
-    };
-
-    callback_state.clear_if_current(generation);
-    result
+    }
 }
 
 async fn bind_callback_listener(address: &str) -> Result<TcpListener, CodexOAuthCallbackError> {
@@ -177,8 +124,8 @@ async fn bind_callback_listener(address: &str) -> Result<TcpListener, CodexOAuth
                 tokio::time::sleep(BIND_RETRY_DELAY).await;
             }
             Err(error) => {
-                return Err(CodexOAuthCallbackError::CallbackBindFailed {
-                    message: error.to_string(),
+                return Err(CodexOAuthCallbackError::CallbackFailed {
+                    message: format!("Could not bind the localhost callback: {error}"),
                 });
             }
         }
@@ -198,19 +145,18 @@ async fn receive_callback_with_read_timeout(
     read_timeout: Duration,
 ) -> Result<String, CodexOAuthCallbackError> {
     loop {
-        let (mut stream, _) = listener.accept().await.map_err(|error| {
-            CodexOAuthCallbackError::CallbackReadFailed {
-                message: error.to_string(),
-            }
-        })?;
+        let (mut stream, _) =
+            listener
+                .accept()
+                .await
+                .map_err(|error| CodexOAuthCallbackError::CallbackFailed {
+                    message: format!("Could not accept the localhost callback: {error}"),
+                })?;
 
         let callback = match timeout(read_timeout, read_http_request(&mut stream)).await {
-            Ok(request) => {
-                request.and_then(|request| parse_callback_request(&request, expected_state))
-            }
-            Err(_) => Err(CodexOAuthCallbackError::CallbackReadFailed {
-                message: "The callback connection did not send a request in time".to_string(),
-            }),
+            Ok(Ok(request)) => parse_callback_request(&request, expected_state),
+            Ok(Err(error)) => Err(error),
+            Err(_) => Err(CallbackRequestError::Invalid),
         };
 
         let response = http_response(callback.is_ok());
@@ -218,45 +164,32 @@ async fn receive_callback_with_read_timeout(
 
         match callback {
             Ok(code) => return Ok(code),
-            Err(error) if should_retry_callback_error(&error) => continue,
-            Err(error) => return Err(error),
+            Err(CallbackRequestError::Invalid) => continue,
+            Err(CallbackRequestError::OAuth(message)) => {
+                return Err(CodexOAuthCallbackError::OAuthError { message });
+            }
         }
     }
 }
 
-fn should_retry_callback_error(error: &CodexOAuthCallbackError) -> bool {
-    matches!(
-        error,
-        CodexOAuthCallbackError::CallbackReadFailed { .. }
-            | CodexOAuthCallbackError::InvalidCallbackRequest { .. }
-            | CodexOAuthCallbackError::StateMismatch { .. }
-            | CodexOAuthCallbackError::MissingCode { .. }
-    )
-}
-
-async fn read_http_request(stream: &mut TcpStream) -> Result<Vec<u8>, CodexOAuthCallbackError> {
+async fn read_http_request(stream: &mut TcpStream) -> Result<Vec<u8>, CallbackRequestError> {
     let mut request = Vec::with_capacity(1024);
     let mut buffer = [0_u8; 1024];
 
     loop {
-        let bytes_read = stream.read(&mut buffer).await.map_err(|error| {
-            CodexOAuthCallbackError::CallbackReadFailed {
-                message: error.to_string(),
-            }
-        })?;
+        let bytes_read = stream
+            .read(&mut buffer)
+            .await
+            .map_err(|_| CallbackRequestError::Invalid)?;
 
         if bytes_read == 0 {
-            return Err(CodexOAuthCallbackError::InvalidCallbackRequest {
-                message: "The HTTP request ended before its headers were complete".to_string(),
-            });
+            return Err(CallbackRequestError::Invalid);
         }
 
         request.extend_from_slice(&buffer[..bytes_read]);
 
         if request.len() > MAX_REQUEST_BYTES {
-            return Err(CodexOAuthCallbackError::InvalidCallbackRequest {
-                message: "The HTTP request headers were too large".to_string(),
-            });
+            return Err(CallbackRequestError::Invalid);
         }
 
         if request.windows(4).any(|window| window == b"\r\n\r\n") {
@@ -320,89 +253,58 @@ fn validate_authorization_url(
 fn parse_callback_request(
     request: &[u8],
     expected_state: &str,
-) -> Result<String, CodexOAuthCallbackError> {
-    let request = std::str::from_utf8(request).map_err(|_| {
-        CodexOAuthCallbackError::InvalidCallbackRequest {
-            message: "The HTTP request was not valid UTF-8".to_string(),
-        }
-    })?;
+) -> Result<String, CallbackRequestError> {
+    let request = std::str::from_utf8(request).map_err(|_| CallbackRequestError::Invalid)?;
 
-    let request_line =
-        request
-            .lines()
-            .next()
-            .ok_or_else(|| CodexOAuthCallbackError::InvalidCallbackRequest {
-                message: "The HTTP request line was missing".to_string(),
-            })?;
+    let request_line = request
+        .lines()
+        .next()
+        .ok_or(CallbackRequestError::Invalid)?;
     let request_parts = request_line.split_whitespace().collect::<Vec<_>>();
 
     if request_parts.len() != 3
         || request_parts[0] != "GET"
         || !matches!(request_parts[2], "HTTP/1.0" | "HTTP/1.1")
     {
-        return Err(CodexOAuthCallbackError::InvalidCallbackRequest {
-            message: "Expected an HTTP GET request".to_string(),
-        });
+        return Err(CallbackRequestError::Invalid);
     }
 
     if !request_parts[1].starts_with('/') {
-        return Err(CodexOAuthCallbackError::InvalidCallbackRequest {
-            message: "Expected an origin-form request target".to_string(),
-        });
+        return Err(CallbackRequestError::Invalid);
     }
 
-    let callback_url =
-        Url::parse(&format!("http://localhost{}", request_parts[1])).map_err(|_| {
-            CodexOAuthCallbackError::InvalidCallbackRequest {
-                message: "The callback URL could not be parsed".to_string(),
-            }
-        })?;
+    let callback_url = Url::parse(&format!("http://localhost{}", request_parts[1]))
+        .map_err(|_| CallbackRequestError::Invalid)?;
 
     if callback_url.path() != CALLBACK_PATH {
-        return Err(CodexOAuthCallbackError::InvalidCallbackRequest {
-            message: "The callback path did not match".to_string(),
-        });
+        return Err(CallbackRequestError::Invalid);
     }
 
-    let state = single_query_parameter(&callback_url, "state")?.ok_or_else(|| {
-        CodexOAuthCallbackError::StateMismatch {
-            message: "The callback state was missing".to_string(),
-        }
-    })?;
+    let state =
+        single_query_parameter(&callback_url, "state")?.ok_or(CallbackRequestError::Invalid)?;
 
     if state != expected_state {
-        return Err(CodexOAuthCallbackError::StateMismatch {
-            message: "The callback state was not the expected value".to_string(),
-        });
+        return Err(CallbackRequestError::Invalid);
     }
 
     if let Some(oauth_error) = single_query_parameter(&callback_url, "error")? {
-        return Err(CodexOAuthCallbackError::OAuthError {
-            message: oauth_error,
-        });
+        return Err(CallbackRequestError::OAuth(oauth_error));
     }
 
     match single_query_parameter(&callback_url, "code")? {
         Some(code) if !code.is_empty() => Ok(code),
-        _ => Err(CodexOAuthCallbackError::MissingCode {
-            message: "The callback code was missing".to_string(),
-        }),
+        _ => Err(CallbackRequestError::Invalid),
     }
 }
 
-fn single_query_parameter(
-    url: &Url,
-    name: &str,
-) -> Result<Option<String>, CodexOAuthCallbackError> {
+fn single_query_parameter(url: &Url, name: &str) -> Result<Option<String>, CallbackRequestError> {
     let values = url
         .query_pairs()
         .filter_map(|(key, value)| (key == name).then_some(value.into_owned()))
         .collect::<Vec<_>>();
 
     if values.len() > 1 {
-        return Err(CodexOAuthCallbackError::InvalidCallbackRequest {
-            message: format!("The callback contained more than one {name} parameter"),
-        });
+        return Err(CallbackRequestError::Invalid);
     }
 
     Ok(values.into_iter().next())
@@ -518,11 +420,11 @@ mod tests {
 
         assert!(matches!(
             parse_callback_request(oauth_error, "expected"),
-            Err(CodexOAuthCallbackError::OAuthError { .. })
+            Err(CallbackRequestError::OAuth(_))
         ));
         assert!(matches!(
             parse_callback_request(missing_code, "expected"),
-            Err(CodexOAuthCallbackError::MissingCode { .. })
+            Err(CallbackRequestError::Invalid)
         ));
     }
 
@@ -616,81 +518,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_new_attempt_replaces_the_active_listener() {
-        let reservation = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = reservation.local_addr().unwrap();
-        drop(reservation);
+    async fn cancellation_wins_when_a_stale_callback_is_already_ready() {
+        let callback_state = CodexOAuthCallbackState::default();
+        let stale_cancel = callback_state.replace_active();
+        let _current_cancel = callback_state.replace_active();
 
-        let callback_state = std::sync::Arc::new(CodexOAuthCallbackState::default());
-        let (first_generation, first_cancel) = callback_state.replace_active().unwrap();
-        let (first_bound, first_bound_receiver) = oneshot::channel();
-        let first_state = std::sync::Arc::clone(&callback_state);
-        let first_address = address.to_string();
-        let first_attempt = tokio::spawn(async move {
-            run_callback_attempt(
-                first_state.as_ref(),
-                first_generation,
-                first_cancel,
-                &first_address,
-                "first-state",
-                Duration::from_secs(2),
-                move || {
-                    let _ = first_bound.send(());
-                    Ok(())
-                },
-            )
-            .await
-        });
-        first_bound_receiver.await.unwrap();
+        let result = settle_callback_attempt(
+            stale_cancel,
+            std::future::ready(Ok("stale-code".to_string())),
+        )
+        .await;
 
-        let (replacement_generation, replacement_cancel) = callback_state.replace_active().unwrap();
-        let (replacement_bound, replacement_bound_receiver) = oneshot::channel();
-        let replacement_state = std::sync::Arc::clone(&callback_state);
-        let replacement_address = address.to_string();
-        let replacement_attempt = tokio::spawn(async move {
-            run_callback_attempt(
-                replacement_state.as_ref(),
-                replacement_generation,
-                replacement_cancel,
-                &replacement_address,
-                "replacement-state",
-                Duration::from_secs(2),
-                move || {
-                    let _ = replacement_bound.send(());
-                    Ok(())
-                },
-            )
-            .await
-        });
-
-        let first_error = timeout(Duration::from_secs(1), first_attempt)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap_err();
         assert!(matches!(
-            first_error,
-            CodexOAuthCallbackError::CallbackReplaced { .. }
+            result,
+            Err(CodexOAuthCallbackError::CallbackReplaced { .. })
         ));
-        timeout(Duration::from_secs(1), replacement_bound_receiver)
-            .await
-            .unwrap()
-            .unwrap();
-
-        let mut connection = TcpStream::connect(address).await.unwrap();
-        connection
-            .write_all(
-                b"GET /auth/callback?code=replacement-code&state=replacement-state HTTP/1.1\r\nHost: localhost\r\n\r\n",
-            )
-            .await
-            .unwrap();
-
-        let replacement_code = timeout(Duration::from_secs(1), replacement_attempt)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        assert_eq!(replacement_code, "replacement-code");
     }
 
     #[test]
@@ -708,15 +550,15 @@ mod tests {
 
     #[test]
     fn serializes_command_errors_as_discriminated_objects() {
-        let error = CodexOAuthCallbackError::StateMismatch {
-            message: "The callback state was not the expected value".to_string(),
+        let error = CodexOAuthCallbackError::CallbackFailed {
+            message: "Could not bind the localhost callback".to_string(),
         };
 
         assert_eq!(
             serde_json::to_value(error).unwrap(),
             serde_json::json!({
-                "name": "StateMismatch",
-                "message": "The callback state was not the expected value"
+                "name": "CallbackFailed",
+                "message": "Could not bind the localhost callback"
             })
         );
 

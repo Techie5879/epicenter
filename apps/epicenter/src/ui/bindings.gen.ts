@@ -450,16 +450,10 @@ export type CatalogError =
 
 export type CodexOAuthCallbackError =
 	| { name: 'InvalidAuthorizeUrl'; message: string }
-	| { name: 'CallbackBindFailed'; message: string }
-	| { name: 'BrowserOpenFailed'; message: string }
+	| { name: 'CallbackFailed'; message: string }
 	| { name: 'CallbackTimeout'; message: string }
-	| { name: 'CallbackReadFailed'; message: string }
-	| { name: 'InvalidCallbackRequest'; message: string }
 	| { name: 'OAuthError'; message: string }
-	| { name: 'StateMismatch'; message: string }
-	| { name: 'MissingCode'; message: string }
-	| { name: 'CallbackReplaced'; message: string }
-	| { name: 'CallbackLifecycleFailed'; message: string };
+	| { name: 'CallbackReplaced'; message: string };
 
 /**
  *  Which microphone a recording actually opened, and whether that was the one
