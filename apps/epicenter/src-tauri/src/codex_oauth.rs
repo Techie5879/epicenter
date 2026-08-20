@@ -535,6 +535,59 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn replacement_cancels_the_listener_then_rebinds_and_completes() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+
+        let callback_state = CodexOAuthCallbackState::default();
+        let first_cancel = callback_state.replace_active();
+        let (first_bound, first_bound_receiver) = oneshot::channel();
+        let first_address = address.to_string();
+        let first = tokio::spawn(async move {
+            settle_callback_attempt(first_cancel, async move {
+                let listener = bind_callback_listener(&first_address).await?;
+                let _ = first_bound.send(());
+                receive_callback(listener, "first-state").await
+            })
+            .await
+        });
+        first_bound_receiver.await.unwrap();
+
+        let replacement_cancel = callback_state.replace_active();
+        let (replacement_bound, replacement_bound_receiver) = oneshot::channel();
+        let replacement_address = address.to_string();
+        let replacement = tokio::spawn(async move {
+            settle_callback_attempt(replacement_cancel, async move {
+                let listener = bind_callback_listener(&replacement_address).await?;
+                let _ = replacement_bound.send(());
+                receive_callback(listener, "replacement-state").await
+            })
+            .await
+        });
+
+        assert!(matches!(
+            first.await.unwrap(),
+            Err(CodexOAuthCallbackError::CallbackReplaced { .. })
+        ));
+        timeout(Duration::from_secs(1), replacement_bound_receiver)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let mut connection = TcpStream::connect(address).await.unwrap();
+        connection
+            .write_all(
+                b"GET /auth/callback?code=replacement-code&state=replacement-state HTTP/1.1\r\nHost: localhost:1455\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        connection.shutdown().await.unwrap();
+
+        assert_eq!(replacement.await.unwrap().unwrap(), "replacement-code");
+    }
+
     #[test]
     fn creates_success_and_failure_html_responses() {
         let success = http_response(true);
