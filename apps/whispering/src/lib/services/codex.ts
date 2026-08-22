@@ -1,3 +1,4 @@
+import { type } from 'arktype';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -74,6 +75,37 @@ type TokenResponse = {
 	idToken?: string;
 	expiresIn?: number;
 };
+
+const TokenPayload = type({
+	'+': 'delete',
+	access_token: 'string',
+	'refresh_token?': 'string',
+	'id_token?': 'string',
+	'expires_in?': 'number >= 0',
+});
+
+const JwtClaims = type({
+	'+': 'delete',
+	'chatgpt_account_id?': 'string',
+	'chatgpt_compute_residency?': 'string',
+	'email?': 'string',
+	'https://api.openai.com/auth?': type({
+		'+': 'delete',
+		'chatgpt_account_id?': 'string',
+		'chatgpt_compute_residency?': 'string',
+	}),
+	'organizations?': type({
+		'+': 'delete',
+		id: 'string',
+	}).array(),
+});
+type JwtClaims = typeof JwtClaims.infer;
+
+const CodexEventPayload = type({
+	'+': 'delete',
+	type: 'string',
+	'delta?': 'string',
+});
 
 type CodexFetch = (
 	input: RequestInfo | URL,
@@ -371,58 +403,31 @@ async function readTokenResponse(
 	});
 	if (readError) return Err(readError);
 
-	const { data: value, error: jsonError } = trySync({
-		try: (): unknown => JSON.parse(responseText),
+	const { data: payload, error: jsonError } = trySync({
+		try: () => TokenPayload.assert(JSON.parse(responseText)),
 		catch: () =>
 			CodexAuthError.InvalidTokenResponse({
 				cause: 'The token response was not valid JSON',
 			}),
 	});
 	if (jsonError) return Err(jsonError);
-	return parseTokenResponse(value);
-}
-
-function parseTokenResponse(
-	value: unknown,
-): Result<TokenResponse, CodexAuthError> {
-	if (!isRecord(value)) {
-		return CodexAuthError.InvalidTokenResponse({
-			cause: 'Expected a token response object',
-		});
-	}
-
-	const accessToken = value.access_token;
-	const refreshToken = value.refresh_token;
-	const idToken = value.id_token;
-	const expiresIn = value.expires_in;
-	if (typeof accessToken !== 'string' || accessToken.length === 0) {
+	if (payload.access_token.length === 0) {
 		return CodexAuthError.InvalidTokenResponse({
 			cause: 'Missing access token',
 		});
 	}
-	if (
-		refreshToken !== undefined &&
-		(typeof refreshToken !== 'string' || refreshToken.length === 0)
-	) {
+	if (payload.refresh_token === '') {
 		return CodexAuthError.InvalidTokenResponse({
 			cause: 'Invalid refresh token',
 		});
 	}
-	if (idToken !== undefined && typeof idToken !== 'string') {
-		return CodexAuthError.InvalidTokenResponse({
-			cause: 'Invalid identity token',
-		});
-	}
-	if (
-		expiresIn !== undefined &&
-		(typeof expiresIn !== 'number' || expiresIn < 0)
-	) {
-		return CodexAuthError.InvalidTokenResponse({
-			cause: 'Invalid token lifetime',
-		});
-	}
 
-	return Ok({ accessToken, refreshToken, idToken, expiresIn });
+	return Ok({
+		accessToken: payload.access_token,
+		refreshToken: payload.refresh_token,
+		idToken: payload.id_token,
+		expiresIn: payload.expires_in,
+	});
 }
 
 function parseEventStream(
@@ -440,22 +445,16 @@ function parseEventStream(
 		if (!eventData || eventData === '[DONE]') continue;
 
 		const { data: event, error: parseError } = trySync({
-			try: (): unknown => JSON.parse(eventData),
+			try: () => CodexEventPayload.assert(JSON.parse(eventData)),
 			catch: () =>
 				CodexCompletionError.InvalidResponse({
 					cause: 'The response stream contained malformed event data',
 				}),
 		});
 		if (parseError) return Err(parseError);
-		if (!isRecord(event)) {
-			return CodexCompletionError.InvalidResponse({
-				cause: 'The response stream contained an invalid event',
-			});
-		}
 
-		const eventType = getString(event, 'type');
-		if (eventType === 'response.output_text.delta') {
-			const delta = getString(event, 'delta');
+		if (event.type === 'response.output_text.delta') {
+			const { delta } = event;
 			if (delta === undefined) {
 				return CodexCompletionError.InvalidResponse({
 					cause: 'A text event did not contain a text delta',
@@ -464,11 +463,11 @@ function parseEventStream(
 			text += delta;
 			continue;
 		}
-		if (eventType === 'response.completed') {
+		if (event.type === 'response.completed') {
 			completed = true;
 			continue;
 		}
-		if (eventType === 'error' || eventType === 'response.failed') {
+		if (event.type === 'error' || event.type === 'response.failed') {
 			return CodexCompletionError.GenerationFailed();
 		}
 	}
@@ -490,60 +489,39 @@ function decodeIdentity({
 	const accessClaims = parseJwtClaims(accessToken);
 	return {
 		accountId: getAccountId(idClaims) ?? getAccountId(accessClaims),
-		email: getString(idClaims, 'email') ?? getString(accessClaims, 'email'),
+		email: idClaims?.email ?? accessClaims?.email,
 	};
 }
 
-function parseJwtClaims(token: string) {
+function parseJwtClaims(token: string): JwtClaims | undefined {
 	const parts = token.split('.');
 	const encodedClaims = parts.at(1);
 	if (parts.length !== 3 || !encodedClaims) return undefined;
 
-	const { data: claims } = trySync({
+	const result = trySync({
 		try: () => {
 			const json = new TextDecoder().decode(decodeBase64Url(encodedClaims));
-			const parsed: unknown = JSON.parse(json);
-			return isRecord(parsed) ? parsed : undefined;
+			return JwtClaims.assert(JSON.parse(json));
 		},
-		catch: () => Ok(undefined),
+		catch: () => Err('The JWT claims were invalid'),
 	});
-	return claims;
+	if (result.error !== null) return undefined;
+	return result.data;
 }
 
-function getAccountId(claims: Record<string, unknown> | undefined) {
+function getAccountId(claims: JwtClaims | undefined) {
 	return (
-		getString(claims, 'chatgpt_account_id') ??
-		getString(getAuthClaims(claims), 'chatgpt_account_id') ??
-		getFirstOrganizationId(claims)
+		claims?.chatgpt_account_id ??
+		claims?.['https://api.openai.com/auth']?.chatgpt_account_id ??
+		claims?.organizations?.at(0)?.id
 	);
 }
 
-function getResidency(claims: Record<string, unknown> | undefined) {
+function getResidency(claims: JwtClaims | undefined) {
 	const residency =
-		getString(getAuthClaims(claims), 'chatgpt_compute_residency') ??
-		getString(claims, 'chatgpt_compute_residency');
+		claims?.['https://api.openai.com/auth']?.chatgpt_compute_residency ??
+		claims?.chatgpt_compute_residency;
 	return residency === 'no_constraint' ? undefined : residency;
-}
-
-function getAuthClaims(claims: Record<string, unknown> | undefined) {
-	const auth = claims?.['https://api.openai.com/auth'];
-	return isRecord(auth) ? auth : undefined;
-}
-
-function getFirstOrganizationId(claims: Record<string, unknown> | undefined) {
-	const organizations = claims?.organizations;
-	if (!Array.isArray(organizations)) return undefined;
-	const first = organizations.at(0);
-	return isRecord(first) ? getString(first, 'id') : undefined;
-}
-
-function getString(record: Record<string, unknown> | undefined, key: string) {
-	const value = record?.[key];
-	return typeof value === 'string' ? value : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
 }
 
 function encodeBase64Url(bytes: Uint8Array) {

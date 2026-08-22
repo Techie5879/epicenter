@@ -13,6 +13,24 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import { type CodexOAuthSession, createCodexService } from './codex.js';
 
 type FetchCall = { input: RequestInfo | URL; init?: RequestInit };
+type JwtFixture = {
+	alg?: string;
+	chatgpt_account_id?: string;
+	chatgpt_compute_residency?: string;
+	email?: string;
+	organizations?: Array<{ id: string }>;
+	'https://api.openai.com/auth'?: {
+		chatgpt_account_id?: string;
+		chatgpt_compute_residency?: string;
+	};
+	requestCount?: number;
+};
+type EventFixture = {
+	type: string;
+	delta?: string;
+	message?: string;
+	error?: { message: string };
+};
 
 function setup({
 	responses = [],
@@ -35,8 +53,8 @@ function setup({
 	};
 }
 
-function createJwt(payload: Record<string, unknown>) {
-	const encode = (value: Record<string, unknown>) =>
+function createJwt(payload: JwtFixture) {
+	const encode = (value: JwtFixture) =>
 		btoa(JSON.stringify(value))
 			.replaceAll('+', '-')
 			.replaceAll('/', '_')
@@ -57,9 +75,7 @@ function createSession(
 	};
 }
 
-function createEventStream(
-	...events: Array<Record<string, unknown> | '[DONE]'>
-) {
+function createEventStream(...events: Array<EventFixture | '[DONE]'>) {
 	return new Response(
 		events
 			.map((event) =>

@@ -207,7 +207,7 @@ export function completionModelAfterProviderChange(
 ): string {
 	const models = INFERENCE[provider].models;
 	if (provider === 'Codex') return INFERENCE.Codex.models[0];
-	if (!models || (models as readonly string[]).includes(currentModel)) {
+	if (!models || models.some((model) => model === currentModel)) {
 		return currentModel;
 	}
 	return models[0];

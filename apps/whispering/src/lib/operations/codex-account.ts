@@ -1,8 +1,8 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import { type Tauri, tauri } from '#platform/tauri';
+import { tauri } from '#platform/tauri';
 import { services } from '$lib/services';
-import type { CodexOAuthSession, CodexService } from '$lib/services/codex';
+import type { CodexOAuthSession } from '$lib/services/codex';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
 const CodexAccountError = defineErrors({
@@ -18,9 +18,32 @@ const CodexAccountError = defineErrors({
 });
 type CodexAccountError = InferErrors<typeof CodexAccountError>;
 
+type AccountServiceError = { message: string };
+type CodexAccountService = {
+	createAuthorization: () => Promise<
+		Result<
+			{ authorizeUrl: string; verifier: string; state: string },
+			AccountServiceError
+		>
+	>;
+	exchangeAuthorizationCode: (input: {
+		code: string;
+		verifier: string;
+	}) => Promise<Result<CodexOAuthSession, AccountServiceError>>;
+	clearSessionCache: () => void;
+};
+type CodexAccountHost = {
+	codex: {
+		completeOAuthLogin: (
+			authorizeUrl: string,
+			expectedState: string,
+		) => Promise<Result<string, AccountServiceError>>;
+	};
+};
+
 type CodexAccountDependencies = {
-	codex: CodexService;
-	getTauri: () => Tauri | null;
+	codex: CodexAccountService;
+	getTauri: () => CodexAccountHost | null;
 	setSession: (session: CodexOAuthSession | null) => void;
 };
 

@@ -84,9 +84,8 @@ function setup({
 			createAuthorization,
 			exchangeAuthorizationCode,
 			clearSessionCache,
-		} as never,
-		getTauri: () =>
-			native ? ({ codex: { completeOAuthLogin } } as never) : null,
+		},
+		getTauri: () => (native ? { codex: { completeOAuthLogin } } : null),
 		setSession: (nextSession) => {
 			storage.session = nextSession;
 		},

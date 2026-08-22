@@ -1,13 +1,21 @@
 import { CompleteError, complete, resolveConnection } from '@epicenter/client';
 import type { Result } from 'wellcrafted/result';
 import { customFetch } from '#platform/http';
+import type { InferenceProviderId } from '$lib/constants/inference';
 import {
 	type CompletionState,
 	resolveCompletionStateFromConfig,
 } from '$lib/operations/completion-target';
 import { services } from '$lib/services';
+import type { CodexOAuthSession } from '$lib/services/codex';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import type { WhisperingApp } from '$lib/whispering/app';
+
+type CompletionApp = {
+	settings: {
+		get(key: 'completionProvider'): InferenceProviderId;
+		get(key: 'completionModel'): string;
+	};
+};
 
 /**
  * Resolve the single global completion state: what to call (`target`), whether
@@ -17,7 +25,7 @@ import type { WhisperingApp } from '$lib/whispering/app';
  * stale. `target` is null when there is no base URL to talk to (Custom with no
  * endpoint configured), the one genuinely un-runnable route.
  */
-export function resolveCompletionState(app: WhisperingApp): CompletionState {
+export function resolveCompletionState(app: CompletionApp): CompletionState {
 	return resolveCompletionStateFromConfig({
 		provider: app.settings.get('completionProvider'),
 		getDeviceConfig: deviceConfig.get,
@@ -30,6 +38,33 @@ type PrivateCodexError = {
 	message: string;
 	status?: number;
 };
+
+type SessionActivation = Result<CodexOAuthSession, PrivateCodexError>;
+
+function waitForSessionActivation(
+	activation: Promise<SessionActivation>,
+	signal: AbortSignal | undefined,
+): Promise<SessionActivation | undefined> {
+	if (!signal) return activation;
+	if (signal.aborted) return Promise.resolve(undefined);
+	return new Promise((resolve, reject) => {
+		const cancel = () => {
+			signal.removeEventListener('abort', cancel);
+			resolve(undefined);
+		};
+		signal.addEventListener('abort', cancel, { once: true });
+		void activation.then(
+			(result) => {
+				signal.removeEventListener('abort', cancel);
+				resolve(result);
+			},
+			(error) => {
+				signal.removeEventListener('abort', cancel);
+				reject(error);
+			},
+		);
+	});
+}
 
 function mapCodexError(
 	error: PrivateCodexError,
@@ -61,8 +96,15 @@ async function completeWithCodex({
 		});
 	}
 
-	const activeResult =
-		await services.codex.ensureActiveSession(capturedSession);
+	const activeResult = await waitForSessionActivation(
+		services.codex.ensureActiveSession(capturedSession),
+		signal,
+	);
+	if (!activeResult) {
+		return CompleteError.TransportFailed({
+			cause: new Error('Request cancelled'),
+		});
+	}
 	if (activeResult.error !== null) return mapCodexError(activeResult.error);
 
 	const activeSession = activeResult.data;
@@ -103,7 +145,7 @@ async function completeWithCodex({
  * `signal` aborts the in-flight request (the Polish HUD's "ship raw" control).
  */
 export function completeWithGlobalDefault(
-	app: WhisperingApp,
+	app: CompletionApp,
 	{
 		systemPrompt,
 		userPrompt,

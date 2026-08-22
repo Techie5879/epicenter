@@ -78,7 +78,7 @@ function setup() {
 	return { deviceConfig, localStorage };
 }
 
-function sendStorageValue(value: unknown) {
+function sendStorageValue(value: { accessToken: string }) {
 	const raw = JSON.stringify(value);
 	for (const listener of storageListeners) {
 		listener({ key: 'whispering.device.auth.codex', newValue: raw });

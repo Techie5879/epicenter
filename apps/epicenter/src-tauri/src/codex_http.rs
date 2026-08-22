@@ -9,6 +9,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_TOKEN_BODY_BYTES: usize = 32 * 1024;
 const MAX_RESPONSES_BODY_BYTES: usize = 1024 * 1024;
+const MAX_RESPONSE_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CREDENTIAL_BYTES: usize = 32 * 1024;
 const MAX_HEADER_BYTES: usize = 1024;
 
@@ -132,10 +133,23 @@ async fn send_and_read(
     deadline: Duration,
 ) -> Result<CodexHttpResponse, CodexHttpError> {
     timeout(deadline, async {
-        let response = request.send().await.map_err(|_| request_failed())?;
+        let mut response = request.send().await.map_err(|_| request_failed())?;
         let status = response.status();
         let body = if status.is_success() {
-            response.text().await.map_err(|_| request_failed())?
+            if response
+                .content_length()
+                .is_some_and(|length| length > MAX_RESPONSE_BODY_BYTES as u64)
+            {
+                return Err(request_failed());
+            }
+            let mut body = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(|_| request_failed())? {
+                if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BODY_BYTES {
+                    return Err(request_failed());
+                }
+                body.extend_from_slice(&chunk);
+            }
+            String::from_utf8(body).map_err(|_| request_failed())?
         } else {
             String::new()
         };
@@ -168,14 +182,14 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
-    async fn local_response(response: &'static [u8], linger: Duration) -> String {
+    async fn local_response(response: Vec<u8>, linger: Duration) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut request = [0_u8; 4096];
             let _ = stream.read(&mut request).await;
-            stream.write_all(response).await.unwrap();
+            stream.write_all(&response).await.unwrap();
             tokio::time::sleep(linger).await;
         });
         format!("http://{address}")
@@ -198,7 +212,7 @@ mod tests {
     #[tokio::test]
     async fn content_length_finishes_without_waiting_for_connection_close() {
         let endpoint = local_response(
-            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok".to_vec(),
             Duration::from_secs(2),
         )
         .await;
@@ -218,7 +232,7 @@ mod tests {
 
     #[tokio::test]
     async fn stalled_requests_stop_at_the_deadline() {
-        let endpoint = local_response(b"", Duration::from_secs(1)).await;
+        let endpoint = local_response(Vec::new(), Duration::from_secs(1)).await;
         let request = reqwest::Client::new().post(endpoint).body("request");
 
         let result = send_and_read(request, Duration::from_millis(25)).await;
@@ -232,7 +246,7 @@ mod tests {
     #[tokio::test]
     async fn rejected_response_bodies_do_not_cross_ipc() {
         let endpoint = local_response(
-            b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 14\r\n\r\nprivate-detail",
+            b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 14\r\n\r\nprivate-detail".to_vec(),
             Duration::ZERO,
         )
         .await;
@@ -244,5 +258,20 @@ mod tests {
 
         assert_eq!(response.status, 401);
         assert!(response.body.is_empty());
+    }
+
+    #[tokio::test]
+    async fn oversized_success_bodies_do_not_cross_ipc() {
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\nprivate",
+            MAX_RESPONSE_BODY_BYTES + 1
+        )
+        .into_bytes();
+        let endpoint = local_response(response, Duration::ZERO).await;
+        let request = reqwest::Client::new().post(endpoint).body("request");
+
+        let result = send_and_read(request, Duration::from_secs(1)).await;
+
+        assert!(matches!(result, Err(CodexHttpError::RequestFailed { .. })));
     }
 }

@@ -6,7 +6,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { CodexOAuthSession } from '$lib/services/codex';
-import type { WhisperingApp } from '$lib/whispering/app';
 
 let storedSession: CodexOAuthSession | null = null;
 const writes: Array<CodexOAuthSession | null> = [];
@@ -63,16 +62,21 @@ function session(
 function app(
 	provider: 'Codex' | 'Google' = 'Codex',
 	model = 'gpt-5.3-codex-spark',
-): WhisperingApp {
+) {
 	return {
 		settings: {
-			get(key: string) {
-				if (key === 'completionProvider') return provider;
-				if (key === 'completionModel') return model;
-				throw new Error(`Unexpected setting: ${key}`);
-			},
+			get: createSettingsReader(provider, model),
 		},
-	} as unknown as WhisperingApp;
+	};
+}
+
+function createSettingsReader(provider: 'Codex' | 'Google', model: string) {
+	function get(key: 'completionProvider'): 'Codex' | 'Google';
+	function get(key: 'completionModel'): string;
+	function get(key: 'completionProvider' | 'completionModel') {
+		return key === 'completionProvider' ? provider : model;
+	}
+	return get;
 }
 
 function deferred<T>() {
@@ -163,6 +167,27 @@ test('disconnect during activation prevents completion and cannot restore storag
 	const result = await completion;
 	expect(result.error?.message).toContain('account changed');
 	expect(storedSession).toBeNull();
+	expect(completeCodex).not.toHaveBeenCalled();
+});
+
+test('cancellation stops waiting for activation without writing or completing', async () => {
+	const captured = session('r0');
+	const activation = deferred<Result<CodexOAuthSession, never>>();
+	const controller = new AbortController();
+	storedSession = captured;
+	ensureActiveSession.mockImplementation(() => activation.promise);
+	const completion = completeWithGlobalDefault(app(), {
+		systemPrompt: 'system',
+		userPrompt: 'user',
+		signal: controller.signal,
+	});
+
+	controller.abort();
+
+	const result = await completion;
+	expect(result.error?.message).toContain('cancelled');
+	expect(storedSession).toEqual(captured);
+	expect(writes).toEqual([]);
 	expect(completeCodex).not.toHaveBeenCalled();
 });
 
