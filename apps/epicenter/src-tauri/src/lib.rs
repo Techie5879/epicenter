@@ -33,6 +33,9 @@ pub mod app_data;
 mod codex_oauth;
 use codex_oauth::{complete_codex_oauth_login, CodexOAuthCallbackState};
 
+mod codex_http;
+use codex_http::send_codex_http_request;
+
 pub mod audio;
 use audio::encode_recording_for_upload;
 
@@ -378,6 +381,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             is_autostart_enabled,
             set_autostart_enabled,
             complete_codex_oauth_login,
+            send_codex_http_request,
         ])
         .events(tauri_specta::collect_events![
             keyboard::DictationCapabilityEvent,

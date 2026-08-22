@@ -1480,6 +1480,7 @@ dependencies = [
  "objc2-foundation",
  "ogg",
  "rayon",
+ "reqwest 0.12.28",
  "rubato",
  "serde",
  "serde_json",

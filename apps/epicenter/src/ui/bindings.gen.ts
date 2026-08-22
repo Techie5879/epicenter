@@ -371,6 +371,10 @@ export const commands = {
 				expectedState,
 			}),
 		),
+	sendCodexHttpRequest: (request: CodexHttpRequest) =>
+		typedError<CodexHttpResponse, CodexHttpError>(
+			__TAURI_INVOKE('send_codex_http_request', { request }),
+		),
 };
 
 /** Events */
@@ -454,6 +458,26 @@ export type CodexOAuthCallbackError =
 	| { name: 'CallbackTimeout'; message: string }
 	| { name: 'OAuthError'; message: string }
 	| { name: 'CallbackReplaced'; message: string };
+
+export type CodexHttpError =
+	| { name: 'InvalidRequest'; message: string }
+	| { name: 'RequestFailed'; message: string }
+	| { name: 'RequestTimedOut'; message: string };
+
+export type CodexHttpRequest =
+	| { kind: 'token'; body: string }
+	| {
+			kind: 'responses';
+			accessToken: string;
+			accountId: string | null;
+			residency: string | null;
+			body: string;
+	  };
+
+export type CodexHttpResponse = {
+	status: number;
+	body: string;
+};
 
 /**
  *  Which microphone a recording actually opened, and whether that was the one

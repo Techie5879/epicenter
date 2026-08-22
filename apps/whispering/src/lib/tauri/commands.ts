@@ -105,6 +105,9 @@ export const commands = {
 };
 
 export type {
+	CodexHttpError,
+	CodexHttpRequest,
+	CodexHttpResponse,
 	DeviceAcquisition,
 	DictationCapability,
 	EndedReason,

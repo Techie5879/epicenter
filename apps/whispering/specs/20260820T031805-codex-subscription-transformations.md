@@ -34,6 +34,7 @@ CompletionRuntimeConfig and shared ChatGPT account control
   -> device config: auth.codex
   -> typed #platform/tauri Codex OAuth command
   -> Epicenter localhost OAuth callback
+  -> typed native Codex HTTP command
   -> injected, UI-free Codex protocol service
   -> completeWithGlobalDefault activation and storage ownership guard
   -> direct ChatGPT Responses SSE request
@@ -54,6 +55,18 @@ Epicenter exposes one generated, typed `completeCodexOauthLogin` command to the 
 
 This cancel and rebind lifecycle prevents an abandoned login from completing alongside its replacement.
 
+## Native Codex HTTP
+
+The Tauri HTTP plugin can leave a completed response body open forever. Codex uses one typed native command instead. The command accepts a closed request enum rather than a URL:
+
+- `token` posts only to the OpenAI token endpoint;
+- `responses` posts only to the ChatGPT Codex Responses endpoint and constructs its authorization and account headers in Rust;
+- request bodies and header values have fixed size limits;
+- rejected response bodies do not cross IPC;
+- connection setup stops after 10 seconds and the full request stops after 60 seconds.
+
+The frontend adapter returns a normal `Response` to the protocol service, so the OAuth, refresh, and SSE parsing code keeps one transport contract. Browser builds retain the existing fetch fallback. Caller cancellation stops the frontend wait immediately; the native request remains bounded by its 60-second deadline.
+
 ## Codex service and completion invariants
 
 - Authorization uses PKCE S256 with a fresh verifier and state.
@@ -65,13 +78,13 @@ This cancel and rebind lifecycle prevents an abandoned login from completing alo
 - `complete` accepts an already-active session and never refreshes it. It parses LF or CRLF SSE, multiline `data:` fields, output deltas, and requires `response.completed` before returning text.
 - The completion operation captures `auth.codex`, activates it once, then rereads storage before Responses. It persists a valid rotation when storage still holds the captured refresh token, proceeds without overwrite when another same-account caller already persisted the active refresh token, and aborts on disconnect or account replacement.
 - Rotated credentials persist before the Responses call, so a downstream generation failure does not discard a valid session.
-- The Polish `AbortSignal` reaches the Responses fetch. Token and Responses requests have no feature-specific outbound deadline.
+- The Polish `AbortSignal` stops waiting for the Responses request. Native token and Responses calls have a 60-second deadline.
 
 ## Security and tradeoffs
 
 This integration follows a private ChatGPT backend contract, not a documented public API. A future server change may require a client update.
 
-The refresh token lives in Whispering's localStorage-backed device configuration rather than an OS keychain. This matches the current device-config architecture but gives the browser storage boundary responsibility for the session. The native callback has a five-minute deadline; outbound token and Responses calls rely on the host transport and caller cancellation instead of feature-specific timeouts.
+The refresh token lives in Whispering's localStorage-backed device configuration rather than an OS keychain. This matches the current device-config architecture but gives the browser storage boundary responsibility for the session. The native callback has a five-minute deadline. Native token and Responses calls stop after 60 seconds.
 
 ## Verification record
 

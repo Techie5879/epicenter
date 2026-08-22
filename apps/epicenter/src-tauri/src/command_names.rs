@@ -48,4 +48,5 @@ pub const COMMANDS: &[&str] = &[
     "is_autostart_enabled",
     "set_autostart_enabled",
     "complete_codex_oauth_login",
+    "send_codex_http_request",
 ];

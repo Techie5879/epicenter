@@ -43,6 +43,7 @@
 		"allow-is-autostart-enabled",
 		"allow-set-autostart-enabled",
 		"allow-complete-codex-oauth-login",
+		"allow-send-codex-http-request",
 		"clipboard-manager:allow-read-text",
 		"clipboard-manager:allow-write-text",
 		"dialog:allow-open",

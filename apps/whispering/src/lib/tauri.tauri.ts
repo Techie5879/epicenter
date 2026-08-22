@@ -425,6 +425,7 @@ const transcription = {
 // Codex OAuth -------------------------------------------------------
 const codex = {
 	completeOAuthLogin: commands.completeCodexOauthLogin,
+	request: commands.sendCodexHttpRequest,
 };
 
 // opener ------------------------------------------------------------
