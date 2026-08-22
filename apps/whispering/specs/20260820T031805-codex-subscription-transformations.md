@@ -63,6 +63,7 @@ The Tauri HTTP plugin can leave a completed response body open forever. Codex us
 - `responses` posts only to the ChatGPT Codex Responses endpoint and constructs its authorization and account headers in Rust;
 - request bodies and header values have fixed size limits;
 - rejected response bodies do not cross IPC;
+- successful response bodies stop at 4 MiB before crossing IPC;
 - connection setup stops after 10 seconds and the full request stops after 60 seconds.
 
 The frontend adapter returns a normal `Response` to the protocol service, so the OAuth, refresh, and SSE parsing code keeps one transport contract. Browser builds retain the existing fetch fallback. Caller cancellation stops the frontend wait immediately; the native request remains bounded by its 60-second deadline.
@@ -77,6 +78,7 @@ The frontend adapter returns a normal `Response` to the protocol service, so the
 - Refresh work is keyed by the old refresh token. Concurrent callers for one account share work, distinct accounts remain isolated, settled rotation chains remain reusable, failures are evicted, cycles return sanitized errors, and disconnect clears the cache explicitly.
 - `complete` accepts an already-active session and never refreshes it. It parses LF or CRLF SSE, multiline `data:` fields, output deltas, and requires `response.completed` before returning text.
 - The completion operation captures `auth.codex`, activates it once, then rereads storage before Responses. It persists a valid rotation when storage still holds the captured refresh token, proceeds without overwrite when another same-account caller already persisted the active refresh token, and aborts on disconnect or account replacement.
+- Polish cancellation stops that caller's activation wait immediately without cancelling a shared refresh another caller can reuse.
 - Rotated credentials persist before the Responses call, so a downstream generation failure does not discard a valid session.
 - The Polish `AbortSignal` stops waiting for the Responses request. Native token and Responses calls have a 60-second deadline.
 
@@ -88,28 +90,30 @@ The refresh token lives in Whispering's localStorage-backed device configuration
 
 ## Verification record
 
-At `5f00ba03be6d82e67c69201ebeb9d6f1fb4e6f27`:
+At `3de219a203`, rebased onto upstream `abe10f3867`:
 
-- [x] Focused Codex, routing, target, and device-config tests: 59 passed.
-- [x] Full Whispering package tests: 163 passed.
+- [x] Focused review-fix tests: 44 passed.
+- [x] Full Whispering package tests: 171 passed.
 - [x] Whispering browser and desktop typechecks: 0 errors and 0 warnings.
 - [x] Whispering browser and Epicenter-hosted production builds passed.
-- [x] Native OAuth callback tests: 13 passed.
+- [x] Native Codex HTTP and OAuth callback tests: 18 passed.
 - [x] `cargo check` passed.
-- [x] Touched-file Biome passed. It reported six existing generated-binding `any` warnings.
-- [x] `git diff --check`, changed callback `rustfmt --check`, and forbidden dash scan passed.
+- [x] Feature-owned anti-slop checks and touched-file Biome passed.
+- [x] `git diff --check`, changed Rust `rustfmt --check`, generated-binding comparison, and forbidden dash scan passed.
 - [ ] Complete a live ChatGPT subscription login.
 - [ ] Run a real `gpt-5.3-codex-spark` transformation.
 
 These live checks keep this spec in progress.
 
-The broader Rust library run had 137 passing tests and one unrelated pre-existing failure in `one_verb_opens_compiled_and_admitted_applications_alike`. The base commit contains the same contradictory `"0-"` fixture and edge validator.
+The broader Rust library run still has one unrelated pre-existing failure in `one_verb_opens_compiled_and_admitted_applications_alike`. The base commit contains the same contradictory `"0-"` fixture and edge validator.
 
 ## Review history
 
-The cumulative implementation at `5f00ba03be6d82e67c69201ebeb9d6f1fb4e6f27` passed review after the native cancellation and rebind fixes and the current-upstream service reachability integration. That review found no blockers or non-blockers. This SHA remains the implementation checkpoint recorded above.
+The cumulative implementation at `5f00ba03be6d82e67c69201ebeb9d6f1fb4e6f27` passed review after the native cancellation and rebind fixes and the current-upstream service reachability integration. That review found no blockers or non-blockers.
 
 A later review of `c6dae1caa9256d3ff817b2aeb3d98712fb642793` found that account-operation ownership ended too early and that the spec status was terminal while live checks remained. The current branch includes the lifecycle ownership fix and keeps this document in progress until those live checks pass.
+
+The independent review of native HTTP checkpoint `8636dfa581` requested caller-scoped refresh cancellation, feature-owned anti-slop cleanup, and a current GitHub base ref. Commit `3de219a203` addresses those findings, caps successful native response bodies, and awaits a fresh independent review.
 
 ## Deviation from the old branch
 
