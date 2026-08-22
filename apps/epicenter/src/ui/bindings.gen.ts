@@ -452,13 +452,6 @@ export type CatalogError =
 	| { name: 'DownloadFailed'; message: string }
 	| { name: 'DeleteFailed'; message: string };
 
-export type CodexOAuthCallbackError =
-	| { name: 'InvalidAuthorizeUrl'; message: string }
-	| { name: 'CallbackFailed'; message: string }
-	| { name: 'CallbackTimeout'; message: string }
-	| { name: 'OAuthError'; message: string }
-	| { name: 'CallbackReplaced'; message: string };
-
 export type CodexHttpError =
 	| { name: 'InvalidRequest'; message: string }
 	| { name: 'RequestFailed'; message: string }
@@ -478,6 +471,13 @@ export type CodexHttpResponse = {
 	status: number;
 	body: string;
 };
+
+export type CodexOAuthCallbackError =
+	| { name: 'InvalidAuthorizeUrl'; message: string }
+	| { name: 'CallbackFailed'; message: string }
+	| { name: 'CallbackTimeout'; message: string }
+	| { name: 'OAuthError'; message: string }
+	| { name: 'CallbackReplaced'; message: string };
 
 /**
  *  Which microphone a recording actually opened, and whether that was the one
