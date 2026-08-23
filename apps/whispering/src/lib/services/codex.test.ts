@@ -547,7 +547,7 @@ test('refresh rotation cycles return a sanitized error', async () => {
 	expect(JSON.stringify(error)).not.toContain('private-refresh-r1');
 });
 
-test('complete forwards Spark exactly and parses LF, CRLF, and multiline SSE data', async () => {
+test('complete sends Spark input as a message list and parses SSE data', async () => {
 	const { calls, service } = setup({
 		responses: [
 			new Response(
@@ -584,7 +584,12 @@ test('complete forwards Spark exactly and parses LF, CRLF, and multiline SSE dat
 	expect(JSON.parse(calls[0]?.init?.body?.toString() ?? '')).toEqual({
 		model: 'gpt-5.3-codex-spark',
 		instructions: 'Rewrite clearly.',
-		input: 'Input text',
+		input: [
+			{
+				role: 'user',
+				content: [{ type: 'input_text', text: 'Input text' }],
+			},
+		],
 		store: false,
 		stream: true,
 	});

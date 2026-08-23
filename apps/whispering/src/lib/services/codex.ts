@@ -361,7 +361,12 @@ export function createCodexService({
 						body: JSON.stringify({
 							model,
 							instructions: systemPrompt,
-							input: userPrompt,
+							input: [
+								{
+									role: 'user',
+									content: [{ type: 'input_text', text: userPrompt }],
+								},
+							],
 							store: false,
 							stream: true,
 						}),
