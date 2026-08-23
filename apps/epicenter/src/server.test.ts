@@ -54,7 +54,6 @@ import {
 	BOOTSTRAP_ROUTE,
 	BUILT_IN_ROUTES,
 	HOME_ROUTE,
-	HONEYCRISP_ROUTE,
 	MAIL_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
@@ -517,7 +516,6 @@ describe('createHomeServer', () => {
 			).toEqual([
 				{ id: 'home', pattern: '/apps/home/' },
 				{ id: 'whispering', pattern: '/apps/whispering/' },
-				{ id: 'honeycrisp', pattern: '/apps/honeycrisp/' },
 				{ id: 'mail', pattern: '/apps/mail/' },
 				{ id: 'books', pattern: '/apps/books/' },
 			]);
@@ -555,24 +553,6 @@ describe('createHomeServer', () => {
 			expect(withoutAuthBootstrap(await clientRoute.text())).toBe(
 				WHISPERING_PAGE,
 			);
-			// The second compiled application takes the same path with no
-			// per-application wiring: its own document, stamped and gated.
-			const honeycrisp = await fetch(HONEYCRISP_ROUTE.url(server.url.origin), {
-				headers: authenticatedHeaders(server),
-			});
-			const honeycrispPage = await honeycrisp.text();
-			expect(honeycrispPage).toContain('id="epicenter-auth-bootstrap"');
-			expect(withoutAuthBootstrap(honeycrispPage)).toBe(
-				applicationPage('Honeycrisp'),
-			);
-			const honeycrispRoute = await fetch(
-				`${server.url.origin}/apps/honeycrisp/notes/some-note`,
-				{ headers: authenticatedHeaders(server) },
-			);
-			expect(withoutAuthBootstrap(await honeycrispRoute.text())).toBe(
-				applicationPage('Honeycrisp'),
-			);
-
 			// The page itself, not a phrase inside it: what this route owes is the
 			// release-bundled placeholder rather than an app or a 404, and pinning
 			// a sentence here only means the copy cannot be improved without
@@ -592,8 +572,6 @@ describe('createHomeServer', () => {
 				whisperingAsset,
 				vadAsset,
 				clientRoute,
-				honeycrisp,
-				honeycrispRoute,
 				mail,
 				books,
 			]) {

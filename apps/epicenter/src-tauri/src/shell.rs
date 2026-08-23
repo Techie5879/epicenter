@@ -40,19 +40,17 @@ pub struct GlobalShortcutRegistry(Mutex<Vec<GlobalShortcutRegistration>>);
 
 pub fn create_tray(app: &DesktopAppHandle) -> tauri::Result<()> {
     let menu = MenuBuilder::new(app)
-        .text("show-home", "Show Home")
         .text("show-whispering", "Show Whispering")
         .separator()
-        .text("quit", "Quit Epicenter")
+        .text("quit", "Quit Whispering")
         .build()?;
     let icon = tray_icon(false)?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
-        .tooltip("Epicenter")
+        .tooltip("Whispering")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "show-home" => request_window(app, BuiltInApp::Home),
             "show-whispering" => request_window(app, BuiltInApp::Whispering),
             "quit" => app.exit(0),
             _ => {}

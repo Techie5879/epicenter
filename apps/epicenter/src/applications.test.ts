@@ -35,7 +35,6 @@ describe('listApplications', () => {
 	test('an empty catalog still offers the compiled applications', () => {
 		expect(listApplications({ apps: [] })).toEqual([
 			{ id: 'whispering', title: 'Whispering' },
-			{ id: 'honeycrisp', title: 'Honeycrisp' },
 		]);
 	});
 
@@ -49,7 +48,6 @@ describe('listApplications', () => {
 			),
 		).toEqual([
 			{ id: 'whispering', title: 'Whispering' },
-			{ id: 'honeycrisp', title: 'Honeycrisp' },
 			{ id: 'notes', title: 'Notes' },
 			{ id: 'timeline', title: 'Timeline' },
 		]);

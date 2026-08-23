@@ -254,12 +254,7 @@ describe('promoteAppCatalogCandidate', () => {
 		// this host already spent is a bare label. The sets are disjoint by
 		// grammar, which is what this test pins.
 		const root = tempDir('epicenter-catalog-root-');
-		for (const id of [
-			...COMPOSED_APP_IDS,
-			'home',
-			'whispering',
-			'honeycrisp',
-		]) {
+		for (const id of [...COMPOSED_APP_IDS, 'home', 'whispering']) {
 			expect(isDatabaseId(id, DATA_ADDRESS_CEILINGS)).toBe(false);
 			await expect(
 				promoteAppCatalogCandidate(

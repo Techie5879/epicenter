@@ -42,11 +42,6 @@ export const WHISPERING_APPLICATION: Application = {
 	title: BUILT_IN_ROUTES.whispering.title,
 };
 
-export const HONEYCRISP_APPLICATION: Application = {
-	id: BUILT_IN_ROUTES.honeycrisp.id,
-	title: BUILT_IN_ROUTES.honeycrisp.title,
-};
-
 /**
  * Compiled applications, in the order Home lists them.
  *
@@ -56,7 +51,6 @@ export const HONEYCRISP_APPLICATION: Application = {
  */
 export const COMPILED_APPLICATIONS: readonly Application[] = [
 	WHISPERING_APPLICATION,
-	HONEYCRISP_APPLICATION,
 ];
 
 /**

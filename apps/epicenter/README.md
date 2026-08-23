@@ -6,8 +6,7 @@ Epicenter is the repository's native application host. It owns one Tauri runtime
 trusted SPA source                 Epicenter build output
 
 apps/whispering/src  -----------> dist/whispering
-apps/honeycrisp/src  -----------> dist/honeycrisp
-apps/epicenter/ui     -----------> dist/home
+apps/epicenter/ui     -----------> dist/home (local-model setup fallback)
                                           |
                                           v
                               Bun loopback sidecar
@@ -17,9 +16,9 @@ apps/epicenter/ui     -----------> dist/home
 ```
 
 A compiled application is a `dist/<id>` build this release declares, served
-below `/apps/<id>/`. Whispering and Honeycrisp are the two. Each keeps its
-independently deployable browser build, and the variant Epicenter serves is
-selected at build time by the `epicenter-host` resolve condition.
+below `/apps/<id>/`. Whispering is the compiled application in this release.
+It keeps its independently deployable browser build, and the variant Epicenter
+serves is selected at build time by the `epicenter-host` resolve condition.
 
 That condition does not decide where the data lives. Every build opens its own
 store, with no platform seam, and reaches one authority per signed-in account
@@ -36,21 +35,14 @@ Start Epicenter from the repository root:
 bun dev:epicenter
 ```
 
-Epicenter opens Home, which is an application beside the others rather than a
-shell above them (ADR-0209). Its Apps pane lists what this build can launch, the
-compiled applications plus the selected catalog generation's members, and
-launching one opens its own window; the OS is the switcher from there, and
-closing Home leaves everything it launched running. Its Data pane is Epicenter's
-own job: every workspace id as real read-only tables, where picking one makes
-`SELECT * FROM notes` mean something and "Everything raw" shows the storage as it
-is. Whispering hands transcription setup back to Home's Settings pane
-when the host has no usable local model, and Settings offers the ordinary launch
-action once there is one. The tray and deep links remain shortcuts into the same
-windows:
+Epicenter opens Whispering directly. Home remains a recovery surface for local
+model administration because the host owns the active model and its downloads.
+Whispering opens that surface only when a person chooses on-device transcription
+without a usable model. The tray reopens Whispering, while deep links can still
+reach either window:
 
 ```bash
 open 'epicenter://app/whispering'
-open 'epicenter://app/honeycrisp'
 open 'epicenter://app/home'
 ```
 
@@ -83,7 +75,7 @@ to activate the new catalog.
 ## Build and verify
 
 ```bash
-# Build Home, every compiled application, and the Bun sidecar
+# Build Home, Whispering, and the Bun sidecar
 bun run --cwd apps/epicenter build:desktop
 
 # Package the complete native application

@@ -3,12 +3,12 @@
  *
  * Verifies the compiled Bun child runs without a system Bun on PATH, accepts
  * only the fixed production boot contract, finds packaged Home and Whispering
- * assets through the Rust-supplied resource path, and exits when the parent
- * pipe closes.
+ * assets through the Rust-supplied resource path, excludes Honeycrisp, and exits
+ * when the parent pipe closes.
  */
 
 import { expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -70,6 +70,7 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 	if ((await build.exited) !== 0) {
 		throw new Error(await new Response(build.stderr).text());
 	}
+	expect(existsSync(join(appDir, 'dist', 'honeycrisp'))).toBe(false);
 
 	const triple = await hostTargetTriple();
 	const binary = join(
@@ -129,6 +130,9 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 		expect(whispering.status).toBe(200);
 		const whisperingPage = await whispering.text();
 		expect(whisperingPage).toContain('<title>Whispering</title>');
+		expect((await fetch(`${origin}/apps/honeycrisp/`, session)).status).toBe(
+			404,
+		);
 		const entryPath = whisperingPage.match(
 			/\/apps\/whispering\/_app\/[^" ]+\.js/,
 		)?.[0];

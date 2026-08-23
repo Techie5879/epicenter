@@ -31,7 +31,6 @@ function builtInRoute<const TId extends string>(id: TId, title: string) {
 export const BUILT_IN_ROUTES = {
 	home: builtInRoute('home', 'Home'),
 	whispering: builtInRoute('whispering', 'Whispering'),
-	honeycrisp: builtInRoute('honeycrisp', 'Honeycrisp'),
 	mail: builtInRoute('mail', 'Mail'),
 	books: builtInRoute('books', 'Books'),
 } as const;
@@ -45,7 +44,6 @@ export const ACCOUNT_INSTANCE_ROUTE = route('/_epicenter/account/instance');
 export const ACCOUNT_PROFILE_ROUTE = route('/_epicenter/account/profile');
 export const HOME_ROUTE = BUILT_IN_ROUTES.home;
 export const WHISPERING_ROUTE = BUILT_IN_ROUTES.whispering;
-export const HONEYCRISP_ROUTE = BUILT_IN_ROUTES.honeycrisp;
 export const MAIL_ROUTE = BUILT_IN_ROUTES.mail;
 export const BOOKS_ROUTE = BUILT_IN_ROUTES.books;
 /** What Home lists as launchable (ADR-0189). */

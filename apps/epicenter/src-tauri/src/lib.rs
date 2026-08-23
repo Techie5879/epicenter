@@ -105,19 +105,12 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 enum BuiltInApp {
     Home,
     Whispering,
-    Honeycrisp,
     Mail,
     Books,
 }
 
 impl BuiltInApp {
-    const ALL: [Self; 5] = [
-        Self::Home,
-        Self::Whispering,
-        Self::Honeycrisp,
-        Self::Mail,
-        Self::Books,
-    ];
+    const ALL: [Self; 4] = [Self::Home, Self::Whispering, Self::Mail, Self::Books];
 
     /// Whether Home lists this app as one a person can open (ADR-0189).
     ///
@@ -128,14 +121,13 @@ impl BuiltInApp {
     /// All stay reserved IDs the catalog refuses to admit, so "not launchable"
     /// never means "free for someone else to claim".
     const fn is_launchable(self) -> bool {
-        matches!(self, Self::Whispering | Self::Honeycrisp)
+        matches!(self, Self::Whispering)
     }
 
     const fn id(self) -> &'static str {
         match self {
             Self::Home => "home",
             Self::Whispering => "whispering",
-            Self::Honeycrisp => "honeycrisp",
             Self::Mail => "mail",
             Self::Books => "books",
         }
@@ -145,7 +137,6 @@ impl BuiltInApp {
         match self {
             Self::Home => "/apps/home/",
             Self::Whispering => "/apps/whispering/",
-            Self::Honeycrisp => "/apps/honeycrisp/",
             Self::Mail => "/apps/mail/",
             Self::Books => "/apps/books/",
         }
@@ -154,8 +145,7 @@ impl BuiltInApp {
     const fn title(self) -> &'static str {
         match self {
             Self::Home => "Epicenter: Home",
-            Self::Whispering => "Epicenter: Whispering",
-            Self::Honeycrisp => "Epicenter: Honeycrisp",
+            Self::Whispering => "Whispering",
             Self::Mail => "Epicenter: Mail",
             Self::Books => "Epicenter: Books",
         }
@@ -165,6 +155,8 @@ impl BuiltInApp {
         Self::ALL.into_iter().find(|built_in| built_in.id() == id)
     }
 }
+
+const DEFAULT_APP: BuiltInApp = BuiltInApp::Whispering;
 
 type DesktopAppHandle = AppHandle<Wry>;
 
@@ -783,7 +775,7 @@ pub fn run() {
                 }
             }
             if !opened_window {
-                request_window(app.handle(), BuiltInApp::Home);
+                request_window(app.handle(), DEFAULT_APP);
             }
             request_start(app.handle().clone(), None);
             Ok(())
@@ -791,7 +783,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build Epicenter")
         .run(|app, event| match event {
-            RunEvent::Reopen { .. } => request_window(app, BuiltInApp::Home),
+            RunEvent::Reopen { .. } => request_window(app, DEFAULT_APP),
             RunEvent::Exit => shutdown_host(app),
             _ => {}
         });
@@ -808,7 +800,7 @@ fn open_forwarded_deep_links(app: &DesktopAppHandle, arguments: &[String]) {
         }
     }
     if built_ins.is_empty() {
-        request_window(app, BuiltInApp::Home);
+        request_window(app, DEFAULT_APP);
     } else {
         for built_in in built_ins {
             request_window(app, built_in);
@@ -1028,7 +1020,7 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
     state.activate(&token);
     let mut built_ins = state.take_pending_apps();
     if built_ins.is_empty() {
-        built_ins.push(BuiltInApp::Home);
+        built_ins.push(DEFAULT_APP);
     }
     if let Err(error) = create_windows_on_main_thread(app, port, &token, built_ins) {
         state.deactivate();
@@ -1763,12 +1755,16 @@ mod tests {
             actual,
             [
                 ("home", "/apps/home/", "Epicenter: Home"),
-                ("whispering", "/apps/whispering/", "Epicenter: Whispering"),
-                ("honeycrisp", "/apps/honeycrisp/", "Epicenter: Honeycrisp"),
+                ("whispering", "/apps/whispering/", "Whispering"),
                 ("mail", "/apps/mail/", "Epicenter: Mail"),
                 ("books", "/apps/books/", "Epicenter: Books"),
             ]
         );
+    }
+
+    #[test]
+    fn ordinary_launches_open_whispering() {
+        assert_eq!(DEFAULT_APP, BuiltInApp::Whispering);
     }
 
     /// Home lists exactly the applications this table calls launchable, so the
@@ -1782,7 +1778,7 @@ mod tests {
             .filter(|window| window.is_launchable())
             .map(BuiltInApp::id)
             .collect();
-        assert_eq!(launchable, ["whispering", "honeycrisp"]);
+        assert_eq!(launchable, ["whispering"]);
     }
 
     #[test]
@@ -1791,18 +1787,21 @@ mod tests {
             parse_application_id("whispering"),
             Some(Application::Compiled(BuiltInApp::Whispering))
         ));
-        assert!(matches!(
-            parse_application_id("honeycrisp"),
-            Some(Application::Compiled(BuiltInApp::Honeycrisp))
-        ));
-
         // Every well-formed non-reserved ID resolves to the app-window path,
         // including ones no generation ever admitted. That is the ownership
         // boundary, not an oversight: the catalog is Bun's (ADR-0179), Home
         // only offers IDs from the list Bun served it, and an ID that names no
         // member opens a window Bun answers with 404. Re-deriving membership
         // here would be a second catalog with a second answer.
-        for accepted in ["hello-http", "a", "notes2", "x-y-z", "0-", "never-admitted"] {
+        for accepted in [
+            "hello-http",
+            "hello.http",
+            "a",
+            "notes2",
+            "x-y-z",
+            "0-0",
+            "never-admitted",
+        ] {
             assert!(
                 matches!(parse_application_id(accepted), Some(Application::Admitted(id)) if id == accepted),
                 "expected {accepted:?} to resolve to the app-window path"
@@ -1813,7 +1812,6 @@ mod tests {
             "",
             "Hello",
             "hello_http",
-            "hello.http",
             "hello/http",
             "..",
             "hello http",
@@ -2325,7 +2323,6 @@ mod tests {
         for (url, expected) in [
             ("epicenter://app/home", BuiltInApp::Home),
             ("epicenter://app/whispering", BuiltInApp::Whispering),
-            ("epicenter://app/honeycrisp", BuiltInApp::Honeycrisp),
             ("epicenter://app/mail", BuiltInApp::Mail),
             ("epicenter://app/books", BuiltInApp::Books),
         ] {
