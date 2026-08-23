@@ -1,5 +1,7 @@
 # Delete Transformation Runs Feature
 
+> Historical note: this spec predates the current Wellcrafted query API. Shared mutations are now called directly. Do not copy older `.execute()` examples from this plan.
+
 ## Problem
 Transformation runs currently have no way to be deleted. Users can see the history of transformation runs when viewing a transformation or recording, but there's no UI or backend support for deleting these runs. This can lead to:
 1. Accumulation of old/unnecessary run data
@@ -176,7 +178,7 @@ All delete functionality inlined into Runs.svelte using the confirmationDialog p
 - Uses `confirmationDialog.open()` for confirmation
 - Delete logic inlined directly in onclick handler
 - Disabled state during deletion
-- Uses `rpc.notify.success.execute()` and `rpc.notify.error.execute()` for notifications
+- Uses `rpc.notify.success()` and `rpc.notify.error()` for notifications
 
 **Clear All Runs Button** (in Runs.svelte):
 - Bulk deletion button at top of runs table

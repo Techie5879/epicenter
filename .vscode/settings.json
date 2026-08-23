@@ -33,5 +33,9 @@
 	"[markdown]": {
 		"editor.defaultFormatter": "biomejs.biome",
 		"editor.formatOnSave": true
-	}
+	},
+	// Repair relative Markdown links when a note is renamed or moved in the Explorer.
+	// Same convention as javascript/typescript updateImportsOnFileMove; see
+	// docs/articles/20260607T143000-markdown-link-repair-is-the-only-irreversible-choice.md
+	"markdown.updateLinksOnFileMove.enabled": "always"
 }

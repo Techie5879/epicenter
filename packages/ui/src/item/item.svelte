@@ -2,17 +2,21 @@
 	import { tv, type VariantProps } from 'tailwind-variants';
 
 	export const itemVariants = tv({
-		// Custom override: `relative` needed for absolute-positioned showOnHover Actions
-		base: 'group/item relative [a]:hover:bg-accent/50 focus-visible:border-ring focus-visible:ring-ring/50 flex flex-wrap items-center rounded-md border border-transparent text-sm transition-colors duration-100 outline-none focus-visible:ring-[3px] [a]:transition-colors',
+		// Styling lives in the vendored Vega preset (cn-* classes); see
+		// packages/ui/src/styles/style-vega.css.
+		// Custom overrides preserved inline: `relative` is needed for the
+		// absolute-positioned showOnHover Actions, and `[a]:hover:bg-accent/50`
+		// keeps the Epicenter accent hover color (cn-item uses bg-muted).
+		base: 'cn-item group/item relative [a]:hover:bg-accent/50 focus-visible:border-ring focus-visible:ring-ring/50 flex flex-wrap items-center transition-colors duration-100 outline-none focus-visible:ring-[3px] [a]:transition-colors',
 		variants: {
 			variant: {
-				default: 'bg-transparent',
-				outline: 'border-border',
-				muted: 'bg-muted/50',
+				default: 'cn-item-variant-default',
+				outline: 'cn-item-variant-outline',
+				muted: 'cn-item-variant-muted',
 			},
 			size: {
-				default: 'gap-4 p-4',
-				sm: 'gap-2.5 px-4 py-3',
+				default: 'cn-item-size-default',
+				sm: 'cn-item-size-sm',
 			},
 		},
 		defaultVariants: {

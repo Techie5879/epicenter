@@ -1,81 +1,79 @@
 # State
 
-Singleton reactive state that stays in sync with the application. Unlike the query layer which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the application lifecycle.
+Reactive state that stays in sync with the app. Unlike the query layer, which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the app lifecycle.
+
+Two shapes live here. Workspace-backed state (`settings`, `recordings`, `recipes`) is owned and hydrated by the UI-free app; these modules are thin Svelte reactivity adapters over that ready product API. Device/hardware state (`device-config`, recorders, lifecycle) remains module singletons.
 
 ## When to Use State vs Query Layer
 
-| Aspect | `$lib/state/` | `$lib/query/` |
+| Aspect | `$lib/state/` | `$lib/queries/` |
 |--------|----------------|---------------|
-| **Pattern** | Singleton reactive state | Stale-while-revalidate (TanStack Query) |
-| **State Location** | Module-level `$state` runes | TanStack Query cache |
+| **Pattern** | App-owned domain state plus Svelte adapters | Stale-while-revalidate (TanStack Query) |
+| **State Location** | Ready `WhisperingApp` | TanStack Query cache |
 | **Updates** | Immediate, live | Cached with background refresh |
 | **Use Case** | Hardware state, user preferences, live status, workspace table data | Data fetching, mutations, external API calls |
-| **Lifecycle** | Application lifetime | Managed by TanStack Query |
+| **Lifecycle** | App lifetime | Managed by TanStack Query |
 
 ## Current State Modules
 
 ### `settings.svelte.ts`
 
-Synced workspace settings backed by Yjs KV. Settings here roam across devices via CRDT sync. Uses a SvelteMap for per-key reactivity.
+Synced workspace settings backed by the canonical workspace KV section (ADR-0130). Settings roam across devices through row sync. The app core hydrates every key before the app resolves; `createSettingsView` wraps it with `createSubscriber` so reads are reactive. Product defaults remain release-local app policy.
 
 ```typescript
-import { settings } from '$lib/state/settings.svelte';
+import { getWhisperingApp } from '$lib/whispering/context';
+
+const app = getWhisperingApp(); // component initialisation
 
 // Read settings reactively (re-renders on change)
-const mode = settings.get('recording.mode');
+const trigger = app.settings.get('settings.recording.trigger');
 
-// Update settings (writes to Yjs KV → syncs to other devices)
-settings.set('recording.mode', 'vad');
+// Update settings (writes to the document and syncs to other devices)
+app.settings.set('settings.recording.trigger', 'vad');
 ```
 
 ### `recordings.svelte.ts`
 
-Recording metadata backed by Yjs workspace table. SvelteMap provides per-key reactivity—updating one recording doesn't re-render the entire list. Audio blobs are NOT stored here (too large for CRDTs); use `DbService.recordings.getAudioBlob()` for audio access.
+Recording metadata backed by structural workspace row ids. The app namespace maintains the cache, owns row/blob consistency (`storeAudio`, `create` cleanup, `delete`, the audio workflows, and the `uploadedAt` marker), and refreshes after local writes or installed remote record changes; this module only makes its reads reactive. Use `$lib/queries/audio` for availability query identity and `services.blobSources` for playback.
 
 ```typescript
-import { recordings } from '$lib/state/recordings.svelte';
+import { InstantString } from '@epicenter/field';
+
+import { getWhisperingApp } from '$lib/whispering/context';
+
+const { recordings } = getWhisperingApp(); // component initialisation
 
 // Read recordings reactively
 const recording = recordings.get(id);
 const sorted = recordings.sorted; // newest first
 
-// Write (Yjs observer auto-updates SvelteMap)
-recordings.set(recording);
-recordings.update(id, { transcriptionStatus: 'DONE' });
-recordings.delete(id);
+// Writes are async and refresh the app-level cache after commit.
+// `uploadedAt` is blob-state metadata owned by the audio workflows; creation
+// starts it at null and public updates cannot touch it.
+const stored = await recordings.storeAudio(blob);
+const created = await recordings.create({
+	audioBlobId: stored.data.audioBlobId,
+	// remaining recording fields
+});
+await recordings.update(id, {
+	transcript,
+	transcription: { status: 'completed', completedAt: InstantString.now() },
+});
+// Deletes the online copy (when one exists), the device copy, then the row.
+await recordings.delete(id);
 ```
 
-### `transformations.svelte.ts`
+### `recipes.svelte.ts`
 
-Transformation metadata backed by Yjs workspace table. Steps are stored in a separate table (`transformation-steps.svelte.ts`), not embedded in the transformation.
-
-```typescript
-import { transformations } from '$lib/state/transformations.svelte';
-
-const transformation = transformations.get(id);
-const sorted = transformations.sorted; // alphabetical
-```
-
-### `transformation-steps.svelte.ts`
-
-Transformation steps backed by Yjs workspace table. Steps have a `transformationId` FK and `order` field.
+The on-demand Recipe library backed by canonical records. Each recipe is a single self-contained row (`name`, `instructions`, optional `icon`); built-in recipes are merged ahead of the user's saved rows.
 
 ```typescript
-import { transformationSteps } from '$lib/state/transformation-steps.svelte';
+import { getWhisperingApp } from '$lib/whispering/context';
 
-// Get steps for a transformation, sorted by order
-const steps = transformationSteps.getByTransformationId(transformationId);
-```
+const { recipes } = getWhisperingApp(); // component initialisation
 
-### `transformation-runs.svelte.ts`
-
-Transformation run execution records backed by Yjs workspace table.
-
-```typescript
-import { transformationRuns } from '$lib/state/transformation-runs.svelte';
-
-const runs = transformationRuns.getByRecordingId(recordingId);
-const latest = transformationRuns.getLatestByRecordingId(recordingId);
+const list = recipes.pickable; // built-ins followed by saved recipes
+await recipes.set({ id, name, instructions, icon: null });
 ```
 
 ### `device-config.svelte.ts`
@@ -86,10 +84,10 @@ Device-bound configuration backed by per-key localStorage. Secrets, hardware IDs
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
 // Read config reactively
-const apiKey = deviceConfig.get('apiKeys.openai');
+const apiKey = deviceConfig.get('providers.openai.apiKey');
 
 // Update config (writes to localStorage per-key)
-deviceConfig.set('apiKeys.openai', 'sk-...');
+deviceConfig.set('providers.openai.apiKey', 'sk-...');
 
 // Get definition default (for "Default: X" placeholders)
 const defaultShortcut = deviceConfig.getDefault('shortcuts.global.toggleManualRecording');
@@ -130,13 +128,23 @@ Create a new state module when you need:
 
 1. **Live reactive state** that must update immediately (not stale-while-revalidate)
 2. **Singleton behavior** where only one instance should exist
-3. **Application-lifetime persistence** (not request-scoped)
+3. **App-lifetime persistence** (not request-scoped)
 4. **Hardware or system state** that can't be "refreshed" like data
 
-Use the query layer (`$lib/query/`) instead when you need:
+Use the query layer (`$lib/queries/`) instead when you need:
 - Data fetching with caching
 - Mutations with optimistic updates
 - Background refresh and stale-while-revalidate
 - TanStack Query devtools integration
 
-See `$lib/query/README.md` for the query layer documentation.
+If a state module still exposes a TanStack query for one live concern, keep the key map beside the state owner:
+
+```typescript
+export const recorderKeys = defineKeys({
+	devices: ['recorder', 'devices'],
+});
+```
+
+Use the same module shape as `$lib/queries/`: exported `*Keys` for shared cache identity, local `defineErrors` namespaces for state-owned failures, named input object types for structured public methods, and `ReturnType<typeof createThing>` when exporting the exact shape returned by a factory.
+
+See `$lib/queries/README.md` for the query layer documentation.

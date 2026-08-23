@@ -1,7 +1,6 @@
 {
-	"extends": "../../tsconfig.base.dom.json",
+	"extends": "../../tsconfig.dom.json",
 	"compilerOptions": {
-		"useDefineForClassFields": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true
 	},

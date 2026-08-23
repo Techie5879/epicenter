@@ -4,6 +4,8 @@
 **Date**: 2026-04-26
 **Related**: `specs/20260426T230000-drop-manifest-from-awareness.md` (introspection is now an on-demand RPC, which assumes a live peer to call into; this spec gives "live peer" a first-class verb).
 
+> **Path note (2026-05-22):** The socket and log examples using `~/.epicenter/run/` and `~/.epicenter/log/` are superseded. Current daemon sockets and metadata use `runtimeDir()` (`$XDG_RUNTIME_DIR/epicenter` when available, otherwise `os.tmpdir()/epicenter`), and logs use the platform log directory.
+
 ## Why this exists
 
 Cross-peer commands (`list --peer`, `run --peer`, anything that uses `describePeer`) only work while *both* peers are processes holding a WS connection to the relay. Awareness has a ~30s TTL; the relay is content-blind by design. So "discover and call peer-a from peer-b" today requires a coordinated two-terminal dance:

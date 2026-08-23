@@ -1,6 +1,6 @@
 ---
 name: social-media
-description: Social media post guidelines for LinkedIn, Reddit, Twitter/X. Use when: "post on LinkedIn", "write a tweet", "draft a Reddit post", "share this", drafting announcements.
+description: 'Social media post guidelines for LinkedIn, Reddit, Twitter/X. Use when: "post on LinkedIn", "write a tweet", "draft a Reddit post", "share this", drafting announcements.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -9,16 +9,6 @@ metadata:
 # Social Media Post Guidelines
 
 Follow [writing-voice](../writing-voice/SKILL.md) for tone.
-
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Draft LinkedIn, Twitter/X, or Reddit posts about product or technical updates.
-- Announce features without hashtags, hype language, or template sections.
-- Share implementation details developers actually care about.
-- Reshape AI-sounding copy into concise, platform-native writing.
-- Build short threads where each post carries a concrete standalone point.
 
 ## Platform-Specific Brevity
 

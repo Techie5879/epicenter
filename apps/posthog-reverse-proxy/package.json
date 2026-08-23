@@ -5,8 +5,7 @@
 	"description": "PostHog reverse proxy for epicenter.so",
 	"type": "module",
 	"scripts": {
-		"dev": "bun run dev:local",
-		"dev:local": "wrangler dev",
+		"dev": "wrangler dev",
 		"deploy": "wrangler deploy --minify",
 		"tail": "wrangler tail"
 	},
@@ -14,5 +13,5 @@
 		"@cloudflare/workers-types": "^4.20250803.0",
 		"wrangler": "catalog:"
 	},
-	"license": "MIT"
+	"license": "AGPL-3.0-or-later"
 }

@@ -1,6 +1,6 @@
 ---
 name: one-sentence-test
-description: "Force one concrete sentence to find orphaned surfaces, duplicate verbs, inert abstractions. Use for \"what does X do\", \"in one sentence\", \"too many options\"."
+description: "Force one concrete sentence to find orphaned surfaces, duplicate verbs, and inert abstractions. Use when asking what a product, API, utility, or technical design actually does in one sentence, auditing whether a design is coherent, or checking whether an abstraction earns its keep. For authored prose that should sound like its writer, use writing-voice instead, and answer a plain code-comprehension question directly rather than auditing the surface behind it."
 metadata:
   author: epicenter
   version: '2.0'
@@ -10,7 +10,7 @@ metadata:
 
 Related skills: use [post-implementation-review](../post-implementation-review/SKILL.md)
 when the sentence is part of a post-change second read, and
-[cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md) when the sentence
+[greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) when the sentence
 drives an API, ownership, lifecycle, or package boundary change.
 
 **Core move.** Before continuing, stop and write one concrete sentence that describes the subject. Name the objects, verbs, and scope. No marketing words. No "flexibly handles." No "unified experience." Then use the sentence as an audit tool.
@@ -23,9 +23,9 @@ The move has two applications. They're distinct lenses on the same discipline: p
 
 ## Application A: Cohesion Audit (top-down)
 
-**When**: reviewing a design, spec, or surface (commands, endpoints, options, tables) for coherence. The sentence is the thesis; every surface is audited against it.
+**Subject**: a design, spec, or surface (commands, endpoints, options, tables) whose coherence is in question. The sentence is the thesis; every surface is audited against it.
 
-Triggers:
+Signals:
 
 - A design discussion is wrapping up and code is about to start
 - A spec draft exists but its sections feel unrelated
@@ -45,15 +45,15 @@ Audit the thesis against each surface:
   collapse 80-90 percent of complexity?
 
 After the surface audit, run an asymmetric wins check. This skill only detects
-the opportunity; [cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md)
-owns the decision.
+the opportunity; [asymmetric-wins](../asymmetric-wins/SKILL.md) owns the
+decision, candidate list, and refusal template.
 
 ```txt
 1. List the convenience features, rare modes, old shapes, and fast paths.
 2. Circle the one that forces the most extra surface area.
 3. Remove that one from the sentence.
-4. If the sentence still describes a useful product, run the asymmetric wins
-   pass in cohesive-clean-breaks.
+4. If the sentence still describes a useful product, run the asymmetric-wins
+   pass.
 ```
 
 This matters most before greenfield implementation, when AI can make a second
@@ -90,9 +90,9 @@ The good sentence names the objects (actions), their source (config file), the v
 
 ## Application B: Value-Add Audit (bottom-up)
 
-**When**: evaluating a single utility, wrapper, flag, endpoint, or config option to see if it's earning its keep. The sentence describes what the code *actually does*, ignoring docs, then specializes under the defaults in use.
+**Subject**: a single utility, wrapper, flag, endpoint, or config option whose value is in question. The sentence describes what the code *actually does*, ignoring docs, then specializes under the defaults in use.
 
-Triggers:
+Signals:
 
 - Evaluating whether an abstraction earns its keep
 - Reviewing a wrapper around an existing utility
@@ -100,7 +100,7 @@ Triggers:
 - Before recommending wrapping, extending, or composing an existing utility: do the reduction first
 - When reviewing your own just-written abstraction before sending it
 - When code and docs seem to disagree, or docs describe capabilities you can't locate in the body
-- User asks "what does X do" or "is this useful": don't paraphrase docs, do the reduction
+- User asks "what does X actually do" or "is this useful": don't paraphrase docs, do the reduction. A plain comprehension question gets a direct answer, not this pass.
 
 Three reductions in order. Don't skip.
 

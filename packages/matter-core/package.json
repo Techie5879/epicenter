@@ -1,0 +1,29 @@
+{
+	"name": "@epicenter/matter-core",
+	"description": "Matter's engine: parse a typed markdown folder, classify conformance, resolve references, and project to read-only SQLite. Disk is the source; the mirror is a projection.",
+	"version": "0.0.1",
+	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		".": "./src/index.ts",
+		"./fs": "./src/load/fs.ts"
+	},
+	"files": [
+		"src",
+		"!src/**/*.test.ts"
+	],
+	"license": "AGPL-3.0-or-later",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@epicenter/field": "workspace:*",
+		"wellcrafted": "catalog:",
+		"yaml": "^2.8.0"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}

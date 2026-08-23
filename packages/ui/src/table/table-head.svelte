@@ -14,7 +14,8 @@
 	bind:this={ref}
 	data-slot="table-head"
 	class={cn(
-		'text-foreground h-10 whitespace-nowrap bg-clip-padding px-2 text-start align-middle font-medium [&:has([role=checkbox])]:pe-0',
+		'cn-table-head',
+		'bg-clip-padding text-start [&:has([role=checkbox])]:pe-0',
 		className,
 	)}
 	{...restProps}

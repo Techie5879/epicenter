@@ -52,7 +52,7 @@ const ctx: ExtensionContext<MySchema, MyKv> = ...;  // Direct usage
 For types that should always receive their generics from an outer scope, remove the defaults:
 
 ```typescript
-// No defaults - forces explicit type parameters
+// No defaults: forces explicit type parameters
 type ExtensionContext<
 	TTableDefinitionMap extends TableDefinitionMap,
 	TKvSchema extends KvSchema,
@@ -94,7 +94,7 @@ Keep default generic parameters when:
 3. **Return types**: Generic return types often benefit from defaults for inference
 
 ```typescript
-// Good use of defaults - commonly used standalone
+// Good use of defaults: commonly used standalone
 type Result<T = unknown, E = Error> = { ok: true; value: T } | { ok: false; error: E };
 
 // Consumer can omit types when they don't care
@@ -138,3 +138,27 @@ Without defaults on `ExtensionContext`, TypeScript ensures every extension prope
 | Utility types with "any" semantics         | Keep defaults    |
 
 The key question: "If someone forgets this generic parameter, is that always a bug?" If yes, remove the default.
+
+There is a related but separate question for identity helpers. If a contract has useful defaults and callers can write `satisfies Contract` directly, a helper like `defineContract(...)` does not buy much. The default already made the contract readable at the call site.
+
+Reach for an identity helper when the caller would otherwise have to restate the generic chain by hand:
+
+```typescript
+return defineWorkspace({
+  ...workspace,
+  ...runtime,
+});
+```
+
+Prefer direct `satisfies` when the defaulted contract is readable on its own. For example, if `RuntimeRecipe<TRuntime = Runtime>` already has a useful default:
+
+```typescript
+return {
+  name: 'demo',
+  open(ctx) {
+    return openRuntime(ctx);
+  },
+} satisfies RuntimeRecipe;
+```
+
+So the two rules do not conflict. Remove defaults from pass-through types when omission loses information. Keep defaults on standalone contracts when the default lets callers write the contract plainly.

@@ -1,6 +1,6 @@
 # PKCE Protects the Code, Not the Session
 
-Historical note: this article reflects the superseded cookie-family versus bearer-family design. The active direction is `specs/20260511T105846-auth-oauth-everywhere-clean-break.md`: every app completes OAuth authorization code with PKCE, stores an OAuth session, loads identity through `GET /auth/me`, and uses auth-owned transports for protected resources.
+Historical note: this article reflects the superseded cookie-family versus bearer-family design. The active direction: every app completes OAuth authorization code with PKCE, stores an OAuth session, loads identity through `GET /auth/me`, and uses auth-owned transports for protected resources.
 
 PKCE is not token auth. It is protection for OAuth redirects when the app cannot safely hold a client secret.
 

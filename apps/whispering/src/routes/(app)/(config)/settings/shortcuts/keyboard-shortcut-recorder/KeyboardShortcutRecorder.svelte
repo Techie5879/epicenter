@@ -1,238 +1,203 @@
 <script lang="ts">
-	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
-	import { Input } from '@epicenter/ui/input';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import * as Popover from '@epicenter/ui/popover';
-	import { cn } from '@epicenter/ui/utils';
-	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
-	import Keyboard from '@lucide/svelte/icons/keyboard';
-	import Pencil from '@lucide/svelte/icons/pencil';
+	import AppWindow from '@lucide/svelte/icons/app-window';
+	import Globe from '@lucide/svelte/icons/globe';
+	import Plus from '@lucide/svelte/icons/plus';
 	import XIcon from '@lucide/svelte/icons/x';
+	import { type Command, commands } from '$lib/commands';
+	import { os } from '#platform/os';
+	import { createAppShortcuts } from '$lib/platform/shortcuts';
+	import { getWhisperingApp } from '$lib/whispering/context';
+	import { report } from '$lib/report';
 	import {
-		getShortcutDisplayLabel,
-		type KeyboardEventSupportedKey,
-	} from '$lib/constants/keyboard';
-	import { IS_MACOS } from '$lib/constants/platform';
-	import { type KeyRecorder } from './create-key-recorder.svelte';
+		isEmptyBinding,
+		keyBindingToLabel,
+		type KeyBinding,
+		type Reach,
+	} from '$lib/utils/key-binding';
+	import { createChordRecorder } from './create-chord-recorder';
 
-	const {
-		title,
-		placeholder = 'Press a key combination',
-		autoFocus = true,
-		rawKeyCombination,
-		keyRecorder,
-	}: {
-		title: string;
-		placeholder?: string;
-		autoFocus?: boolean;
-		rawKeyCombination: string | null;
-		keyRecorder: KeyRecorder;
-	} = $props();
+	// The one router-driven recorder (ADR-0052): the user picks a key, never a
+	// store. A command's two slots (focused, global) render as reach-glyphed chips,
+	// and one "Add" popover captures a key while previewing, live, how far that key
+	// will reach. The router (`shortcuts`) routes the write by realized reach; the
+	// recorder never names a store.
+	const { command }: { command: Command } = $props();
 
-	let isPopoverOpen = $state(false);
-	let isManualMode = $state(false);
-	let manualValue = $state(rawKeyCombination ?? '');
+	// At most one focused and one global binding per command, so up to two chips.
+	const shortcuts = createAppShortcuts(getWhisperingApp());
 
-	$effect(() => {
-		manualValue = rawKeyCombination ?? '';
+	const bindings = $derived(shortcuts.current(command.id));
+	const chips = $derived(
+		(['focused', 'global'] as const)
+			.map((reach) => ({ reach, binding: bindings[reach] }))
+			.filter(
+				(slot): slot is { reach: Reach; binding: KeyBinding } =>
+					slot.binding !== null && !isEmptyBinding(slot.binding),
+			),
+	);
+
+	// ADR-0052 read-only reach text: where the shortcut fires, plus whether it syncs
+	// (focused shortcuts live in the synced workspace; global ones are per-device).
+	// One string feeds the glyph tooltip, the live preview, and the success toast.
+	function reachLabel(reach: Reach): string {
+		if (reach === 'focused')
+			return 'Works in Whispering, synced across your devices';
+		return 'Works everywhere on this computer';
+	}
+
+	// The popover's open state is the whole session: open means listening. The two
+	// never diverge, so there is no separate `capturing` flag to keep in sync.
+	let open = $state(false);
+	// The combo held so far this session, so the popover can preview its reach
+	// before the user releases. `null` between sessions.
+	let previewBinding = $state.raw<KeyBinding | null>(null);
+	const preview = $derived.by(() => {
+		if (!previewBinding || isEmptyBinding(previewBinding)) return null;
+		return {
+			binding: previewBinding,
+			realized: shortcuts.reachBadge(command.id, previewBinding),
+		};
 	});
+
+	// One capture brain: the webview recorder captures bare keys for focused
+	// shortcuts and chords for global shortcuts.
+	const chordRecorder = createChordRecorder({
+		onCapture: (next) => void commitCandidate(next),
+		onProgress: (partial) => {
+			previewBinding = partial;
+		},
+	});
+
+	// The recorder runs while the popover is open. Closing or unmounting stops it.
+	$effect(() => {
+		if (!open) return;
+		chordRecorder.start();
+		return () => chordRecorder.stop();
+	});
+
+	// Persist a captured key, routed by realized reach: a bare key lands in-app and
+	// a chord goes global on desktop. The recorder never names a store; the key's
+	// reach decides. On a conflict it stays listening so the user can retry without
+	// reopening.
+	async function commitCandidate(next: KeyBinding) {
+		// Check the backend the key will route into. Both refuse exact duplicates;
+		// the global backend also refuses OS-reserved gestures. On a conflict, stay
+		// open so the user can retry; the recorder has reset its own accumulation.
+		const conflict = shortcuts.findConflict(command.id, next);
+		if (conflict) {
+			let reason: string;
+			if (conflict.kind === 'reserved') {
+				reason = conflict.reason;
+			} else {
+				const title =
+					commands.find((candidate) => candidate.id === conflict.commandId)
+						?.title ?? conflict.commandId;
+				reason =
+					conflict.kind === 'duplicate'
+						? `Those keys already trigger "${title}". Pick a different combination.`
+						: `Those keys are already used by "${title}", which also fires in this window. Pick a different combination.`;
+			}
+			report.error({
+				title: 'That shortcut is not available',
+				description: reason,
+				cause: {
+					name: 'ShortcutConflict',
+					message: `${keyBindingToLabel(next, os.isApple)}: ${reason}`,
+				},
+			});
+			previewBinding = null;
+			return;
+		}
+		const realized = shortcuts.reachBadge(command.id, next);
+		await shortcuts.set(command.id, next);
+		report.success({
+			title: `${command.title} set to ${keyBindingToLabel(next, os.isApple)}`,
+			description: reachLabel(realized),
+		});
+		// Closing tears capture down through the effects' cleanup.
+		previewBinding = null;
+		open = false;
+	}
 </script>
 
-<div class="flex items-center justify-end gap-2">
-	{#if rawKeyCombination}
-		<Kbd.Root>{getShortcutDisplayLabel(rawKeyCombination)}</Kbd.Root>
-		<Button
-			variant="ghost"
-			size="icon"
-			class="size-8 shrink-0"
-			onclick={() => keyRecorder.clear()}
-		>
-			<XIcon class="size-4" />
-			<span class="sr-only">Clear shortcut</span>
-		</Button>
-	{:else}
-		<span class="text-sm text-muted-foreground">Not set</span>
-	{/if}
+{#snippet keyChip(binding: KeyBinding, reach: Reach)}
+	<Kbd.Root>{keyBindingToLabel(binding, os.isApple)}</Kbd.Root>
+	<span
+		class="inline-flex items-center text-muted-foreground"
+		title={reachLabel(reach)}
+	>
+		{#if reach === 'focused'}
+			<AppWindow class="size-3.5" />
+		{:else}
+			<Globe class="size-3.5" />
+		{/if}
+		<span class="sr-only">{reachLabel(reach)}</span>
+	</span>
+{/snippet}
+
+<div class="flex flex-wrap items-center justify-end gap-2">
+	{#each chips as chip (chip.reach)}
+		<div class="flex items-center gap-1.5">
+			{@render keyChip(
+				chip.binding,
+				shortcuts.reachBadge(command.id, chip.binding),
+			)}
+			<Button
+				variant="ghost"
+				size="icon"
+				class="size-6 shrink-0"
+				onclick={() => void shortcuts.clear(command.id, chip.reach)}
+			>
+				<XIcon class="size-3.5" />
+				<span class="sr-only">Clear {chip.reach} shortcut</span>
+			</Button>
+		</div>
+	{/each}
 
 	<Popover.Root
-		open={isPopoverOpen}
-		onOpenChange={(isOpen) => {
-			isPopoverOpen = isOpen;
-			if (!isOpen) {
-				keyRecorder.stop();
-				isManualMode = false;
-			}
-			if (isOpen && autoFocus && !isManualMode) {
-				keyRecorder.start();
-			}
+		{open}
+		onOpenChange={(next) => {
+			open = next;
+			if (!next) previewBinding = null;
 		}}
 	>
 		<Popover.Trigger>
-			<Button variant="ghost" size="sm" class="h-8 font-normal">
-				{#if rawKeyCombination}
-					<span class="text-xs">Set shortcut</span>
-				{:else}
-					<span class="text-xs text-muted-foreground">+ Add</span>
-				{/if}
+			<Button
+				variant="ghost"
+				size="sm"
+				class="h-8 font-normal text-muted-foreground"
+			>
+				<Plus class="size-3.5" />
+				<span class="text-xs">Add</span>
 			</Button>
 		</Popover.Trigger>
 
-		<Popover.Content
-			class="w-80"
-			align="end"
-			onEscapeKeydown={(e) => {
-				if (keyRecorder.isListening) {
-					e.preventDefault();
-				}
-			}}
-		>
-			<div class="space-y-4">
-				<div>
-					<h4 class="mb-1 text-sm font-medium leading-none">{title}</h4>
-					<p class="text-xs text-muted-foreground">
-						{#if isManualMode}
-							Enter shortcut manually (e.g., ctrl+shift+a)
-						{:else}
-							Click to record or edit manually
-						{/if}
-					</p>
+		<Popover.Content class="w-72" align="end">
+			<div class="space-y-3">
+				<h4 class="text-sm font-medium leading-none">{command.title}</h4>
+
+				<div
+					class="flex h-16 flex-col items-center justify-center gap-1 rounded-md border border-input bg-muted/30 px-3 text-center"
+					aria-live="polite"
+				>
+					{#if preview}
+						<div class="flex items-center gap-1.5">
+							{@render keyChip(preview.binding, preview.realized)}
+						</div>
+						<p class="text-xs text-muted-foreground">
+							{reachLabel(preview.realized)}
+						</p>
+					{:else}
+						<p class="text-sm font-medium">Press a key</p>
+						<p class="text-xs text-muted-foreground">
+							A bare key works in Whispering, a chord works everywhere.
+						</p>
+					{/if}
 				</div>
 
-				{#if IS_MACOS && !isManualMode}
-					<Alert.Root variant="warning" class="text-xs">
-						<AlertTriangle class="size-4" />
-						<Alert.Title class="text-xs font-medium"
-							>macOS Option Key Note</Alert.Title
-						>
-						<Alert.Description class="text-xs">
-							Some Option+key combinations (E, I, N, U, `) may not record
-							properly. Try recording in reverse (press letter first, then
-							Option) or edit manually.
-						</Alert.Description>
-					</Alert.Root>
-				{/if}
-
-				{#if !isManualMode}
-					<!-- Recording mode -->
-					<button
-						type="button"
-						class={cn(
-							'relative flex h-10 w-full items-center rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-							keyRecorder.isListening && 'ring-2 ring-ring ring-offset-2',
-						)}
-						onclick={(e) => {
-							e.stopPropagation();
-							keyRecorder.start();
-						}}
-						tabindex="0"
-						aria-label={keyRecorder.isListening
-							? 'Recording keyboard shortcut'
-							: 'Click to record keyboard shortcut'}
-					>
-						<div class="flex w-full items-center justify-between">
-							<div
-								class="flex grow items-center gap-1.5 overflow-x-auto pr-2 scrollbar-none"
-							>
-								{#if rawKeyCombination && !keyRecorder.isListening}
-									<Kbd.Root
-										>{getShortcutDisplayLabel(rawKeyCombination)}</Kbd.Root
-									>
-								{:else if !keyRecorder.isListening}
-									<span class="truncate text-muted-foreground"
-										>{placeholder}</span
-									>
-								{/if}
-							</div>
-							{#if !keyRecorder.isListening}
-								<Keyboard class="size-4 text-muted-foreground" />
-							{/if}
-						</div>
-
-						{#if keyRecorder.isListening}
-							<div
-								class="absolute inset-0 z-10 flex animate-in fade-in-0 zoom-in-95 items-center justify-center rounded-md border border-input bg-background/95 backdrop-blur-sm"
-								aria-live="polite"
-							>
-								<div class="flex flex-col items-center gap-1 px-4 py-2">
-									<p class="text-sm font-medium">Press key combination</p>
-									<p class="text-xs text-muted-foreground">Esc to cancel</p>
-								</div>
-							</div>
-						{/if}
-					</button>
-
-					<div class="flex items-center gap-2">
-						{#if rawKeyCombination}
-							<Button
-								variant="outline"
-								size="sm"
-								class="flex-1"
-								onclick={() => keyRecorder.clear()}
-							>
-								<XIcon class="size-3" />
-								Clear
-							</Button>
-						{/if}
-						<Button
-							variant="outline"
-							size="sm"
-							class={rawKeyCombination ? 'flex-1' : 'w-full'}
-							onclick={() => {
-								isManualMode = true;
-								manualValue = rawKeyCombination ?? '';
-								keyRecorder.stop();
-							}}
-						>
-							<Pencil class="size-3" />
-							Edit manually
-						</Button>
-					</div>
-				{:else}
-					<!-- Manual mode -->
-					<form
-						onsubmit={(e) => {
-							e.preventDefault();
-							if (manualValue) {
-								keyRecorder.register(
-									manualValue.split('+') as KeyboardEventSupportedKey[],
-								);
-								isManualMode = false;
-							}
-						}}
-						class="space-y-3"
-					>
-						<Input
-							type="text"
-							placeholder="e.g., ctrl+shift+a"
-							bind:value={manualValue}
-							class="font-mono text-sm"
-							autofocus
-						/>
-						<div class="flex items-center gap-2">
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								class="flex-1"
-								onclick={() => {
-									isManualMode = false;
-									manualValue = rawKeyCombination ?? '';
-								}}
-							>
-								Cancel
-							</Button>
-							<Button
-								type="submit"
-								size="sm"
-								class="flex-1"
-								disabled={!manualValue}
-							>
-								Save
-							</Button>
-						</div>
-					</form>
-				{/if}
 			</div>
 		</Popover.Content>
 	</Popover.Root>

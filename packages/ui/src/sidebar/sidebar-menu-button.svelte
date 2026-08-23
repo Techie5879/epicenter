@@ -2,17 +2,16 @@
 	import { tv, type VariantProps } from 'tailwind-variants';
 
 	export const sidebarMenuButtonVariants = tv({
-		base: 'peer/menu-button outline-hidden ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground group-has-data-[sidebar=menu-action]/menu-item:pe-8 data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-start text-sm transition-[width,height,padding] focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:font-medium [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
+		base: 'cn-sidebar-menu-button peer/menu-button group/menu-button flex w-full items-center overflow-hidden outline-hidden disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate',
 		variants: {
 			variant: {
-				default: 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-				outline:
-					'bg-background hover:bg-sidebar-accent hover:text-sidebar-accent-foreground shadow-[0_0_0_1px_var(--sidebar-border)] hover:shadow-[0_0_0_1px_var(--sidebar-accent)]',
+				default: 'cn-sidebar-menu-button-variant-default',
+				outline: 'cn-sidebar-menu-button-variant-outline',
 			},
 			size: {
-				default: 'h-8 text-sm',
-				sm: 'h-7 text-xs',
-				lg: 'group-data-[collapsible=icon]:p-0! h-12 text-sm',
+				default: 'cn-sidebar-menu-button-size-default',
+				sm: 'cn-sidebar-menu-button-size-sm',
+				lg: 'cn-sidebar-menu-button-size-lg',
 			},
 		},
 		defaultVariants: {
@@ -70,7 +69,9 @@
 		'data-slot': 'sidebar-menu-button',
 		'data-sidebar': 'menu-button',
 		'data-size': size,
-		'data-active': isActive,
+		// Emit data-active only when active: Vega's cn-* uses presence selectors
+		// (data-active:), so a literal data-active="false" would match too.
+		'data-active': isActive ? 'true' : undefined,
 		...restProps,
 	});
 </script>

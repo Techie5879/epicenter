@@ -109,7 +109,7 @@ Verified via DeepWiki against `arktypeio/arktype`:
 | --- | --- |
 | `@epicenter/encryption` `EncryptionKeys` | Pure arktype, no manual readers |
 | `apps/api/src/billing-contract.ts` | Pure arktype with `sValidator` |
-| `packages/workspace/.../*-contract.ts` | TypeMap / typebox, schema-first |
+| `packages/workspace/.../*-contract.ts` | TypeBox, schema-first |
 | `packages/auth/src/contracts/auth-session.ts` (today) | Manual readers plus final `.assert()` |
 
 The auth contract is the lone outlier.

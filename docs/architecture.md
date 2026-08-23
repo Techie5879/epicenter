@@ -1,281 +1,210 @@
 # Epicenter architecture
-Epicenter is one composition story. The core packages define the local-first model, the middle layer turns that model into app-shaped tools, and the apps decide which pieces to compose.
-The lifecycle is define, create, extend, sync. That order matters because Epicenter keeps schema definition pure, pushes side effects to the edge, and lets each app choose how much runtime machinery it needs.
-This is the five-minute map. It explains how the packages interlock without redoing the full `@epicenter/workspace` README.
 
-## The stack in one picture
-The dependency shape runs bottom to top. Apps depend on middleware; middleware depends on the core; the core stays small and reusable.
+Epicenter is a local-first personal data platform. An application holds a
+complete replica of its own data and reads it synchronously; a hosted or
+self-hosted authority keeps a person's devices converged while they sleep.
 
-```text
-+----------------------------------------------------------------------------+
-| APPS                                                                       |
-|                                                                            |
-| opensidian   whispering   tab-manager   fuji   zhongwen                    |
-| honeycrisp   dashboard    api           landing                            |
-+----------------------------------------------------------------------------+
-                                      |
-                                      v
-+----------------------------------------------------------------------------+
-| MIDDLEWARE                                                                 |
-|                                                                            |
-| @epicenter/svelte      (packages/svelte-utils)                             |
-| @epicenter/filesystem                                                      |
-| @epicenter/skills                                                          |
-| @epicenter/workspace/ai                                                    |
-+----------------------------------------------------------------------------+
-                                      |
-                                      v
-+----------------------------------------------------------------------------+
-| CORE                                                                       |
-|                                                                            |
-| @epicenter/workspace   @epicenter/sync   @epicenter/constants   @epicenter/ui |
-+----------------------------------------------------------------------------+
-```
-`@epicenter/workspace` is the center of gravity. It defines the schema layer, creates the live Yjs-backed client, owns the extension lifecycle, and exposes tables, KV, documents, presence, and actions.
-`@epicenter/sync` is the wire format, not the app model. It exports protocol primitives like `encodeSyncStep1`, `encodeSyncUpdate`, `decodeSyncMessage` so server and client can speak the same binary language without duplicating protocol logic.
-`@epicenter/constants` is the routing glue. It gives apps one source of truth for URLs, ports, and versioning so sync endpoints, auth URLs, and cross-app links do not drift.
-`@epicenter/ui` is the shared presentation layer. It knows Svelte components, not Yjs semantics.
-The middleware layer is where workspace data starts feeling like an application. `@epicenter/svelte` turns workspace helpers into reactive Svelte state, `@epicenter/filesystem` turns workspace rows and documents into a POSIX-style filesystem, `@epicenter/skills` proves that whole workspaces can be packaged and embedded as data products, and `@epicenter/workspace/ai` bridges workspace actions into LLM-callable tools.
-The apps are thin by comparison. Each app picks a definition, creates a client, installs the extensions it needs, and layers UI or transport concerns on top.
+This page is the five-minute map. Durable decisions live in
+[`docs/adr`](adr/README.md). Shared vocabulary lives in
+[`docs/CONTEXT.md`](CONTEXT.md). Package-owned current behavior belongs in
+package READMEs and code. For how this replaced the previous stack, verb by
+verb, see
+[`the store and what it replaced`](the-store-and-what-it-replaced.md).
 
-## The lifecycle: define, create, extend, sync
-The four verbs are the architecture. If you remember nothing else, remember that Epicenter keeps those stages separate on purpose.
+## One runtime
 
-### 1. Define is pure
-`defineTable` and `defineKv` are pure declarations. They do not create a `Y.Doc`, open IndexedDB, start a WebSocket, or touch the network.
+A desktop SPA in a WebView, over a store the client owns (ADR-0227). The Bun
+host serves bundles and brokers credentials. It owns no application data and
+constructs no database (ADR-0226).
 
-```ts
-import { type } from 'arktype';
-import {
-	defineKv,
-	defineTable,
-} from '@epicenter/workspace';
+Serving that same bundle over HTTP is not a second runtime, because there is no
+platform seam left to differ: every build opens its own store. What ADR-0227
+refused was a hosted surface that reached a host-owned replica instead.
 
-const files = defineTable(
-	type({
-		id: 'string',
-		name: 'string',
-		_v: '1',
-	}),
-);
-
-const themeMode = defineKv(type("'light' | 'dark' | 'system'"), 'system');
-```
-
-That purity is what makes cross-package reuse work. The same table and KV declarations can be imported by an app, a CLI tool, a migration utility, a test, or another package without dragging runtime side effects along for the ride.
-
-### 2. `defineDocument` is where the live bundle appears
-`defineDocument(builder)` is the boundary where static meaning turns into live state. The user-owned builder allocates the `Y.Doc`, wires up table/KV helpers via `attachTables` / `attachKv`, attaches persistence, calls `openCollaboration` for the live network surface (sync, presence, RPC), and returns a typed bundle. `.open(id)` hands back a refcounted handle.
-
-```ts
-import * as Y from 'yjs';
-import {
-	attachKv,
-	attachTables,
-	defineDocument,
-} from '@epicenter/workspace';
-
-const app = defineDocument((id: string) => {
-	const ydoc = new Y.Doc({ guid: id });
-	const tables = attachTables(ydoc, { files });
-	const kv = attachKv(ydoc, { themeMode });
-	return {
-		id, ydoc, tables, kv,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
-});
-
-const workspace = app.open('example.app');
-workspace.tables.files.set({ id: 'readme.md', name: 'README.md', _v: 1 });
-```
-
-The split is conceptual, not cosmetic. Definitions describe what data means; the builder is the runtime that can actually hold and mutate that data.
-
-### 3. Extend means adding more `attach*` calls
-There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + RPC + peers) mounts through the `openCollaboration` primitive. You add them to the builder alongside tables and KV:
-
-```ts
-import * as Y from 'yjs';
-import {
-	attachIndexedDb,
-	attachKv,
-	attachTables,
-	defineDocument,
-	openCollaboration,
-	roomWsUrl,
-} from '@epicenter/workspace';
-
-const app = defineDocument((id: string) => {
-	const ydoc = new Y.Doc({ guid: id });
-	const tables = attachTables(ydoc, { files });
-	const kv = attachKv(ydoc, { themeMode });
-	const idb = attachIndexedDb(ydoc);
-	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl('https://sync.example.com', ydoc.guid),
-		waitFor: idb.whenLoaded,
-		replicaId: 'browser',
-		actions: {},
-	});
-	return { id, ydoc, tables, kv, idb, collaboration, /* ... */ };
-});
-```
-
-Ordering is lexical. `openCollaboration` reads `idb.whenLoaded` as `waitFor` because `idb` is already in scope. Later attachments see earlier ones directly. There is no context object to route through.
-
-For extensions that need their own Y.Doc per row (file content, note bodies), define a *second* `defineDocument` keyed on the row's content guid. Content docs use the same `openCollaboration` primitive with an empty `actions` registry, which skips the action runner observer entirely. Same byte transport, no app-defined handlers.
-
-### 4. Collaboration is just another attachment, but it changes the topology
-`openCollaboration` does not own the document. It attaches to a Y.Doc that already exists and starts moving CRDT updates between peers, plus publishing presence and dispatching RPC. The `waitFor: idb.whenLoaded` option ensures local state is replayed first, so the initial handshake is a delta, not a full document transfer.
-
-Local state exists first, then optional durability, then optional network coordination.
-
-## The async boundary is `whenReady`
-The builder runs synchronously, but attachments load asynchronously. Conventionally the bundle exposes a `whenReady` promise, usually `idb.whenLoaded`, so callers can await full local availability:
-
-```ts
-// Reactive callers (Svelte $effect, {#await}) use sync open() and gate on whenReady.
-const workspace = app.open('example.app');
-await workspace.whenReady;
-
-// Imperative callers collapse the two steps into one. load() bakes the await in
-// and releases the refcount correctly if whenReady rejects.
-const workspace = await app.load('example.app');
-```
-
-That promise is the line between construction and full availability. Create now, await later, or use `load()` to do both at once.
-
-## Disposal cascades from `ydoc.destroy()`
-Teardown runs through Yjs itself. Every async `attach*` function registers `ydoc.once('destroy')` internally, so when the builder's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment starts teardown in parallel. Attachments with genuine async cleanup expose `whenDisposed` for the callers that need a barrier:
-
-```ts
-workspace[Symbol.dispose]();
-await workspace.idb.whenDisposed;
-await workspace.collaboration.whenDisposed;
-```
-
-Browser bundles expose `wipe()` for explicit local cleanup such as "Forget this device." Sign-out does not call it. The wipe sequence disposes the live bundle, awaits the async attachments needed to unblock storage deletion, then deletes persisted local state. The refcounted cache still calls `[Symbol.dispose]()` on the last release after the `gcTime` grace period; it does not aggregate an async disposal barrier.
-
-## Write and read flow
-Writes always hit Yjs first. Everything else reacts to that state instead of becoming a competing source of truth.
+## The stack
 
 ```text
-WRITE FLOW
-
-app code / action / UI event
-            |
-            v
-   workspace.tables / kv / documents
-            |
-            v
-          Y.Doc
-            |
-   +--------+---------------+---------------+
-   v        v               v               v
-persistence sync       sqlite index   markdown/file views
-IndexedDB   WebSocket  or search      or other materializers
-SQLite      relay      extensions     built from workspace data
++---------------------------------------------------------------------------+
+| APPS                                                                      |
+|                                                                           |
+| honeycrisp   whispering   vocab   skills   epicenter   sync-lab           |
+| api          self-host    landing  matter  local-books  local-mail        |
++---------------------------------------------------------------------------+
+                                     |
+                                     v
++---------------------------------------------------------------------------+
+| SURFACE                                                                   |
+|                                                                           |
+| @epicenter/ui        @epicenter/app-shell     @epicenter/svelte-utils     |
+| @epicenter/chat      @epicenter/blobs         @epicenter/skills           |
++---------------------------------------------------------------------------+
+                                     |
+                                     v
++---------------------------------------------------------------------------+
+| CORE                                                                      |
+|                                                                           |
+| @epicenter/data      the store, and the transport that carries it         |
+| @epicenter/workspace      the workspace declaration vocabulary                  |
+| @epicenter/field     release-local field declarations                     |
+| @epicenter/sqlite    one engine seam over bun:sqlite and sqlite-wasm      |
+| @epicenter/sync      route contracts a browser can import                 |
+| @epicenter/server    the shared Hono library both deployables consume     |
++---------------------------------------------------------------------------+
 ```
 
-Reads split by purpose. Simple reads stay in the workspace client, while derived reads can come from extension exports built on top of that same client state.
+`@epicenter/data` has exactly four entry points: `.` for the store, `./bun` and
+`./browser` for the two openers, and `./sync` for the transport. The openers are
+separate because one imports `bun:sqlite` and the other a WASM build, and
+neither belongs in a barrel the other has to load.
+
+`@epicenter/server` is AGPL and the core packages above it are MIT. Moving code
+across that line is a relicensing act; see
+[`licensing strategy`](licensing/licensing-strategy.md).
+
+## An application is one document
+
+One `Y.Doc` per application (ADR-0215). Its top-level roots say what kind of
+thing they are: `tables:<name>` for each declared table, `kv` for settings, and
+nothing else.
 
 ```text
-READ FLOW
-
-          Y.Doc
-            |
-   +--------+---------------+-------------------------+
-   v        v               v                         v
-tables      kv             documents                 extensions
-typed rows  settings       per-row content docs      indexes/materializers
-   |         |               |                         |
-   +---------+---------------+-------------------------+
-                             |
-                             v
-                          app UI
+Y.Doc
+ |- kv                      one value: this application's settings
+ |- tables:notes
+ |   |- <rowId>             a nested Y.Type; holding it IS existing
+ |   |   |- title           a field is an attribute on the row
+ |   |   |- folderId
+ |   |   `- !doc            a container, allocated WITH the row
+ |   |       `- body        an application-named root an editor binds to
+ |   `- <rowId> ...
+ `- tables:folders
 ```
 
-That model is why Epicenter can mix SQL-like lookup, filesystem semantics, and collaborative document editing without splitting the truth into three different stores. They are three views over one CRDT core.
+A row is an attribute on its table root rather than a root of its own. That is
+not a style choice: `Item.write` scans `doc.share` linearly, so one root per row
+makes encoding quadratic, measured at 5,417 ms against 13 ms at 20,000 rows.
+Deletion removes the row's attribute outright and the whole subtree goes with
+it, which leaves one deleted map key rather than a permanent corpse.
 
-## Opensidian is the best concrete example
-Opensidian composes nearly every layer in one builder. Its schema starts with `filesTable` from `@epicenter/filesystem`, adds chat tables locally, and exports one `defineDocument(builder)`.
+## Prose is a plane beside the row, not a field in it
+
+A row's `!doc` container holds roots the application names, and Epicenter never
+looks inside one. An editor binds to a root directly:
 
 ```ts
-import { filesTable } from '@epicenter/filesystem';
-import * as Y from 'yjs';
-import {
-	attachIndexedDb,
-	attachTables,
-	defineActions,
-	defineDocument,
-	defineQuery,
-	defineTable,
-	openCollaboration,
-	roomWsUrl,
-} from '@epicenter/workspace';
-
-const conversationsTable = defineTable(/* ... */);
-const chatMessagesTable = defineTable(/* ... */);
-const toolTrustTable = defineTable(/* ... */);
-
-const opensidian = defineDocument((id: string) => {
-	const ydoc = new Y.Doc({ guid: id });
-	const tables = attachTables(ydoc, {
-		files: filesTable,
-		conversations: conversationsTable,
-		chatMessages: chatMessagesTable,
-		toolTrust: toolTrustTable,
-	});
-	const idb = attachIndexedDb(ydoc);
-	const sqliteIndex = createSqliteIndex({ ydoc, tables });
-	const actions = defineActions({
-		files_search: defineQuery({
-			handler: async ({ query }) => sqliteIndex.search(query),
-		}),
-	});
-	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(APP_URLS.API, ydoc.guid),
-		openWebSocket: auth.openWebSocket,
-		waitFor: idb.whenLoaded,
-		replicaId: 'browser',
-		actions,
-	});
-	return { id, ydoc, tables, idb, collaboration, sqliteIndex, /* ... */ };
-});
-
-export const workspace = opensidian.open('opensidian');
+const body = db.notes.document(noteId)?.get('body');
 ```
 
-That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/auth-svelte` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity used by lazy encryption key callbacks.
+Root names are declared when the row is created,
+`db.notes.create({ ... }, { document: ['body'] })`, and that is what makes them
+safe. Reaching for a root lazily is a write at a well-known address, so two
+devices first-opening one note would each mint their own and map LWW would
+discard one along with everything written into it. Allocating at creation leaves
+exactly one creator, and minted row ids make that moment unraceable.
+
+## What granularity an edit has
+
+| edit | merge |
+| --- | --- |
+| two devices, different fields of one row | both survive |
+| two devices, one scalar field | last write wins |
+| two devices, one array or object field | last write wins on the WHOLE value |
+| two devices, prose in a row's document | per character |
+
+The third row is a decision, not a gap (ADR-0228). A field is one value, which
+is one sentence of semantics instead of a per-field CRDT type system. The cost
+is that a set several devices append to concurrently loses an addition, and the
+answer is that such a collection wants to be a table, where each element is its
+own row and nothing collides.
+
+## Workspace evolution never migrates user data
+
+A workspace declaration is a release-local view over durable JSON (ADR-0125, ADR-0213). A release
+may add a field, remove one, or change validation. Rows that no longer conform
+stay exactly as written and surface as nonconforming for that release. Nothing
+copies a database, runs an upcaster, or reinterprets an old write.
+
+Prevention is not available and asking for it is the wrong axis. A declaration is
+release-local and rows arrive from NEWER releases, so no discipline in this
+release stops a future one retyping a field. What exists instead is the material
+to heal: `list()` returns `{ rows, nonconforming }`, each failure carries its
+`address`, machine-readable `issues`, the `conforming` survivors and the
+unmodified `raw`, a composed SQL projection stores nonconforming rows raw so
+SQL can still show them, and repair is an ordinary `update` because a patch
+validates only the values it supplies.
 
 ```text
-defineDocument(builder).open('opensidian')
-    |
-    +-- attachTables(ydoc, {...})
-    +-- attachIndexedDb(ydoc)
-    +-- createSqliteIndex(...)
-    +-- openCollaboration(ydoc, { waitFor: idb.whenLoaded, replicaId, actions })
-    |
-    +-- attachYjsFileSystem(...)              -> editor + terminal + file tree
-    +-- actionsToAiTools(...).tools           -> local AI tool execution
-    +-- actionsToAiTools(...).definitions     -> wire payload for chat requests
-    +-- defineDocument(skillsBuilder)         -> shared skills data source
-    +-- fromTable / fromKv / auth             -> reactive Svelte app state
+durable JSON stays unchanged
+        |
+        +-- old release's declaration -> one interpretation
+        `-- new release's declaration -> typed rows plus nonconforming diagnostics
 ```
 
-That is the whole monorepo in miniature. The app is mostly composition code because the packages under it already agree on the same runtime shape.
+## Reads are synchronous
 
-## The sync philosophy is dumb server, smart client
-The server is a relay, not the authority. Clients own schema meaning, table helpers, migrations, encryption activation, action handlers, and most of the user-facing behavior.
+Opening a store is the only asynchronous operation in an application. It is real
+I/O: a file or an IndexedDB read, and the replay of a durable log. Everything
+after it is a property access on a document already in memory.
 
-`@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions, while `openCollaboration` plugs those primitives into a live document that already knows how to read and write its own data.
+```ts
+const { data: db, error } = await openDevice(honeycrispWorkspace);
+if (error !== null) throw error;
 
-That means the server does not need to understand your tables. It forwards Yjs sync messages. Presence and RPC are themselves writes to reserved Y.Doc arrays, carried by the same byte transport; the server validates that peers do not write to the presence array, but it never decodes the RPC array.
+const listed = db.tables.notes.list();          // { rows, nonconforming }
+db.tables.notes.update(noteId, { title: 'x' }); // a transaction
+db.tables.notes.subscribe((rowIds) => { ... }); // the ids a commit touched
+```
 
-This is what "smart client" means here. The client can boot locally, read persisted state, apply encryption keys, expose actions, open document timelines, and keep working offline before the network helps at all.
+`subscribe` names the rows a commit touched (ADR-0221), so a view refreshes
+what moved rather than everything. SQL, when an application wants it, is a
+follower it composes: `createSqliteProjection` from
+`@epicenter/data/projection` rebuilds an in-memory database from the live
+document at the next read (ADR-0241).
 
-This is what "dumb server" means here. The server helps peers find each other and exchange updates, but it is not where the data model becomes valid or meaningful.
+## Where the durable facts live
 
-## The shortest accurate mental model
-Epicenter defines data first. `@epicenter/workspace` gives that data a live Yjs document via `defineDocument(builder)`, `attach*` primitives add durability and transport, middleware packages reinterpret the same client for files, skills, Svelte state, and AI tools, and the apps compose those layers into actual products.
+The store keeps exactly the ledgers a crash cannot reconstruct: the update
+log, the outbox, the cursor, and the document identity (ADR-0241). On Bun
+they live in one SQLite file; in the browser they are small IndexedDB
+relations: `updates`, `outbox`, `meta` (ADR-0223, ADR-0238). There is no
+worker and no OPFS, and nothing derived is ever restored, only rebuilt.
 
-Everything after that is detail. Useful detail, but still detail.
+History lives outside the CRDT (ADR-0214). The document runs with garbage
+collection on, which is what collapses a field edited five thousand times to two
+structs.
+
+## The authority owns availability, not meaning
+
+One Durable Object per principal and application, named
+`principals/<id>/stores/<ns>`, keeping a snapshot and a tail (ADR-0220,
+ADR-0225). It appends opaque bytes and reads nothing about their meaning.
+
+Being signed in is the whole of the sharing model. The route stamps the
+principal from the bearer and addresses one Durable Object by it, so every
+device on one account converges without anything being paired or invited.
+
+The host supplies only `dial`, a function that makes a socket. The library owns
+the cursor, attach and detach, reconnect on close and on `needsResync`, and the
+unacknowledged-submission watchdog (ADR-0222).
+
+Blobs are a separate plane and were never CRDT-backed. They are content
+addressed bytes logged against the server, with local ones queued until they
+are uploaded.
+
+## Two deployables, one library
+
+`packages/server` is the shared Hono library. `apps/api` is the hosted personal
+cloud and `apps/self-host` is the self-hosted single-partition instance
+reference, which is community-supported rather than Epicenter-operated. They
+differ by principal resolver: an instance resolves every valid bearer to the
+literal `instance` principal (ADR-0075, amended by ADR-0092). Billing is
+hosted-only and lives in `apps/api/worker/billing/`.
+
+## What is broken right now
+
+ADR-0227 was executed as a clean break, so the applications that had not moved
+are broken on purpose and their data on the old stack is gone: `apps/whispering`,
+`apps/vocab`, `apps/skills`, `apps/epicenter`, `packages/chat`,
+`packages/skills`, and `packages/app-shell`'s agent chat. Green:
+`packages/data`, `workspace`, `sync`, `sqlite`, `svelte-utils`, `apps/api`,
+`apps/self-host`, `apps/honeycrisp`, `apps/sync-lab`.

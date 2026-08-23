@@ -1,0 +1,1 @@
+DROP TABLE "durable_object_instance" CASCADE;

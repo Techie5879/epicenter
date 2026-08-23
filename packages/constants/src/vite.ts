@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { APPS, type AppId } from '#apps';
+import { APPS, type AppId, localUrl } from '#apps';
 
 /**
  * Flat URL strings resolved at Vite build time.
@@ -14,6 +14,6 @@ const isDev = import.meta.env.MODE !== 'production';
 export const APP_URLS = Object.fromEntries(
 	Object.entries(APPS).map(([id, app]) => [
 		id,
-		isDev ? `http://localhost:${app.port}` : app.urls[0],
+		isDev ? localUrl(app) : app.url,
 	]),
 ) as { readonly [K in AppId]: string };

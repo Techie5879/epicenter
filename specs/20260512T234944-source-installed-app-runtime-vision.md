@@ -18,17 +18,17 @@ Epicenter apps are source-installed SPAs that run in a trusted Tauri webview and
 
 ## Execution Note
 
-Current status: this document is still live as a product vision, but it is not directly executable as one implementation wave. The current code already settled two adjacent foundations that this vision must respect: workspace actions are flat `defineActions({...})` registries keyed by snake_case strings, and remote action dispatch now rides Yjs state through `collab.dispatch(action, input, { to: connId, signal })`. Those choices are the source of truth for any later script, peer, or action lane.
+Current status: this document is still live as a product vision, but it is not directly executable as one implementation wave. The current code already settled one adjacent foundation that this vision must respect: workspace actions are flat `defineActions({...})` registries keyed by snake_case strings. Generic peer dispatch is no longer a collaboration surface; any later script, peer, or action lane needs its own current design.
 
 Implemented now: this pass creates a smaller follow-up spec for the next concrete slice, `specs/20260514T013918-source-app-manifest-bridge-slice.md`. That slice defines the source app manifest and typed invoke bridge contract only. It does not load apps, add a marketplace, introduce a Bun action runtime, or rewrite existing apps.
 
-Out of scope now: no broad public packaging work across all apps, no Tauri webview loader, no Rust command implementation, no action runtime, no handler context object, no peer or worker invocation, and no changes to the current `rpc-on-yjs-state` or `defineActions` behavior.
+Out of scope now: no broad public packaging work across all apps, no Tauri webview loader, no Rust command implementation, no action runtime, no handler context object, no peer or worker invocation, and no changes to `defineActions` behavior.
 
 ## Execution Checklist
 
 - [x] Read the full vision and confirmed it is not directly executable as one implementation wave.
 - [x] Inspected current actions, RPC, package layout, and Whispering Tauri invoke usage.
-- [x] Preserved current `rpc-on-yjs-state` dispatch behavior and `defineActions` snake_case behavior as source of truth.
+- [x] Preserved current `defineActions` snake_case behavior as source of truth.
 - [x] Created the next concrete implementation slice in `specs/20260514T013918-source-app-manifest-bridge-slice.md`.
 - [x] Deferred app loading, Rust commands, permission UI, Bun actions, handler contexts, peer invocation, and marketplace work.
 

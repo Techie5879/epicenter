@@ -1,72 +1,50 @@
-# Error Transformation Patterns
+# Error Flow Patterns
 
-## When to Read This
+This reference covers RPC error pass-through and the boundary where a local
+adapter error is justified.
 
-Read when you need concrete examples of query-layer error transformation or want to avoid double-wrapping errors.
+## Preserve Lower-Layer Errors
 
-### Real-World Examples
-
-```typescript
-// Simple error transformation
-enumerateDevices: defineQuery({
-  queryKey: recorderKeys.devices,
-  queryFn: async () => {
-    const { data, error } = await recorderService().enumerateDevices();
-    if (error) {
-      return Err({
-        title: '❌ Failed to enumerate devices',
-        description: error.message,
-        action: { type: 'more-details', error },
-      });
-    }
-    return Ok(data);
-  },
-}),
-
-// Custom description when service message isn't enough
-stopRecording: defineMutation({
-  mutationFn: async ({ toastId }) => {
-    const { data: blob, error } = await recorderService().stopRecording({ sendStatus });
-
-    if (error) {
-      return Err({
-        title: '❌ Failed to stop recording',
-        description: error.message,
-        action: { type: 'more-details', error },
-      });
-    }
-
-    if (!recordingId) {
-      return Err({
-        title: '❌ Missing recording ID',
-        description: 'An internal error occurred: recording ID was not set.',
-      });
-    }
-
-    return Ok({ blob, recordingId });
-  },
-}),
-```
-
-### Anti-Pattern: Double Wrapping
-
-Never wrap an already-wrapped error:
+Pass service and operation errors through unchanged. The current download
+adapter composes two fallible services without inventing a UI error shape:
 
 ```typescript
-// ❌ BAD: Double wrapping
-if (error) {
-  const userError = Err({ title: 'Failed', description: error.message });
-  notify.error.execute({ id: nanoid(), ...userError.error });  // Don't spread!
-  return userError;
+downloadRecording: defineMutation({
+	mutationKey: downloadKeys.downloadRecording,
+	mutationFn: async (recording: Recording) => {
+		const { data: audioBlob, error } =
+			await services.blobs.audio.getBlob(recording.id);
+		if (error !== null) return Err(error);
+
+		return services.download.downloadBlob({
+			name: `whispering_recording_${recording.id}`,
+			blob: audioBlob,
+		});
+	},
+});
+```
+
+Define an RPC-local error only when the adapter itself discovers a failure that
+neither the service nor the operation can own. Keep that namespace local unless
+another module needs to name the exact union.
+
+## Do Not Double-Wrap For Presentation
+
+```typescript
+// Wrong: domain fields and variant identity disappear before presentation.
+if (error !== null) {
+	return Err({
+		title: 'Failed',
+		description: error.message,
+	});
 }
 
-// ✅ GOOD: Transform once, use directly
-if (error) {
-  return Err({
-    title: '❌ Failed to start recording',
-    description: error.message,
-  });
-}
-// In onError hook, error is already the user-facing type
-onError: (error) => notify.error.execute(error),
+// Right: preserve the tagged error until the report boundary.
+if (error !== null) return Err(error);
+
+report.error({ cause: error });
 ```
+
+TanStack receives the tagged error through `defineQuery`, `defineMutation`,
+`resultQueryOptions`, or `resultMutationOptions`. The component decides whether
+to show a toast, inline state, retry action, or no presentation at all.

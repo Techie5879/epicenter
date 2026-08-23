@@ -1,42 +1,46 @@
 <script lang="ts">
 	import '../app.css';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
+	import { extractErrorMessage } from 'wellcrafted/error';
+	import { openSkillsRuntime } from '$lib/application.js';
+	import SkillsAppProvider from '$lib/SkillsAppProvider.svelte';
 
 	let { children } = $props();
 
-	/**
-	 * Force-fire onblur on the currently-focused element when the page is
-	 * being hidden. This catches the "user typed in a field, hits Cmd+W"
-	 * case — `.blur()` synchronously dispatches the blur event, so any
-	 * commit-on-blur handler runs and updates the Y.Doc before the page is
-	 * destroyed. See docs/articles/commit-on-blur-survives-tab-close.md.
-	 */
-	function flushPendingEdits() {
-		if (
-			document.visibilityState === 'hidden' &&
-			document.activeElement instanceof HTMLElement
-		) {
-			document.activeElement.blur();
-		}
-	}
+	// One transactional open acquired during layout initialisation, with a raw
+	// `{#await}` owning pending, ready and failure; descendants receive the
+	// READY runtime through a typed context, so there is no module-scope boot
+	// and no half-open handle.
+	//
+	// Gated rather than skeletoned because there is no useful partial UI: a
+	// route on an unopened store reads an empty table and flashes "no skills
+	// yet" at someone whose skills are about to appear.
+	const boot = new AbortController();
+	const opening = openSkillsRuntime({ signal: boot.signal });
+	$effect(() => () => boot.abort());
 </script>
-
-<!--
-	Tab-close safety net: when the page is being hidden (Cmd+W, tab switch,
-	window minimize, mobile app-switch, bfcache), force-blur the focused
-	element so any input wired to commit on `onblur` gets its handler fired
-	synchronously, updating the Y.Doc before the page is torn down.
-	Listening to both visibilitychange (document) and pagehide (window) for
-	cross-browser coverage — visibilitychange is more reliable on iOS Safari,
-	pagehide catches bfcache navigations. Per Svelte's elements.d.ts,
-	pagehide is a window event, visibilitychange is a document event.
--->
-<svelte:document onvisibilitychange={flushPendingEdits} />
-<svelte:window onpagehide={flushPendingEdits} />
 
 <ConfirmationDialog />
 <Toaster />
-<ModeWatcher />
-{@render children()}
+<ModeWatcher defaultMode="dark" track={false} />
+{#await opening}
+	<Loading class="h-dvh" />
+{:then runtime}
+	<SkillsAppProvider {runtime}>{@render children()}</SkillsAppProvider>
+{:catch error}
+	<div class="flex h-dvh items-center justify-center p-6">
+		<div class="max-w-md space-y-3 text-center">
+			<h1 class="text-lg font-semibold">Could not open Skills</h1>
+			<p class="text-sm text-muted-foreground">
+				<!-- `extractErrorMessage`, not `String(error)`: a tagged error is a
+				     plain object with a `message`, so stringifying one renders
+				     "[object Object]" and hides the only useful thing it carries. -->
+				{extractErrorMessage(error)}
+			</p>
+			<button class="underline" onclick={() => location.reload()}>Reload</button>
+		</div>
+	</div>
+{/await}

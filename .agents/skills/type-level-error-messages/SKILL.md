@@ -10,15 +10,6 @@ metadata:
 
 > **Related Skills**: See `typescript` for general TypeScript conventions. See `arktype` for runtime regex validation and where this pattern surfaces in arktype itself.
 
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Constrain object keys, string literals, or other literal-type inputs in a helper function and surface a readable error at the call site.
-- Replace a `never` or `string` return in a constraint type with something that points at the bad value.
-- Match the way `arktype`'s internal `ErrorMessage<M>` types behave: visible message, invisible brand.
-- Give app authors edit-site feedback on shape/format rules (snake_case keys, slug formats, semver strings) without forcing every consumer to call a separate `validate()` step.
-
 ## The pattern in one example
 
 ```ts
@@ -128,8 +119,8 @@ A `unique symbol` works for nominal types on objects (`type Brand<T, K> = T & { 
 
 Compile-time validation only catches authoring inside the helper's parameter context. Authors can bypass it with:
 
-- `Object.fromEntries(dynamic)` — TS widens key type to `string`, the predicate becomes vacuous.
-- `as` cast — explicit bypass.
+- `Object.fromEntries(dynamic)`: TS widens key type to `string`, the predicate becomes vacuous.
+- `as` cast: explicit bypass.
 - Helper called from a `.js` file in a mixed codebase.
 
 So pair the type-level check with a runtime check inside the helper:

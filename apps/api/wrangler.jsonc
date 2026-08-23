@@ -1,16 +1,33 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "api",
-	"main": "src/app.ts",
+	"main": "worker/index.ts",
 	"compatibility_date": "2026-03-06",
-	"compatibility_flags": ["nodejs_compat"],
+	"compatibility_flags": ["nodejs_compat", "enable_request_signal"],
 	"send_metrics": false,
-	// --- Static assets: Dashboard SPA (built by SvelteKit adapter-static) ---
-	// Build first: cd apps/dashboard && bun run build
-	// Static files are served at their path. Hono handles SPA fallback for /dashboard/*.
+	// Build the cloud UI SPA before publishing. Wrangler runs build.command for
+	// `deploy` and `versions upload`, so local, CI prod, and CI preview build
+	// through one definition. Skip it for `dev`/`types`: the local `wrangler dev`
+	// loop (scripts/dev.ts) builds the UI only when the shell is missing so the
+	// edit loop stays fast.
+	"build": {
+		"command": "case \"$WRANGLER_COMMAND\" in dev|types) ;; *) bun run --cwd ui build ;; esac"
+	},
+	// --- Static assets: cloud UI SPA (built by SvelteKit adapter-static) ---
+	// SvelteKit writes hashed assets to ui/build/_app/* plus a fallback.html
+	// shell. The asset layer serves matching files (/_app/*, favicon) before the
+	// Worker runs; UI URLs (/dashboard, /sign-in, /consent)
+	// match no file and fall through to Hono, which serves fallback.html for
+	// the routes it owns. The shell is deliberately not index.html so the asset
+	// layer never shadows the Worker's `/` route. `html_handling: none` keeps
+	// /fallback.html reachable at its literal path; the default
+	// auto-trailing-slash mode 307-redirects it to /fallback, which breaks the
+	// Worker's `ASSETS.fetch('/fallback.html')` shell handoff (a 503, not a
+	// shell). This SPA has no pretty-URL pages, so extension magic buys nothing.
 	"assets": {
-		"directory": "../dashboard/build",
-		"binding": "ASSETS"
+		"directory": "./ui/build",
+		"binding": "ASSETS",
+		"html_handling": "none"
 	},
 	// --- Custom domain: api.epicenter.so (auto-creates DNS record on deploy) ---
 	"routes": [
@@ -20,52 +37,69 @@
 		}
 	],
 	// --- Vars: non-secret config accessible via env ---
-	"vars": {
-		"GOOGLE_CLIENT_ID": "702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com",
-		"ADMIN_USER_IDS": ""
-	},
-	// --- KV: Session cache (Better Auth SecondaryStorage) ---
-	// Create with: bunx wrangler kv namespace create "epicenter-sessions"
-	"kv_namespaces": [
-		{
-			"binding": "SESSION_KV",
-			"id": "a67bda23b98441bfa9f56c2ca2e8e1de"
-		}
-	],
+	// The public origin (Better Auth baseURL, OAuth issuer, token audience) is
+	// intentionally NOT here. It never changes for the hosted cloud, so the
+	// worker bakes `PRODUCTION_API_URL` from @epicenter/constants and local dev
+	// overrides it via `API_PUBLIC_ORIGIN` (apps/api/scripts/dev.ts). This keeps
+	// a single source of truth in TypeScript instead of a duplicated string.
+	"vars": {},
 	// --- Durable Objects ---
 	"durable_objects": {
 		"bindings": [
+			// One StoreAuthority per (principalId, application id) holds the
+			// opaque log for the new store transport (ADR-0220). It reads nothing
+			// it stores, and it is addressed only by a name built from a resolved
+			// bearer's principal, never from a query.
 			{
-				"name": "ROOM",
-				"class_name": "Room"
+				"name": "STORE_AUTHORITY",
+				"class_name": "StoreAuthority"
 			}
 		]
 	},
-	// SQLite-backed DO: persistent storage survives hibernation.
+	// A fresh Worker begins with the store authority only. Deploy this configuration
+	// only after deleting the old Worker and its Durable Object state, as ADR-0236
+	// requires.
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_sqlite_classes": ["WorkspaceRoom", "DocumentRoom"]
-		},
-		{
-			"tag": "v2",
-			"new_sqlite_classes": ["Room"],
-			"deleted_classes": ["WorkspaceRoom", "DocumentRoom"]
+			"new_sqlite_classes": ["StoreAuthority"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---
 	"secrets": {
 		"required": [
 			"BETTER_AUTH_SECRET",
-			// ENCRYPTION_SECRETS: Separate from BETTER_AUTH_SECRET. Used to derive per-user
-			// encryption keys via HKDF. Format: "version:secret,version:secret" (e.g.
-			// "2:newBase64,1:oldBase64"). Generate each secret with: openssl rand -base64 32
-			"ENCRYPTION_SECRETS",
+			// GOOGLE_CLIENT_ID is public OAuth metadata, not a secret, but it is
+			// deployment-owned config. Keep it with the matching secret so local
+			// dev and production cannot accidentally share a checked-in client id.
+			"GOOGLE_CLIENT_ID",
 			"GOOGLE_CLIENT_SECRET",
+			// The shared server library keeps every provider register-when-present,
+			// but the hosted cloud product promise is stricter: the hosted sign-in UI
+			// offers only providers with production credentials. Listing those
+			// provider bindings here makes Wrangler fail deploy/typegen when the
+			// hosted edge is missing a provider the UI would show. A required `string`
+			// here still satisfies the library's optional CloudAuthBindings fields.
+			"GITHUB_CLIENT_ID",
+			"GITHUB_CLIENT_SECRET",
+			"MICROSOFT_CLIENT_ID",
+			"MICROSOFT_CLIENT_SECRET",
+			// House AI keys are required here even though the library types them
+			// as optional bindings: hosted credits are billed against house-key
+			// usage, so a deploy without them would 503 paying users.
 			"OPENAI_API_KEY",
-			"ANTHROPIC_API_KEY",
 			"AUTUMN_SECRET_KEY",
-			"GEMINI_API_KEY"
+			"GEMINI_API_KEY",
+			// S3 credentials for the opaque-id blob store. The store is
+			// a portable S3 client (no R2 binding): it presigns PUT/GET and signs
+			// head/list/delete against BLOBS_S3_ENDPOINT. For hosted cloud that
+			// endpoint is `https://<accountId>.r2.cloudflarestorage.com` with a
+			// bucket-scoped Object Read & Write token. The endpoint is grouped as
+			// a secret so the account id stays out of committed config; bucket
+			// (`epicenter-blobs`) and region (`auto`) default in code.
+			"BLOBS_S3_ENDPOINT",
+			"BLOBS_S3_ACCESS_KEY_ID",
+			"BLOBS_S3_SECRET_ACCESS_KEY"
 		]
 	},
 	// --- Hyperdrive: Postgres connection pool ---
@@ -73,19 +107,27 @@
 	"hyperdrive": [
 		{
 			"binding": "HYPERDRIVE",
-			"id": "8e3481a8472248e0a883d07471f0cc36",
+			"id": "84ae7f4900774622a1cbe03d2a59e998",
 			"localConnectionString": "postgres://postgres:postgres@localhost:5432/epicenter"
 		}
 	],
-	// --- R2: Asset storage (images, PDFs) ---
-	"r2_buckets": [
-		{
-			"binding": "ASSETS_BUCKET",
-			"bucket_name": "epicenter-assets"
-		}
-	],
+	// --- R2: NO bindings ---
+	// This Worker names no `r2_buckets` binding. The opaque-id blob store
+	// (large media: video archive, files routinely >100 MB, sometimes multi-GB)
+	// talks plain S3-over-HTTPS via aws4fetch (BLOBS_S3_* secrets above), so the
+	// same code runs on this Worker against R2 and in a self-hosted Node binary
+	// against Garage/S3 with no Workers-only R2 binding. Create its bucket
+	// with: bunx wrangler r2 bucket create epicenter-blobs
+	// See packages/server/src/s3-blob-store.ts. (The legacy asset route and its
+	// `epicenter-assets` bucket binding were retired into this store.)
+	//
 	// Smart Placement: Run your Worker close to your database for lower latency
 	"placement": {
 		"region": "aws:eu-central-1"
-	}
+	},
+	// Raise the per-invocation CPU ceiling to 5 min: the /api/ai/chat SSE stream
+	// holds open for minutes of wall-clock, though most of that is provider I/O
+	// wait (low CPU). Billing is on actual CPU used, so the higher ceiling is
+	// headroom, not cost.
+	"limits": { "cpu_ms": 300000 }
 }

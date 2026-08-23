@@ -1,16 +1,12 @@
 {
 	"name": "@epicenter/sync",
-	"version": "0.1.0",
-	"description": "Sync protocol for Epicenter workspaces. Yjs-based encoding, WebSocket transport, and broadcast channel sync.",
+	"version": "0.3.0",
+	"description": "WebSocket subprotocol auth for Epicenter: the bearer-in-subprotocol handshake shared by client and server.",
 	"keywords": [
-		"local-first",
-		"Yjs",
-		"CRDT",
-		"sync",
 		"epicenter",
 		"WebSocket",
-		"offline-first",
-		"real-time"
+		"subprotocol",
+		"auth"
 	],
 	"repository": {
 		"type": "git",
@@ -18,27 +14,18 @@
 		"directory": "packages/sync"
 	},
 	"homepage": "https://epicenter.so",
-	"main": "./src/index.ts",
-	"types": "./src/index.ts",
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./auth-subprotocol": "./src/auth-subprotocol.ts",
+		"./store-route": "./src/store-route.ts"
 	},
-	"license": "AGPL-3.0",
+	"license": "MIT",
 	"scripts": {
+		"test": "bun test",
 		"typecheck": "tsc --noEmit"
-	},
-	"dependencies": {
-		"@epicenter/constants": "workspace:*",
-		"lib0": "catalog:",
-		"wellcrafted": "catalog:",
-		"y-protocols": "catalog:"
-	},
-	"peerDependencies": {
-		"yjs": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
-		"typescript": "catalog:",
-		"yjs": "catalog:"
+		"typescript": "catalog:"
 	}
 }

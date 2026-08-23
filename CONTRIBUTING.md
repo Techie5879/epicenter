@@ -36,20 +36,14 @@ Epicenter is a monorepo containing multiple applications. The main application r
    > **Note**: Desktop app development requires external tools not installed by the command above. Install these manually.
    > (For example: [Rust](https://www.rust-lang.org/tools/install) and [CMake](https://cmake.org/download/))
 
-3. **Navigate to the Whispering app**
+3. **Start development from the repository root**
 
    ```bash
-   cd apps/whispering
-   ```
+   # Run the hosted Whispering browser app and local API
+   bun dev:whispering
 
-4. **Start development**
-
-   ```bash
-   # Run both web and desktop mode
-   bun dev
-
-   # Or run just the web version
-   bun dev:web
+   # Or run Whispering inside the Epicenter desktop host
+   bun dev:epicenter
    ```
 
 That's it! You're ready to start contributing.
@@ -62,6 +56,7 @@ This is a monorepo with the following structure:
 epicenter/
 ├── apps/
 │   ├── whispering/     # Main transcription app (ready for contributions)
+│   ├── epicenter/      # Native host for trusted app windows
 │   ├── sh/             # Local assistant (in development)
 │   └── ...             # Other apps in various stages
 ├── packages/
@@ -75,6 +70,26 @@ epicenter/
 
 Currently, **Whispering** (`apps/whispering`) is the most mature application and the best place to start contributing. Check the [Whispering README](apps/whispering/README.md) for specific details about that application.
 
+### Working without Infisical access
+
+Most of the repo does not need Infisical. Whispering, the Tab Manager extension, and every shared package (`@epicenter/data`, `@epicenter/ui`, and the rest) build and run from a fresh clone with nothing more than `bun install`.
+
+The only app that requires Infisical is `apps/api` (the hosted hub). Running it (`bun run dev:api` from the repo root, or `bun run dev` from `apps/api/`) needs real API keys and the auth secret, so the dev script refuses to start without an `infisical login`.
+
+You can still contribute to the API schema without Infisical access. From `apps/api/`:
+
+| Script | What it does |
+| --- | --- |
+| `bun run db:generate` | Generate a migration from schema files (no database touched) |
+| `bun run db:push:local` | Push the schema to your local Postgres |
+| `bun run db:studio:local` | Open Drizzle Studio against your local Postgres |
+
+Write the migration, push it locally, open a PR. A maintainer with Infisical prod access applies it via `bun run db:migrate:remote`.
+
+To run the repo's fresh-clone-safe smoke checks, run `bun run smoke:local` from the repo root. Today that boots the Bun API port with dev auth and fake local-only env values, runs the runtime-parity smoke, and skips the blob leg when no local S3 store is configured.
+
+The convention in one line: `:local` works on a fresh clone, `:remote` wraps with `infisical run --env=prod` and is admin-only. See [`docs/articles/local-remote-script-convention.md`](docs/articles/local-remote-script-convention.md) for the full story.
+
 ## Development Workflow
 
 1. **Create a branch** for your feature or fix
@@ -85,12 +100,15 @@ Currently, **Whispering** (`apps/whispering`) is the most mature application and
 
 2. **Make your changes** following our coding standards (see below)
 
-3. **Test your changes** thoroughly
+3. **Run the gate** from the repo root
 
    ```bash
-   # Run tests if available
-   bun test
+   bun run check
    ```
+
+   This is the same gate CI runs: lint, typecheck, every workspace test, and
+   structural checks. Formatting is handled separately by the autofix workflow.
+   While iterating, `bun run test` or `bun run typecheck` alone is faster.
 
 4. **Commit using conventional commits**
 
@@ -105,13 +123,13 @@ Currently, **Whispering** (`apps/whispering`) is the most mature application and
    ```
 
    Create a PR to merge your fork's branch into `EpicenterHQ/epicenter:main`:
-   Go to [EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter) — GitHub usually shows a "Compare & pull request" banner for recent pushes.
+   Go to [EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter). GitHub usually shows a "Compare & pull request" banner for recent pushes.
 
 ### Changelog Entries
 
 Every PR with a `feat:` or `fix:` prefix should include a `## Changelog` section in the PR description. These entries get aggregated into GitHub Releases automatically.
 
-Write one line per user-visible change, in imperative mood, for end users—not developers. The person who wrote the code is always best positioned to describe what it does.
+Write one line per user-visible change, in imperative mood, for end users, not developers. The person who wrote the code is always best positioned to describe what it does.
 
 **Good entries:**
 
@@ -155,40 +173,6 @@ git rebase upstream/main
 
 </details>
 
-## Local Development: Testing the CLI
-
-If you're working on Epicenter's CLI (`packages/epicenter`), you can test it locally without publishing using `bun link`.
-
-### One-Time Setup
-
-Link the package globally from the package directory:
-
-```bash
-cd packages/epicenter
-bun link
-```
-
-This makes the `epicenter` command available globally on your system, pointing to your local development version.
-
-### Using the CLI
-
-Now you can use the `epicenter` command from any directory:
-
-```bash
-epicenter --help
-```
-
-The CLI will use your local development version, so any changes you make to the CLI code will be reflected immediately.
-
-### Unlinking
-
-When you're done testing, you can unlink the package:
-
-```bash
-cd packages/epicenter
-bun unlink
-```
-
 ## Releasing
 
 This section is for maintainers with npm publish access to the `@epicenter` scope.
@@ -201,9 +185,9 @@ This section is for maintainers with npm publish access to the `@epicenter` scop
 
 ### How versioning works
 
-All seven public packages (`@epicenter/workspace`, `@epicenter/cli`, `@epicenter/sync`, `@epicenter/filesystem`, `@epicenter/skills`, `@epicenter/ui`, `@epicenter/svelte`) share a single version number. They move together.
+All five public packages (`@epicenter/sync`, `@epicenter/skills`, `@epicenter/field`, `@epicenter/identity`, `@epicenter/ui`) share a single version number. They move together.
 
-**Apps are completely separate from changesets.** Changesets only touches packages that are (a) not marked `"private": true` and (b) listed under `packages/`. Every app in `apps/` is `"private": true` and has its own deploy mechanism—changesets will never version or publish them. Whispering versions come from `tauri.conf.json` and git tags. Web apps deploy on push to `main`. See [App deployments](#app-deployments) below.
+**Apps are completely separate from changesets.** Changesets only touches packages that are (a) not marked `"private": true` and (b) listed under `packages/`. Every app in `apps/` is `"private": true` and has its own deploy mechanism. Changesets will never version or publish them. Web apps deploy on push to `main`; native packaging belongs to each Tauri host. See [App deployments](#app-deployments) below.
 
 We use [changesets](https://github.com/changesets/changesets) to track changes and publish. Never edit `version` fields in `package.json` by hand.
 
@@ -237,8 +221,9 @@ git push && git push --tags
 
 Apps deploy separately from npm packages:
 
-- **Whispering (desktop)**: Push a `v*` tag. `release.whispering.yml` builds for all four platforms and publishes a GitHub Release draft.
-- **Web apps (Cloudflare Workers)**: Merge to `main`. `deploy.cloudflare.yml` deploys automatically.
+- **Whispering (browser)**: Merge to `main`. `deploy.cloudflare.yml` builds and deploys the static SPA.
+- **Epicenter (desktop)**: Epicenter owns native packaging for Whispering and every other trusted desktop app. There is no standalone Whispering desktop release workflow.
+- **Other web apps (Cloudflare Workers)**: Merge to `main`. `deploy.cloudflare.yml` deploys automatically.
 
 See [`.github/workflows/README.md`](.github/workflows/README.md) for the full workflow reference.
 ## Coding Standards
@@ -300,7 +285,7 @@ curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.19"
 
 ## Licensing
 
-Epicenter uses split licensing. Most packages and apps are MIT—contribute freely, no strings attached. The sync server (`apps/api`) and sync protocol (`packages/sync`) are AGPL-3.0. Contributions to either layer are welcome under their respective licenses.
+Epicenter uses split licensing by how you use the code. Code you build with (the toolkit: `@epicenter/workspace`, `@epicenter/field`, `@epicenter/ui`, and the contracts they carry) is MIT: contribute freely, no strings attached. Code we ship or run (all apps, the shared `@epicenter/server` library, and internal glue) is AGPL-3.0. Contributions to either layer are welcome under the license of the file you are editing (inbound = outbound).
 
 See [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAINABILITY.md) for the full reasoning behind the split.
 

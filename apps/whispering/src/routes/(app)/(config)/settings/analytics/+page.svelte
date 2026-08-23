@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Card from '@epicenter/ui/card';
-	import { Label } from '@epicenter/ui/label';
 	import * as SectionHeader from '@epicenter/ui/section-header';
-	import { Switch } from '@epicenter/ui/switch';
-	import { rpc } from '$lib/query';
-	import { settings } from '$lib/state/settings.svelte';
+	import { SettingSwitch } from '$lib/components/settings';
+	import { logAnalyticsEvent } from '$lib/operations/analytics';
+	import { getWhisperingApp } from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
 </script>
 
 <div class="space-y-8">
@@ -15,7 +16,7 @@
 			<SectionHeader.Title level={3} class="text-xl tracking-tight"
 				>Analytics</SectionHeader.Title
 			>
-			{#if settings.get('analytics.enabled')}
+			{#if app.settings.get('analyticsEnabled')}
 				<Badge
 					variant="outline"
 					class="text-xs text-green-700 dark:text-green-400 border-green-200 dark:border-green-400/30"
@@ -37,97 +38,48 @@
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
-	<!-- Main Toggle Section -->
-	<Card.Root class="transition-colors duration-200">
-		<Card.Content>
-			<div class="flex items-start justify-between gap-4">
-				<div class="space-y-2 flex-1">
-					<Label
-						for="analytics-toggle"
-						class="text-base font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-					>
-						Share anonymized events
-					</Label>
-					<p class="text-sm text-muted-foreground leading-relaxed">
-						We log simple events like "recording started" or "transcription
-						completed". No personal data is attached to any of these events.
-					</p>
-				</div>
-				<Switch
-					id="analytics-toggle"
-					bind:checked={() => settings.get('analytics.enabled'),
-						(checked) => {
-							settings.set('analytics.enabled', checked);
-
-							// Log the change (will only send if analytics is now enabled)
-							if (checked) {
-								rpc.analytics.logEvent({
-									type: 'settings_changed',
-									section: 'analytics',
-								});
-							}
-						}}
-					class="shrink-0"
-				/>
-			</div>
+	<Card.Root>
+		<Card.Content class="py-2">
+			<SettingSwitch
+				key="analyticsEnabled"
+				label="Share anonymized events"
+				description='We log simple events like "recording started" or "transcription completed". No personal data is attached to any of these events.'
+				onCheckedChange={(checked) => {
+					// Log the change (only actually sends if analytics is now enabled).
+					if (checked) {
+						void logAnalyticsEvent(app, {
+							type: 'settings_changed',
+							section: 'analytics',
+						});
+					}
+				}}
+			/>
 		</Card.Content>
 	</Card.Root>
 
-	<!-- Data Collection Information -->
-	<div class="grid gap-4 md:grid-cols-2">
-		<Card.Root class="border-green-100 dark:border-green-900/20">
-			<Card.Header>
-				<Card.Title
-					class="text-sm font-medium text-green-700 dark:text-green-400 flex items-center gap-2"
-				>
-					<div class="w-2 h-2 bg-green-500 rounded-full"></div>
-					Events we log
-				</Card.Title>
-			</Card.Header>
-			<Card.Content>
-				<ul class="text-sm text-muted-foreground space-y-1.5 leading-relaxed">
-					<li class="flex items-start gap-2">
-						<span class="text-green-500 mt-1">•</span>
-						<span>Button clicks (which features you use)</span>
-					</li>
-					<li class="flex items-start gap-2">
-						<span class="text-green-500 mt-1">•</span>
-						<span>Completion times (how long things take)</span>
-					</li>
-					<li class="flex items-start gap-2">
-						<span class="text-green-500 mt-1">•</span>
-						<span>Error messages (when something fails)</span>
-					</li>
-				</ul>
-			</Card.Content>
-		</Card.Root>
-
-		<Card.Root class="border-warning dark:border-warning/20">
-			<Card.Header>
-				<Card.Title
-					class="text-sm font-medium text-warning dark:text-warning flex items-center gap-2"
-				>
-					<div class="w-2 h-2 bg-warning rounded-full"></div>
-					Never collected
-				</Card.Title>
-			</Card.Header>
-			<Card.Content>
-				<ul class="text-sm text-muted-foreground space-y-1.5 leading-relaxed">
-					<li class="flex items-start gap-2">
-						<span class="text-warning mt-1">•</span>
-						<span>Your actual transcriptions or recordings</span>
-					</li>
-					<li class="flex items-start gap-2">
-						<span class="text-warning mt-1">•</span>
-						<span>Device IDs or user identifiers</span>
-					</li>
-					<li class="flex items-start gap-2">
-						<span class="text-warning mt-1">•</span>
-						<span>API keys or any personal data</span>
-					</li>
-				</ul>
-			</Card.Content>
-		</Card.Root>
+	<div class="grid gap-x-8 gap-y-6 px-1 sm:grid-cols-2">
+		<div class="space-y-2">
+			<p
+				class="text-xs font-medium uppercase tracking-wide text-green-700 dark:text-green-400"
+			>
+				Events we log
+			</p>
+			<ul class="text-sm text-muted-foreground space-y-1 leading-relaxed">
+				<li>Button clicks (which features you use)</li>
+				<li>Completion times (how long things take)</li>
+				<li>Error messages (when something fails)</li>
+			</ul>
+		</div>
+		<div class="space-y-2">
+			<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+				Never collected
+			</p>
+			<ul class="text-sm text-muted-foreground space-y-1 leading-relaxed">
+				<li>Your actual transcriptions or recordings</li>
+				<li>Device IDs or user identifiers</li>
+				<li>API keys or any personal data</li>
+			</ul>
+		</div>
 	</div>
 
 	<!-- Transparency Section -->
@@ -157,7 +109,7 @@
 					>
 				</a>
 				<a
-					href="https://github.com/search?q=repo%3AEpicenterHQ%2Fepicenter+rpc.analytics.logEvent&type=code"
+					href="https://github.com/search?q=repo%3AEpicenterHQ%2Fepicenter+logEvent&type=code"
 					target="_blank"
 					rel="noopener noreferrer"
 					class="group flex items-center gap-2 text-primary hover:text-primary/80 transition-colors"
@@ -192,7 +144,7 @@
 
 	<!-- Status Footer -->
 	<div class="flex items-center gap-2 text-xs">
-		{#if settings.get('analytics.enabled')}
+		{#if app.settings.get('analyticsEnabled')}
 			<div class="flex items-center gap-2 text-green-700 dark:text-green-400">
 				<div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
 				<span class="font-medium">Analytics active</span>

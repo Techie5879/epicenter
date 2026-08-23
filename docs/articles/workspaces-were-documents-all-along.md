@@ -1,5 +1,10 @@
 # Workspaces Were Documents All Along
 
+> **Historical note (2026-07-12):** This article traces the earlier root-Y.Doc
+> workspace architecture. The target workspace family composes row-owned
+> documents, stable synchronized KV, and a row-sync authority. See ADR-0130
+> through ADR-0137 for the current direction.
+
 I built the workspace API five times. Each version deleted more code than the last, until the fifth version put some of it back : for a reason the earlier versions hadn't earned the right to see yet. Here's how I got there.
 
 ## The first version felt great to call
@@ -32,19 +37,19 @@ Workspaces became a thin wrapper on top:
 ```ts
 // workspace.ts
 export const fuji = defineWorkspace({
-  id: 'epicenter.fuji',
+  id: 'epicenter-fuji',
   tables: { entries: entriesTable },
 });
 
 // client.ts
-const base = fuji.open('epicenter.fuji');
+const base = fuji.open('epicenter-fuji');
 const idb = attachIndexedDb(base.ydoc);
 attachBroadcastChannel(base.ydoc);
 const sync = attachSync(base.ydoc, { url, loadToken, waitFor: idb.whenLoaded });
 
 export const workspace = Object.assign(base, {
   idb, sync,
-  actions: createFujiActions(base.tables),
+  actions: defineActions({ ... }),
   whenReady: idb.whenLoaded,
 });
 ```
@@ -87,7 +92,7 @@ The third rewrite was mechanical. Delete `defineWorkspace`. Have apps call `defi
 const fuji = defineDocument((id: string) => {
   const ydoc = new Y.Doc({ guid: id, gc: false });
 
-  const tables = attachTables(ydoc, fujiTables);
+  const tables = attachTables(ydoc, { entries: entriesTable });
   const kv = attachKv(ydoc, {});
   const awareness = attachAwareness(ydoc, {});
   const enc = attachEncryption(ydoc, { tables, kv });
@@ -103,14 +108,14 @@ const fuji = defineDocument((id: string) => {
 
   return {
     id, ydoc, tables: tables.helpers, kv: kv.helper, awareness, enc, idb, sync,
-    actions: createFujiActions(tables.helpers),
+    actions: defineActions({ ... }),
     whenReady: idb.whenReady,
     whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed, enc.whenDisposed]).then(() => {}),
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 }, { gcTime: Infinity });
 
-export const workspace = fuji.open('epicenter.fuji');
+export const workspace = fuji.open('epicenter-fuji');
 ```
 
 No `Object.assign`. No separate definition file. The return object is the workspace : whatever components consume as `workspace.sync` or `workspace.tables` lives right there in the closure.
@@ -194,4 +199,4 @@ A thing I had to keep asking myself across all five versions was whether the nex
 
 The honest test isn't "is this called more than once?" It's "would removing this make a forbidden import possible?" By that test, `defineWorkspace` failed and got deleted. By that test, `openFuji()` failed at v3 and got deleted, then passed at v5 and came back. The test changes as the system grows. The wrapper that was unused encapsulation last quarter is the seam that prevents bundle bleed this quarter. Counting callers is the wrong measure.
 
-The full migration spans several specs on the `drop-document-factory` branch : `20260424T180000-drop-document-factory-attach-everything.md` is the v4 reasoning, `20260425T225350-app-workspace-folder-env-split.md` is the v5 reasoning, and the iso/env/client convention is codified at `.claude/skills/workspace-app-layout/SKILL.md`.
+The full migration spans several specs on the `drop-document-factory` branch : `20260424T180000-drop-document-factory-attach-everything.md` is the v4 reasoning, `20260425T225350-app-workspace-folder-env-split.md` is the v5 reasoning, and the iso/env/client convention is codified at `.claude/skills/workspace-app-composition/SKILL.md`.

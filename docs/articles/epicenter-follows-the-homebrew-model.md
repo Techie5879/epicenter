@@ -1,10 +1,12 @@
 # Epicenter Follows the Homebrew Model
 
+> **Note (2026-05-22)**: This article documents an earlier storage model. Current Epicenter does not store global workspace data under top-level `~/.epicenter/`. Machine auth uses the platform data directory from `env-paths('epicenter')`, daemon runtime files use the OS runtime directory, daemon logs use the platform log directory, and generated workspace data stays under each project at `<projectDir>/.epicenter/`.
+
 Homebrew, Cargo, Docker, and Epicenter all solve the same organizational problem: give users one predictable root directory, put self-contained units inside it, and discover everything with a single directory scan. The convention is old and boring. That's the point.
 
 ## One Root, Self-Contained Units
 
-Run `ls /opt/homebrew/Cellar/` and you see every package Homebrew manages. Each one is a directory containing a version folder with its own `bin/`, `lib/`, `share/`—everything it needs to function. The top-level `bin/` is just a symlink farm.
+Run `ls /opt/homebrew/Cellar/` and you see every package Homebrew manages. Each one is a directory containing a version folder with its own `bin/`, `lib/`, `share/`: everything it needs to function. The top-level `bin/` is just a symlink farm.
 
 ```
 /opt/homebrew/
@@ -66,7 +68,7 @@ Bun makes this cheap. Its global cache means per-workspace `node_modules/` are h
 
 ## Discovery Is Just readdir()
 
-This is where the centralized model pays off most clearly. Homebrew discovers packages by listing the Cellar—one `readdir()`. Epicenter does the same:
+This is where the centralized model pays off most clearly. Homebrew discovers packages by listing the Cellar. One `readdir()`. Epicenter does the same:
 
 ```typescript
 const entries = await readdir(join(epicenterHome, 'workspaces'), { withFileTypes: true });
@@ -84,13 +86,13 @@ for (const entry of entries) {
 
 No cache file. No self-registration. No stale path pruning. The filesystem is the source of truth.
 
-An earlier design allowed workspaces to live anywhere on the filesystem—`~/projects/blog/epicenter.config.ts`, `~/notes/epicenter.config.ts`—with a `known-workspaces.json` cache pointing to all of them. That was dropped. Browser configs diverge from server configs anyway (different action sets, no FS extensions), so the "workspace alongside my project" use case doesn't hold up. Every comparable tool—Obsidian, VS Code, Docker, Homebrew—uses centralized storage. None do recursive filesystem scanning as primary discovery.
+An earlier design allowed workspaces to live anywhere on the filesystem: `~/projects/blog/epicenter.config.ts`, `~/notes/epicenter.config.ts`, with a `known-workspaces.json` cache pointing to all of them. That was dropped. Browser configs diverge from server configs anyway (different action sets, no FS extensions), so the "workspace alongside my project" use case doesn't hold up. Every comparable tool uses centralized storage: Obsidian, VS Code, Docker, Homebrew. None do recursive filesystem scanning as primary discovery.
 
 ## Why /opt/ Is Wrong for Epicenter
 
 Homebrew uses `/opt/homebrew/` because it manages system-level binaries that need to be on `$PATH` for all terminal sessions. That location requires elevated permissions and exists outside any user's home directory, which is appropriate for shared system tools.
 
-Epicenter manages user-level workspace data: Yjs documents, SQLite databases, markdown files. This is personal data that belongs in userspace. Putting it in `/opt/` would require `sudo` to install a workspace, break multi-user setups without per-user subdirectories, and collide if two users want different workspace versions. `~/.epicenter/` is the right scope—same organizational principle as `/opt/homebrew/`, applied at the user level where workspace data belongs.
+Epicenter manages user-level workspace data: Yjs documents, SQLite databases, markdown files. This is personal data that belongs in userspace. Putting it in `/opt/` would require `sudo` to install a workspace, break multi-user setups without per-user subdirectories, and collide if two users want different workspace versions. `~/.epicenter/` is the right scope. Same organizational principle as `/opt/homebrew/`, applied at the user level where workspace data belongs.
 
 ## The Pattern
 

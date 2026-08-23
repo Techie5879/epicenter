@@ -1,62 +1,43 @@
 # Runtime Dependency Injection
 
-## When to Read This
+This reference covers dynamic implementation selection from app settings or
+platform capability.
 
-Read when implementing dynamic service selection based on platform or user settings.
+## The Consuming Edge Chooses
 
-## Runtime Dependency Injection
+Services stay free of app-owned settings. The operation or state module reads
+settings and platform capability, chooses the implementation, and passes the
+service explicit inputs. `$lib/queries` only selects a service when the adapter
+directly owns the whole use case.
 
-The query layer dynamically selects service implementations based on user settings.
-
-### Service Selection Pattern
+Whispering's transcription operation owns the current provider dispatch:
 
 ```typescript
-// From transcription.ts - Switch between providers
-async function transcribeBlob(blob: Blob): Promise<Result<string, UserError>> {
-	const selectedService =
-		settings.value['transcription.selectedTranscriptionService'];
+export async function transcribeAudio(
+	recordingId: string,
+): Promise<Result<string, TranscriptionError>> {
+	const selectedService = settings.get('transcription.service');
 
-	switch (selectedService) {
-		case 'OpenAI':
-			return await services.transcriptions.openai.transcribe(blob, {
-				apiKey: settings.value['apiKeys.openai'],
-				modelName: settings.value['transcription.openai.model'],
-				outputLanguage: settings.value['transcription.outputLanguage'],
-				prompt: settings.value['transcription.prompt'],
-				temperature: settings.value['transcription.temperature'],
-			});
-		case 'Groq':
-			return await services.transcriptions.groq.transcribe(blob, {
-				apiKey: settings.value['apiKeys.groq'],
-				modelName: settings.value['transcription.groq.model'],
-				outputLanguage: settings.value['transcription.outputLanguage'],
-				prompt: settings.value['transcription.prompt'],
-				temperature: settings.value['transcription.temperature'],
-			});
-		// ... more cases
-		default:
-			return Err({
-				title: '⚠️ No transcription service selected',
-				description: 'Please select a transcription service in settings.',
-			});
-	}
+	return isOnDeviceProviderId(selectedService)
+		? transcribeOnDevice(recordingId, selectedService)
+		: transcribeViaUpload(recordingId, selectedService);
 }
 ```
 
-### Recorder Service Selection
+The upload branch uses a total `Record<UploadProviderId, UploadDispatch>` so a
+new provider is a compile error until it has a dispatch entry. Each entry closes
+over the exact settings, credentials, endpoint, transport, or provider client it
+needs. The query layer observes the operation through
+`queries.transcription.transcribeRecording`; it does not reimplement provider
+selection.
 
-```typescript
-// Platform + settings-based selection
-export function recorderService() {
-	// In browser, always use navigator recorder
-	if (!window.__TAURI_INTERNALS__) return services.navigatorRecorder;
+## Ownership Check
 
-	// On desktop, use settings
-	const recorderMap = {
-		navigator: services.navigatorRecorder,
-		ffmpeg: desktopServices.ffmpegRecorder,
-		cpal: desktopServices.cpalRecorder,
-	};
-	return recorderMap[settings.value['recording.method']];
-}
-```
+- App settings and device configuration: operation or state owner.
+- Platform implementation: `#platform/*` build-time seam where one exists.
+- Provider routing: one exhaustive dispatch table or switch at the consuming edge.
+- Cache identity and lifecycle observation: query layer.
+- User presentation: component or report-owning operation.
+
+Do not reintroduce removed service registries or runtime platform checks merely
+to make the query layer choose between implementations.

@@ -14,7 +14,7 @@
 	bind:ref
 	data-slot="radio-group-item"
 	class={cn(
-		'border-input text-primary focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 shadow-xs aspect-square size-4 shrink-0 rounded-full border outline-none transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50',
+		'cn-radio-group-item group/radio-group-item peer relative aspect-square shrink-0 border outline-none after:absolute after:-inset-x-3 after:-inset-y-2 disabled:cursor-not-allowed disabled:opacity-50',
 		className,
 	)}
 	{...restProps}
@@ -22,12 +22,10 @@
 	{#snippet children({ checked })}
 		<div
 			data-slot="radio-group-indicator"
-			class="relative flex items-center justify-center"
+			class="cn-radio-group-indicator"
 		>
 			{#if checked}
-				<CircleIcon
-					class="fill-primary absolute start-1/2 top-1/2 size-2 -translate-x-1/2 -translate-y-1/2"
-				/>
+				<CircleIcon class="cn-radio-group-indicator-icon" />
 			{/if}
 		</div>
 	{/snippet}

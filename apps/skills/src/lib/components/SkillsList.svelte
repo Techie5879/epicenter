@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkills } from '$lib/context.js';
+	import { runSkillsMutation } from '$lib/mutation.js';
 	import SkillListItem from './SkillListItem.svelte';
 	import InlineNameInput from './tree/InlineNameInput.svelte';
+
+	const { state: skillsState } = getSkills();
 
 	let renamingSkillId = $state<string | null>(null);
 	const isEditing = $derived(renamingSkillId !== null);
@@ -47,9 +50,13 @@
 					confirmationDialog.open({
 						title: `Delete ${selected.name}?`,
 						description:
-							'This will delete the skill and all its references. This action cannot be undone.',
+							'This will delete the skill and its known reference records. This action cannot be undone.',
 						confirm: { text: 'Delete', variant: 'destructive' },
-						onConfirm: () => skillsState.deleteSkill(selected.id),
+						onConfirm: () =>
+							runSkillsMutation(
+								() => skillsState.deleteSkill(selected.id),
+								'Could not delete skill',
+							),
 					});
 				}
 				break;
@@ -79,8 +86,13 @@
 				<InlineNameInput
 					defaultValue={skill.name}
 					onConfirm={(name) => {
-						if (renamingSkillId && name.trim()) {
-							skillsState.updateSkill(renamingSkillId, { name: name.trim() });
+						const renaming = renamingSkillId;
+						const trimmed = name.trim();
+						if (renaming && trimmed) {
+							runSkillsMutation(
+								() => skillsState.updateSkill(renaming, { name: trimmed }),
+								'Could not rename skill',
+							);
 						}
 						renamingSkillId = null;
 					}}

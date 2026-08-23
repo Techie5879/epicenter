@@ -3,33 +3,32 @@
 	"description": "Public landing site for Epicenter",
 	"private": true,
 	"type": "module",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"scripts": {
-		"dev": "bun run dev:local",
-		"dev:local": "astro dev",
+		"dev": "astro dev",
 		"build": "astro build",
 		"preview": "astro preview",
 		"astro": "astro",
-		"deploy": "bun run build && wrangler deploy",
+		"deploy": "wrangler deploy",
 		"typecheck": "astro check && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {
-		"@astrojs/check": "0.9.7",
-		"@astrojs/svelte": "8.0.0",
+		"@astrojs/check": "0.9.9",
+		"@astrojs/svelte": "8.1.2",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@tailwindcss/vite": "catalog:",
 		"arktype": "catalog:",
-		"astro": "6.0.4",
-		"posthog-js": "^1.258.5",
+		"astro": "6.4.6",
+		"posthog-js": "^1.386.6",
 		"svelte": "catalog:",
 		"tailwindcss": "catalog:"
 	},
 	"devDependencies": {
-		"@lucide/astro": "^0.536.0",
+		"@lucide/astro": "^1.18.0",
 		"@tailwindcss/typography": "catalog:",
 		"svelte-check": "catalog:",
 		"typescript": "catalog:"
 	},
-	"license": "MIT"
+	"license": "AGPL-3.0-or-later"
 }

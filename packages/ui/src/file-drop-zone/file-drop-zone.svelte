@@ -23,13 +23,6 @@
 		...rest
 	}: FileDropZoneProps = $props();
 
-	// svelte-ignore state_referenced_locally - one-time dev warning at component init
-	if (maxFiles !== undefined && fileCount === undefined) {
-		console.warn(
-			'Make sure to provide FileDropZone with `fileCount` when using the `maxFiles` prompt',
-		);
-	}
-
 	let uploading = $state(false);
 
 	const drop = async (
@@ -81,7 +74,7 @@
 
 		const isAcceptable = acceptedTypes.some((pattern) => {
 			// check extension like .mp4
-			if (fileType.startsWith('.')) {
+			if (pattern.startsWith('.')) {
 				return fileName.endsWith(pattern);
 			}
 

@@ -7,7 +7,7 @@ This specification defines APIs for versioned data storage in local-first applic
 ### Related Specs
 
 - `specs/20260126T103000-table-api-split.md` - Versioned Tables vs Dynamic Tables distinction
-- `specs/20260126T120000-static-workspace-api.md` - Full API for defineTable, defineKv, defineWorkspace, and composability
+- Removed `specs/20260126T120000-static-workspace-api.md` - historical full API for defineTable, defineKv, defineWorkspace, and composability, recoverable through `docs/spec-history.md`
 
 ---
 

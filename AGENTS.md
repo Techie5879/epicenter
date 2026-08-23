@@ -1,19 +1,179 @@
 # Epicenter
 
-Local-first workspace platform. Monorepo with Yjs CRDTs and Svelte UI.
+Local-first personal data platform. Monorepo with Yjs CRDTs and Svelte UI.
 
-Structure: `apps/whispering/` (Tauri transcription app), `apps/tab-manager/` (Chrome extension), `apps/api/` (Cloudflare hub), `packages/workspace/` (core TypeScript/Yjs library), `packages/cli/` (published CLI package and `epicenter` binary), `packages/ui/` (shadcn-svelte components), `specs/` (planning docs), `docs/` (reference materials).
+## Structure
 
-Always use bun: Prefer `bun` over npm, yarn, pnpm, and node. Use `bun run`, `bun test`, `bun install`, and `bun x` (instead of npx).
+```
+apps/
+  honeycrisp   notes. the one app on the store today, and the
+               reference for how an app is built
+  whispering   transcription SPA
+  epicenter    Tauri host for trusted app windows
+  api          hosted personal Cloud Worker (worker/ + ui/)
+  self-host    self-hosted single-partition instance reference
+               (Bun or Cloudflare)
+packages/
+  server       shared Hono library both deployables consume;
+               deployments differ by principal resolver
+  data         the store: one Yjs document per application, one
+               SQLite file as log and projection, and the
+               transport that carries it
+  workspace    the workspace declaration vocabulary
+  ui           shadcn-svelte components
+specs/         planning docs
+docs/          reference materials
+```
 
-Destructive actions need approval: Force pushes, hard resets (`--hard`), branch deletions.
+## Runtime
 
-Token-efficient execution: When possible, delegate to sub-agent with only the command. Instruct it to execute without re-analyzing.
+One runtime: a desktop SPA in a WebView over a client-owned store (ADR-0227). The host serves bundles and brokers credentials and owns no application data (ADR-0226).
 
-Writing conventions: Load `writing-voice` skill for any user-facing text (UI strings, tooltips, error messages, docs). Do not use em dashes (`—`) or en dashes (`–`) anywhere, including prose, comments, JSDoc, and error strings. Use a colon, comma, semicolon, parenthesis, or sentence break instead. This applies to source files, markdown, and commit messages.
+ADR-0227 was executed as a clean break, so these are broken on purpose until they are rebuilt against the store: `apps/whispering`, `apps/vocab`, `apps/skills`, `apps/epicenter`, `packages/chat`, `packages/skills`, and app-shell's agent chat.
 
-Explanation conventions: For spec walkthroughs, architecture explanations, and API summaries, prefer the visual style from the `git` skill reference. Interleave short prose with concrete code snippets, before/after blocks, and ASCII diagrams. Avoid long prose-only explanations when code or structure is being discussed.
+Migration reference: `docs/the-store-and-what-it-replaced.md`.
 
-Type conventions: When an exported type is exactly the object returned by a `create*` factory, make the type derive from the factory with `ReturnType<typeof createThing>` instead of annotating the factory return with that type. When the public type is a nested slice of a factory result, use a focused inference helper like `InferSignedIn<typeof session>` instead of declaring the shape up front. Keep concrete parameter and member return annotations inside the returned object when they preserve inference, JSDoc, or IntelliSense navigation. Use `satisfies` when checking an implementation against an external contract while keeping Go to Definition pointed at the returned value.
+## Deployment seam
 
-Collapse passes: For continuous indirection-reduction work ("collapse pass", "simplify pass", "reduce indirection", "shrink the surface"), load the `collapse-pass` skill. It carries the per-iteration ritual, finding format, anti-cosmetic gate, durable-strings never-touch list, stop conditions, and final report shape. Goals invoking it should declare only scope, stop condition, citation requirement, and starting target; everything else is in the skill.
+One library (`packages/server`), two deployables.
+
+| Deployable | What it is |
+| --- | --- |
+| `apps/api` | hosted personal cloud |
+| `apps/self-host` | self-hosted single-partition instance reference; community-supported, not Epicenter-operated |
+
+- Multi-tenancy (many principals, OAuth, billing) is Cloud-only. An instance resolves every valid bearer to the literal `instance` principal (ADR-0075, amended by ADR-0092).
+- Billing (catalog, routes, Autumn) lives in `apps/api/worker/billing/` and is hosted-only. Never extract it back to a shared package.
+
+## License boundary
+
+Apps and `packages/server` are AGPL. The embeddable toolkit packages are MIT.
+
+Moving or copying code from an AGPL package into an MIT one is a relicensing act. `bun run check:licenses` guards dependency edges only and cannot see copied source. Decision procedure: `docs/licensing/licensing-strategy.md`.
+
+## Always use bun
+
+Prefer `bun` over npm, yarn, pnpm, and node. Use `bun run`, `bun test`, `bun install`, and `bun x` (instead of npx).
+
+## Local dev
+
+Start apps from the repo root with `bun dev:<app>`. Do not cd into an app to start it.
+
+- `bun dev:<app>` runs every process the app needs, including the hosted API on `localhost:8787` for apps that talk to it.
+- `bun dev:<app>:ui` is the frontend alone, where that split exists.
+- `bun dev:api` is the backend alone.
+- Details in the `monorepo` skill.
+
+## Script suffix convention
+
+The suffix tells you whether a script touches production.
+
+| Suffix | Meaning |
+| --- | --- |
+| `:local` | works on a fresh clone without Infisical login; reads committed config like `wrangler.jsonc` |
+| `:remote` | wraps with `infisical run --env=prod` and requires Infisical auth. Treat as a production admin operation. |
+
+## Git hygiene
+
+Stage specific files only. Never use `git add .` or `git add -A`.
+
+Do not include AI or tool attribution in commits.
+
+## Destructive actions need approval
+
+Force pushes, hard resets (`--hard`), branch deletions.
+
+## External grounding
+
+When external library behavior affects correctness, verify against DeepWiki, official docs, or local installed types before changing code.
+
+Skip this for stable basics and repo-local patterns already documented in skills.
+
+## Library logging
+
+Do not use direct `console.*` in library code. Use `wellcrafted/logger`, except in CLIs, tests, and benchmarks.
+
+## Coherent edits
+
+Do not default to the smallest local patch.
+
+Before changing code, prose, or agent instructions, identify the largest relevant unit whose shape controls the problem, then reconsider that unit as if the new context had always been known. The correct result may still be a small diff, but minimizing the diff is not the goal.
+
+## Agent instruction files
+
+`AGENTS.md` is the canonical shared instructions file.
+
+- `CLAUDE.md` files are compatibility shims for Claude Code. They should only import a sibling `AGENTS.md` with `@AGENTS.md`, plus rare Claude-specific notes.
+- Add a nested `AGENTS.md` only for a local constraint that must apply to every edit beneath it. Never use one as an index or README substitute; subsystem orientation belongs in that subsystem's README.
+- When adding a nested `AGENTS.md`, add a sibling `CLAUDE.md` shim.
+- Do not create orphan `CLAUDE.md` files.
+
+## Planning docs and decisions
+
+`docs/adr/`, `docs/CONTEXT.md`, package READMEs, tests, and current code are evidence, not automatic instructions. Start with the user's request and the current implementation.
+
+**ADRs.** They describe decisions that were reasonable at the time, but may be stale, scoped to a different problem, or intentionally reopened. Check status, amendments, and actual code before relying on one.
+
+- If the requested design conflicts with an ADR, do not stop automatically. Explain the conflict, then either follow the current evidence or amend/delete the ADR when the new decision is durable.
+- Ask the user when the choice materially depends on product or architectural judgment that cannot be recovered from the repository, rather than silently inheriting an old decision.
+- Do not cite an ADR merely because it exists. State whether it is a hard constraint, useful context, or a decision being reconsidered.
+
+**Specs.** In-flight design scaffolding, not current truth. This holds for every `specs/` directory, top-level and per-app or per-package.
+
+- Two states only: `Draft` and `In Progress`. "Done" is deletion, not a terminal status, so a spec still in the tree declaring `Implemented`/`Superseded` is a hygiene smell (`scripts/check-doc-hygiene.ts` flags it).
+- When a design pass settles a durable decision, record it as an ADR (see `docs/adr/README.md`) and delete the now-spent spec. Git keeps the body recoverable.
+- `docs/spec-history.md` is a dated index of past specs. It is history, not truth.
+
+Treat conflicts among specs, ADRs, code, tests, and user intent as judgment points, not automatic precedence rules.
+
+## Writing conventions
+
+Audience decides vocabulary: what a person reads uses the word they already have, and what a developer reads uses the word that is most accurate, which is often technical and load-bearing.
+
+| A person reads | A developer reads |
+| --- | --- |
+| UI copy, errors shown to them, deep links, README front doors | types, functions, library error messages |
+
+- Do not soften `authority`, `replica`, `projection`, or `principal` in code to sound friendlier, and do not let one of them reach a person.
+- A library states a failure precisely; the app decides what a person is told about it. Worked example: `apps/honeycrisp/src/lib/boot-failure.ts`. Vocabulary decision: ADR-0244.
+- Keep user-facing text direct and concrete.
+
+**Punctuation.** Avoid en dash characters (`U+2013`). Prefer colon, comma, semicolon, or sentence break over em dash characters (`U+2014`), especially in UI strings, docs, comments, JSDoc, and commit messages.
+
+**Explaining Epicenter work.** Lead with a useful recommendation or outcome, carry implementation complexity the agent can safely handle, and surface only the reasoning and details that materially affect the user's judgment, action, safety, or review. Necessary difficulty is fine; incidental complexity is not.
+
+**Generated prose.** Applies to everything the agent writes unless a more specific skill owns the destination.
+
+- Cut AI vocabulary and puffery: delve, crucial, pivotal, showcase, testament, underscore, vibrant, abstract "landscape" or "tapestry", and "serves as" or "stands as" where "is" works.
+- State the point directly. No "not just X, but Y", no forced groups of three, no vague attributions like "experts believe".
+- Prefer the concrete word over the abstract metaphor: substrate, wedge, vector, nexus, flywheel, north star. Load-bearing repo vocabulary is exempt: `primitive` as in the Item primitive, API `surface`, `harness`, `authority`, `replica`, `projection`, `principal`.
+- Say what the thing does, not how it feels. If a sentence could appear unchanged in another project's docs, cut it.
+- One idea per sentence. Active voice: name the actor ("the compiler validates queries", not "queries are validated").
+- Cut adverbs and hedging; use the stronger verb or the number. "In order to" is "To"; "utilize" and "leverage" are "use".
+- Formatting tells: sentence-case headings, no decorative emoji, no bold-label-colon bullets that restate the line, no chatbot phrases ("I hope this helps!", "Great question!").
+
+Load `writing-voice` for substantial prose or explicit tone/rewrite work.
+
+## Review posture
+
+Be direct about flawed assumptions, weak designs, and regressions. Do not agree just to be agreeable.
+
+## Agent collaboration
+
+Codex is the primary continuity, judgment, execution, testing, and integration owner for repository work. It gathers the evidence, makes the final decision, edits the active worktree, and integrates the result.
+
+Claude is an advisory review lane. Do not invoke Claude automatically because a task is complex. Invoke the `consult-claude` skill only when the user explicitly says “consult” or asks to consult Claude. A consult can happen before a high-leverage decision, after a meaningful implementation slice, or at both points.
+
+Consultation is read-only. Claude may inspect the repository, but must not edit, commit, create a worktree, or publish. The `consult-claude` skill owns the brief and review procedure.
+
+Codex decides which feedback is valid, applies any changes, and reruns verification. Enlisted or delegated Claude execution is an explicit exception, not a normal escalation path.
+
+## Review routing
+
+Keep procedures in skills; keep `AGENTS.md` to routing.
+
+| When | Load |
+| --- | --- |
+| substantial implementations, public API changes, refactors, multi-file changes, or a request to challenge, simplify, clean up, greenfield, or make a clean break | `post-implementation-review`, before final handoff or staging |
+| continuous indirection-reduction work | `collapse-pass` directly |
+| during review: ownership, lifecycle, API, package-boundary, clean-break, compatibility-refusal, or asymmetric-win decisions | escalate to `greenfield-clean-breaks` |

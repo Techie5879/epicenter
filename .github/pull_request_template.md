@@ -1,24 +1,24 @@
 <!--
-Open with WHAT changed (one crisp sentence), then explain WHY.
+Write narrative prose, not a form.
+
+Open with why this change exists, then explain the shape of the change.
+Do not include Summary, Changes, Testing, Test Plan, or Verification sections.
+Mention commands run in the agent or chat final response, not the PR body.
 
 For API changes, include before/after code examples.
-For refactors, show before/after snippets.
-Don't list files changed—the diff tab does that.
--->
+For structural refactors, include a small before/after shape or composition tree.
+Do not list files changed. The diff tab already does that.
 
-
+For feat: and fix: PRs only, add:
 
 ## Changelog
+- Add or fix the user-visible outcome
 
-<!--
-One line per user-visible change. Imperative mood. Written for end users, not developers.
-Required for feat: and fix: PRs. Omit this section entirely for chore/refactor/docs.
+Omit Changelog for chore:, refactor:, docs:, test:, build:, and ci: PRs.
+
+Use Closes #123 only when the PR fully resolves an issue.
+
+Paste screenshots or recordings for UI changes.
+
+PRs touching apps/api/, apps/self-host/, packages/sync/, or packages/server/ require @braden-w review per CODEOWNERS.
 -->
-
-- 
-
-Closes #
-
-<!-- Paste screenshots or recordings here for UI changes -->
-
-> PRs touching `apps/api/`, `packages/sync/`, or `packages/sync-client/` require @braden-w review per CODEOWNERS.

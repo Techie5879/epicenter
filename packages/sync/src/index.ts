@@ -1,42 +1,25 @@
 /**
- * @epicenter/sync — Yjs Sync Protocol Primitives
+ * `@epicenter/sync`: WebSocket subprotocol auth.
  *
- * Encode/decode functions for the y-websocket wire protocol.
+ * A browser `WebSocket` cannot set request headers, so a bearer credential
+ * rides the subprotocol list instead: the client offers `epicenter` plus
+ * `bearer.<token>`, and the server extracts the token and echoes back only the
+ * main subprotocol. These constants and helpers are the one vocabulary the
+ * client and server halves of that handshake must agree on.
  *
- * After the RPC-on-Yjs-state collapse, the wire carries only Yjs sync
- * frames (`SYNC` = 0); `AUTH` (2) remains as a reserved sentinel for the
- * 4401 close path but no frames are exchanged. Identity, presence, and
- * remote calls now live as rows in reserved Y.Doc arrays.
- *
- * For server-side WebSocket lifecycle handlers, import from
- * `@epicenter/sync/server` instead.
+ * The package exports the vocabulary shared by browser and server store-sync
+ * upgrades.
  */
 
-// WebSocket subprotocol auth (shared client/server constants + helpers)
 export {
 	BEARER_SUBPROTOCOL_PREFIX,
-	extractBearerToken,
+	isOpenWebSocketDenial,
 	MAIN_SUBPROTOCOL,
+	type OpenWebSocketDenial,
 	parseSubprotocols,
 } from './auth-subprotocol';
-// Transport origin sentinels (shared across all sync layers)
 export {
-	BC_ORIGIN,
-	isTransportOrigin,
-	SYNC_ORIGIN,
-} from './origins';
-// Protocol (encode/decode for WS messages and HTTP sync requests)
-export {
-	decodeMessageType,
-	decodeSyncMessage,
-	decodeSyncRequest,
-	encodeSyncRequest,
-	encodeSyncStep1,
-	encodeSyncStep2,
-	encodeSyncUpdate,
-	handleSyncPayload,
-	MESSAGE_TYPE,
-	SYNC_MESSAGE_TYPE,
-	type SyncMessageType,
-	stateVectorsEqual,
-} from './protocol';
+	STORE_REPLACE_ROUTE,
+	STORE_SYNC_ROUTE,
+	WORKSPACE_ID,
+} from './store-route.js';

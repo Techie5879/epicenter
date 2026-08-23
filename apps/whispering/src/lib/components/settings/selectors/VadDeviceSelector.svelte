@@ -9,9 +9,16 @@
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { rpc } from '$lib/query';
+	import { report } from '$lib/report';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+
+	let {
+		iconViewTransitionName,
+	}: {
+		/** When set, names the mic glyph for a cross-page view transition. */
+		iconViewTransitionName?: string;
+	} = $props();
 
 	const combobox = useCombobox();
 
@@ -20,8 +27,6 @@
 
 	const selectedDeviceId = $derived(deviceConfig.get(settingKey));
 
-	const isDeviceSelected = $derived(!!selectedDeviceId);
-
 	const getDevicesQuery = createQuery(() => ({
 		...vadRecorder.enumerateDevices.options,
 		enabled: combobox.open,
@@ -29,7 +34,7 @@
 
 	$effect(() => {
 		if (getDevicesQuery.isError) {
-			rpc.notify.warning(getDevicesQuery.error);
+			report.info({ cause: getDevicesQuery.error });
 		}
 	});
 </script>
@@ -39,20 +44,25 @@
 		{#snippet child({ props })}
 			<Button
 				{...props}
-				tooltip={isDeviceSelected
-					? 'Change VAD recording device'
-					: 'Select a VAD recording device'}
+				tooltip={selectedDeviceId
+					? 'Change recording device'
+					: 'Choose recording device'}
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
 				size="icon"
 				class="relative"
 			>
-				{#if isDeviceSelected}
-					<MicIcon class="size-4 text-green-500" />
-				{:else}
-					<MicIcon class="size-4 text-warning" />
-				{/if}
+				<span
+					class="inline-flex shrink-0"
+					style:view-transition-name={iconViewTransitionName}
+				>
+					{#if selectedDeviceId}
+						<MicIcon class="size-4 text-green-500" />
+					{:else}
+						<MicIcon class="size-4 text-warning" />
+					{/if}
+				</span>
 			</Button>
 		{/snippet}
 	</Popover.Trigger>
@@ -70,17 +80,16 @@
 					</div>
 				{:else if getDevicesQuery.isError}
 					<div class="p-4 text-center text-sm text-destructive">
-						{getDevicesQuery.error?.title}
+						{getDevicesQuery.error.message}
 					</div>
 				{:else}
 					{#each getDevicesQuery.data as device (device.id)}
 						<Command.Item
 							value={device.id}
 							onSelect={() => {
-								const currentDeviceId = selectedDeviceId;
-						deviceConfig.set(
+								deviceConfig.set(
 									settingKey,
-									currentDeviceId === device.id ? null : device.id,
+									selectedDeviceId === device.id ? null : device.id,
 								);
 								combobox.closeAndFocusTrigger();
 							}}

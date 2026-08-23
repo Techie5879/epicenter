@@ -1,0 +1,58 @@
+{
+	"name": "@epicenter/vocab",
+	"description": "Multilingual chat tutor with a deterministic client-side reading overlay",
+	"private": true,
+	"version": "0.0.2",
+	"type": "module",
+	"exports": {
+		".": "./vocab.ts"
+	},
+	"scripts": {
+		"dev": "vite dev",
+		"build": "NODE_ENV=production vite build",
+		"build:epicenter": "bun run scripts/build-epicenter-candidate.ts",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"test": "bun test",
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"deploy": "wrangler deploy"
+	},
+	"dependencies": {
+		"@epicenter/agent": "workspace:*",
+		"@epicenter/app-shell": "workspace:*",
+		"@epicenter/auth": "workspace:*",
+		"@epicenter/chat": "workspace:*",
+		"@epicenter/client": "workspace:*",
+		"@epicenter/constants": "workspace:*",
+		"@epicenter/data": "workspace:*",
+		"@epicenter/field": "workspace:*",
+		"@epicenter/database": "workspace:*",
+		"@epicenter/recorder": "workspace:*",
+		"@epicenter/svelte": "workspace:*",
+		"@epicenter/ui": "workspace:*",
+		"@lucide/svelte": "catalog:",
+		"arktype": "catalog:",
+		"mode-watcher": "^1.1.0",
+		"pinyin-pro": "^3.28.0",
+		"svelte-sonner": "catalog:",
+		"transliteration": "^2.6.1",
+		"typebox": "catalog:",
+		"wanakana": "^5.3.1",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@epicenter/vite-config": "workspace:*",
+		"@sveltejs/adapter-static": "catalog:",
+		"@sveltejs/kit": "catalog:",
+		"@sveltejs/vite-plugin-svelte": "catalog:",
+		"@tailwindcss/vite": "catalog:",
+		"@types/bun": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:",
+		"vite-plugin-static-copy": "^4.1.1"
+	},
+	"license": "AGPL-3.0-or-later"
+}

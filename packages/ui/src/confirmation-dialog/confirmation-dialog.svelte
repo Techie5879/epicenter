@@ -69,7 +69,7 @@
 		let isOpen = $state(false);
 		let isPending = $state(false);
 		let inputText = $state('');
-		let options = $state<ConfirmationDialogOptions | null>(null);
+		let options = $state.raw<ConfirmationDialogOptions | null>(null);
 
 		return {
 			get isOpen() {
@@ -187,7 +187,7 @@
 			{#if confirmationDialog.options?.input}
 				<Input
 					bind:value={confirmationDialog.inputText}
-					placeholder={`Type "${confirmationDialog.options.input.confirmationText}" to confirm`}
+					placeholder='Type "{confirmationDialog.options.input.confirmationText}" to confirm'
 				/>
 			{/if}
 

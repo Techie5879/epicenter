@@ -1,6 +1,14 @@
 # @epicenter/sync
 
-`@epicenter/sync` is the wire-format package for Epicenter sync. It owns the binary framing for Yjs sync, awareness, sync-status, and peer-to-peer RPC messages so the transport layer can stay dumb. `@epicenter/workspace` and `apps/api` use it when they need to turn a `Y.Doc` change into bytes—or turn bytes back into something the app can reason about.
+The store transport's connect URL, and the WebSocket subprotocol auth every
+Epicenter upgrade uses. Both halves need them and only one of them is a server:
+a browser replica builds the same URL and has no business importing Hono to
+learn what path to ask for.
+
+A browser `WebSocket` cannot set request headers, so a bearer credential rides
+the subprotocol list instead. The client offers the main subprotocol plus
+`bearer.<token>`; the server extracts the token, authenticates it, and echoes
+back only the main subprotocol.
 
 ## Installation
 
@@ -8,99 +16,60 @@ Inside this monorepo:
 
 ```json
 {
-	"dependencies": {
-		"@epicenter/sync": "workspace:*"
-	}
+  "dependencies": {
+    "@epicenter/sync": "workspace:*"
+  }
 }
 ```
 
-This package has a peer dependency on `yjs`.
+The package has no runtime dependencies.
 
-## Quick usage
-
-The core flow is small on purpose: encode a sync message, send it over whatever transport you want, then decode or handle it on the other side.
+## Usage
 
 ```typescript
-import * as Y from 'yjs';
 import {
-	MESSAGE_TYPE,
-	SYNC_MESSAGE_TYPE,
-	decodeMessageType,
-	decodeSyncMessage,
-	encodeSyncStep1,
-	handleSyncPayload,
-} from '@epicenter/sync';
+  BEARER_SUBPROTOCOL_PREFIX,
+  MAIN_SUBPROTOCOL,
+  parseSubprotocols,
+} from "@epicenter/sync";
 
-const doc = new Y.Doc();
-doc.getMap('users').set('alice', { name: 'Alice', age: 30 });
+// Client: offer the main subprotocol plus the credential.
+new WebSocket(url, [MAIN_SUBPROTOCOL, `${BEARER_SUBPROTOCOL_PREFIX}${token}`]);
 
-const step1 = encodeSyncStep1({ doc });
-const messageType = decodeMessageType(step1);
-
-if (messageType === MESSAGE_TYPE.SYNC) {
-	const decoded = decodeSyncMessage(step1);
-
-	if (decoded.type === 'step1') {
-		const response = handleSyncPayload({
-			syncType: SYNC_MESSAGE_TYPE.STEP1,
-			payload: decoded.stateVector,
-			doc,
-			origin: null,
-		});
-
-		// send response over WebSocket, HTTP, BroadcastChannel, or anything else
-	}
-}
+// Server: read the offer, then echo back only the main subprotocol.
+const { main, bearer } = parseSubprotocols(
+  request.headers.get("sec-websocket-protocol"),
+);
 ```
 
-That example is the same shape used in the package tests and in the API room bootstrap, where the server starts a connection with `encodeSyncStep1({ doc })`.
+`isOpenWebSocketDenial` classifies a rejected upgrade so a client can tell an
+auth refusal from a transport failure.
 
-## Dumb server, separate transport
+`STORE_SYNC_ROUTE` is where a replica connects:
 
-This package is strict about one boundary: it handles protocol framing, not connection management. That split is why the same message helpers work over WebSockets, one-shot HTTP sync, or any custom relay you want to write.
+```typescript
+import { STORE_SYNC_ROUTE } from "@epicenter/sync";
 
-The design shows up in a few places:
-
-- `encodeSyncStep1`, `encodeSyncStep2`, and `encodeSyncUpdate` only deal with Yjs payloads.
-- `encodeSyncRequest` and `decodeSyncRequest` collapse the WebSocket handshake into a binary HTTP request/response format.
-- RPC framing is separate from RPC behavior. The package defines request/response bytes and shared error variants, not the transport policy around retries or timeouts.
-
-If you want lifecycle helpers for a WebSocket server, this package is the protocol layer under them—not the server itself.
-
-## API overview
-
-Main exports from `src/index.ts`:
-
-- Message constants: `MESSAGE_TYPE`, `SYNC_MESSAGE_TYPE`, `RPC_TYPE`
-- Sync encode/decode: `encodeSyncStep1`, `encodeSyncStep2`, `encodeSyncUpdate`, `decodeSyncMessage`, `handleSyncPayload`
-- Awareness helpers: `encodeAwareness`, `encodeAwarenessStates`, `encodeQueryAwareness`
-- HTTP sync helpers: `encodeSyncRequest`, `decodeSyncRequest`
-- State helpers: `stateVectorsEqual`
-- RPC helpers: `encodeRpcRequest`, `encodeRpcResponse`, `decodeRpcMessage`, `decodeRpcPayload`
-- RPC types and guards: `DecodedRpcMessage`, `RpcError`, `isRpcError`
-
-The package exports pure functions. Feed them bytes and docs; they give you bytes or decoded shapes back.
-
-## Relationship to other packages
-
-`@epicenter/sync` sits below the rest of the sync stack.
-
-```text
-apps/api                durable-object rooms, websocket handling
-        │
-@epicenter/workspace    client sync extension, rpc helpers
-        │
-@epicenter/sync         protocol framing and shared rpc error types
-        │
-yjs + y-protocols       crdt state, awareness, update encoding
+new WebSocket(
+  STORE_SYNC_ROUTE.url(baseURL, { workspaceId, cursor }),
+  STORE_SYNC_ROUTE.subprotocols(token),
+);
 ```
 
-In practice:
+One path (`/api/store/v1/sync`), and the addressing lives in the query: a
+replica says which application workspaceId it is syncing and how far through the
+log it has read. Whose data that is comes from the resolved bearer,
+server-side, so there is no value a client can put in the query that reaches
+another partition (ADR-0092, ADR-0225). `WORKSPACE_ID` is the workspace id
+grammar both halves check against one definition.
 
-- `apps/api` uses it to compute initial room messages and decode incoming sync traffic.
-- `@epicenter/workspace` uses it in the client sync extension.
-- Other packages do not need to know about the wire format unless they are implementing a transport.
+## Scope
+
+This package carries no Yjs, no document framing, and no transport. It is the
+addressing and the handshake, and nothing that speaks over them: the rules about
+who has been sent what live in `@epicenter/data/sync`, and the mount that
+answers this route lives in `packages/server/src/store-sync/`.
 
 ## License
 
-AGPL-3.0. That matches the package manifest and the repository's split-license model for sync infrastructure.
+MIT. See [LICENSE](./LICENSE).

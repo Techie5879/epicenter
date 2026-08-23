@@ -31,7 +31,7 @@ That's the theory. We went looking at what projects actually do.
 | Grafana | AGPL | Yes (CLA) | Open core + hosted |
 | GitLab | MIT (CE) | DCO (not CLA) | Open core + proprietary EE |
 
-The narrative around "dual-licensed open source" is mostly a myth. Cal.com and dub.sh are just AGPL with a hosted SaaS on top. They don't sell a commercial license; they sell the service. Bitwarden has proprietary enterprise modules, but those are written entirely by the Bitwarden team and live in a separate directory. Nextcloud's contributor guide explicitly says no CLA required. GitLab uses a DCO (Developer Certificate of Origin), which is just a sign-off saying "I wrote this and I have the right to contribute it"—not a copyright assignment.
+The narrative around "dual-licensed open source" is mostly a myth. Cal.com and dub.sh are just AGPL with a hosted SaaS on top. They don't sell a commercial license; they sell the service. Bitwarden has proprietary enterprise modules, but those are written entirely by the Bitwarden team and live in a separate directory. Nextcloud's contributor guide explicitly says no CLA required. GitLab uses a DCO (Developer Certificate of Origin), which is just a sign-off saying "I wrote this and I have the right to contribute it". Not a copyright assignment.
 
 Grafana does use a CLA, and it's one of the few projects where it makes sense: they sell Grafana Enterprise, which includes features that ship under a proprietary license. To relicense community contributions into that product, they need the copyright. That's the actual use case.
 
@@ -51,7 +51,7 @@ We were running a CLA for a dual-licensing model we weren't actually doing. We h
 
 The CLA was friction with no corresponding benefit.
 
-So we split the licenses. MIT for the library packages and apps: `packages/workspace`, `packages/ui`, `apps/whispering`, `apps/tab-manager`. AGPL for the sync server and sync protocol: `apps/api`, `packages/sync`. No CLA.
+So we split the licenses by how you use the code. MIT for the developer toolkit you build with: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`. AGPL for everything we ship or run: all apps (including `apps/whispering` and `apps/tab-manager`), the shared server library (`packages/server`), and internal glue. No CLA.
 
 Enterprise features, when we build them, will live in a separate directory and be written entirely by the Epicenter team. That's the open-core model: AGPL base, proprietary enterprise layer on top. It achieves the same business outcome as dual licensing without requiring copyright assignment from contributors.
 

@@ -1,38 +1,56 @@
-import { MicVAD, utils } from '@ricky0123/vad-web';
-import { extractErrorMessage } from 'wellcrafted/error';
-import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
-import type { VadState } from '$lib/constants/audio';
-import { defineQuery } from '$lib/query/client';
-import { WhisperingErr } from '$lib/result';
 import {
-	cleanupRecordingStream,
+	asDeviceIdentifier,
+	createVadRecorder,
 	enumerateDevices,
-	getRecordingStream,
-} from '$lib/services/device-stream';
-import { asDeviceIdentifier } from '$lib/services/recorder/types';
+} from '@epicenter/recorder';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
+import { defineKeys, resultQueryOptions } from 'wellcrafted/query';
+import { Ok } from 'wellcrafted/result';
+import type { VadState } from '$lib/constants/audio';
+import { WHISPERING_BASE_PATHNAME } from '$lib/constants/urls';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
+const VadRecorderError = defineErrors({
+	EnumerateDevicesFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to enumerate devices: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+
+const vadKeys = defineKeys({
+	devices: ['vad', 'devices'],
+});
+
 /**
- * Creates a Voice Activity Detection (VAD) recorder with reactive state.
+ * Thin reactive wrapper over `@epicenter/recorder`'s callback VAD core.
  *
- * This module provides voice activity detection using the @ricky0123/vad-web library.
- * State is managed with Svelte's $state rune for automatic reactivity.
+ * The portable VAD lives in the package (`createVadRecorder`). This wrapper adds
+ * the two pieces that are Whispering's, not the capability's:
+ *
+ * 1. Svelte `$state` reactivity: it mirrors the session's speech transitions
+ *    into `state` so components and effects can read `vadRecorder.state`.
+ * 2. App ties the package deliberately refuses: the recording device is read
+ *    from `deviceConfig` here and passed in, and device enumeration is wrapped
+ *    as local TanStack Query options.
  *
  * Usage:
- * - Access state reactively: `vadRecorder.state` (triggers effects when changed)
- * - Start listening: `await vadRecorder.startActiveListening({ onSpeechStart, onSpeechEnd })`
+ * - Access state reactively: `vadRecorder.state`
+ * - Start listening: `await vadRecorder.startActiveListening({ onSpeechStart, onSpeechEnd, onVADMisfire, onLevel })`
  * - Stop listening: `await vadRecorder.stopActiveListening()`
  * - Enumerate devices: `createQuery(() => vadRecorder.enumerateDevices.options)`
  */
-function createVadRecorder() {
-	// Private state
-	let _session: { vad: MicVAD; stream: MediaStream } | null = null;
+function createReactiveVadRecorder() {
+	// The SPA is mounted below Epicenter's shared origin, so runtime asset fetches
+	// must stay below the Whispering base too.
+	const vad = createVadRecorder({
+		assetBaseUrl: `${WHISPERING_BASE_PATHNAME}/vad/`,
+	});
 	let _state = $state<VadState>('IDLE');
 
 	return {
 		/**
-		 * Current VAD state. Reactive - reading this in an $effect will
-		 * cause the effect to re-run when the state changes.
+		 * Current VAD state. Reactive: reading this in an $effect will cause the
+		 * effect to re-run when the state changes.
 		 */
 		get state(): VadState {
 			return _state;
@@ -44,46 +62,28 @@ function createVadRecorder() {
 		 * Usage:
 		 * - With createQuery: `createQuery(() => vadRecorder.enumerateDevices.options)`
 		 */
-		enumerateDevices: defineQuery({
-			queryKey: ['vad', 'devices'],
-			queryFn: async () => {
-				const { data, error } = await enumerateDevices();
-				if (error) {
-					return WhisperingErr({
-						title: '❌ Failed to enumerate devices',
-						serviceError: error,
-					});
-				}
-				return Ok(data);
-			},
-		}),
+		enumerateDevices: {
+			options: resultQueryOptions({
+				queryKey: vadKeys.devices,
+				queryFn: async () => {
+					const { data, error } = await enumerateDevices();
+					if (error)
+						return VadRecorderError.EnumerateDevicesFailed({ cause: error });
+					return Ok(data);
+				},
+			}),
+		},
 
 		/**
-		 * Start voice activity detection.
-		 * Updates `state` reactively as detection progresses.
+		 * Start voice activity detection on the configured device. Updates `state`
+		 * reactively as detection progresses.
 		 */
-		async startActiveListening({
-			onSpeechStart,
-			onSpeechEnd,
-			onVADMisfire,
-			onSpeechRealStart,
-		}: {
+		async startActiveListening(callbacks: {
 			onSpeechStart: () => void;
 			onSpeechEnd: (blob: Blob) => void;
-			onVADMisfire?: () => void;
-			onSpeechRealStart?: () => void;
+			onVADMisfire: () => void;
+			onLevel: (level: number) => void;
 		}) {
-			// Prevent starting if already active
-			if (_session) {
-				return WhisperingErr({
-					title: '⚠️ VAD already active',
-					description: 'Stop the current session before starting a new one.',
-				});
-			}
-
-			console.log('Starting VAD recording');
-
-			// Get device ID from settings
 			const configuredDeviceId = deviceConfig.get(
 				'recording.navigator.deviceId',
 			);
@@ -91,117 +91,41 @@ function createVadRecorder() {
 				? asDeviceIdentifier(configuredDeviceId)
 				: null;
 
-			// Get validated stream with device fallback
-			const { data: streamResult, error: streamError } =
-				await getRecordingStream({
-					selectedDeviceId: deviceId,
-					sendStatus: (status) => {
-						console.log('VAD getRecordingStream status update:', status);
-					},
-				});
-
-			if (streamError) {
-				return WhisperingErr({
-					title: '❌ Failed to get recording stream',
-					serviceError: streamError,
-				});
-			}
-
-			const { stream, deviceOutcome } = streamResult;
-
-			// Create VAD with the validated stream
-			const { data: newVad, error: initializeVadError } = await tryAsync({
-				try: () =>
-					MicVAD.new({
-						stream,
-						submitUserSpeechOnPause: true,
-						onSpeechStart: () => {
-							_state = 'SPEECH_DETECTED';
-							onSpeechStart();
-						},
-						onSpeechEnd: (audio) => {
-							_state = 'LISTENING';
-							const wavBuffer = utils.encodeWAV(audio);
-							const blob = new Blob([wavBuffer], { type: 'audio/wav' });
-							onSpeechEnd(blob);
-						},
-						onVADMisfire: () => {
-							_state = 'LISTENING';
-							onVADMisfire?.();
-						},
-						onSpeechRealStart: () => {
-							onSpeechRealStart?.();
-						},
-						model: 'v5',
-					}),
-				catch: (error) =>
-					WhisperingErr({
-						title: '❌ Failed to initialize VAD',
-						description:
-							'Voice activity detection could not be started. Your microphone may be in use by another application.',
-						action: { type: 'more-details', error },
-					}),
+			const result = await vad.startActiveListening({
+				deviceId,
+				onLevel: callbacks.onLevel,
+				// State mutations are gated on an already-armed session (`!== 'IDLE'`)
+				// so a frame that arrives during the start window does not flip state
+				// before listening is established, matching the core's own ordering.
+				onSpeechStart: () => {
+					if (_state !== 'IDLE') _state = 'SPEECH_DETECTED';
+					callbacks.onSpeechStart();
+				},
+				onSpeechEnd: (blob) => {
+					if (_state !== 'IDLE') _state = 'LISTENING';
+					callbacks.onSpeechEnd(blob);
+				},
+				onVADMisfire: () => {
+					if (_state !== 'IDLE') _state = 'LISTENING';
+					callbacks.onVADMisfire();
+				},
 			});
 
-			if (initializeVadError) {
-				// Clean up stream if VAD initialization fails
-				cleanupRecordingStream(stream);
-				return Err(initializeVadError);
-			}
-
-			// Start listening
-			const { error: startError } = trySync({
-				try: () => newVad.start(),
-				catch: (error) =>
-					WhisperingErr({
-						title: '❌ Failed to start VAD',
-						description: `Failed to start Voice Activity Detector. ${extractErrorMessage(error)}`,
-						action: { type: 'more-details', error },
-					}),
-			});
-
-			if (startError) {
-				// Clean up everything on start error
-				trySync({
-					try: () => newVad.destroy(),
-					catch: () => Ok(undefined),
-				});
-				cleanupRecordingStream(stream);
-				return Err(startError);
-			}
-
-			_session = { vad: newVad, stream };
+			if (result.error) return result;
 			_state = 'LISTENING';
-			return Ok(deviceOutcome);
+			return result;
 		},
 
 		/**
-		 * Stop voice activity detection and clean up resources.
-		 * Sets `state` back to 'IDLE'.
+		 * Stop voice activity detection and clean up resources. Sets `state` back
+		 * to 'IDLE'.
 		 */
 		async stopActiveListening() {
-			if (!_session) return Ok(undefined);
-
-			const { vad, stream } = _session;
-			const { error: destroyError } = trySync({
-				try: () => vad.destroy(),
-				catch: (error) =>
-					WhisperingErr({
-						title: '❌ Failed to stop VAD',
-						description: `Failed to stop Voice Activity Detector. ${extractErrorMessage(error)}`,
-						action: { type: 'more-details', error },
-					}),
-			});
-
-			// Always clean up, even if dispose had an error
-			_session = null;
+			const result = await vad.stopActiveListening();
 			_state = 'IDLE';
-			cleanupRecordingStream(stream);
-
-			if (destroyError) return Err(destroyError);
-			return Ok(undefined);
+			return result;
 		},
 	};
 }
 
-export const vadRecorder = createVadRecorder();
+export const vadRecorder = createReactiveVadRecorder();

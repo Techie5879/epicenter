@@ -4,13 +4,10 @@
 	"commit": false,
 	"fixed": [
 		[
-			"@epicenter/workspace",
-			"@epicenter/cli",
 			"@epicenter/sync",
-			"@epicenter/filesystem",
 			"@epicenter/skills",
-			"@epicenter/ui",
-			"@epicenter/svelte"
+			"@epicenter/field",
+			"@epicenter/identity"
 		]
 	],
 	"linked": [],

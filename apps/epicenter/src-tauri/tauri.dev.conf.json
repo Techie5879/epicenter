@@ -1,0 +1,16 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "Epicenter Dev",
+	"identifier": "so.epicenter.dev",
+	"app": {
+		"security": {
+			"capabilities": [
+				"home-model-administration-development",
+				"home-launch-application-development",
+				"trusted-app-windows-development",
+				"trusted-whispering-native-development",
+				"trusted-whispering-overlay-development"
+			]
+		}
+	}
+}

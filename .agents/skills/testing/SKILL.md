@@ -1,22 +1,12 @@
 ---
 name: testing
-description: Test file conventions: setup functions, factories, organization, type testing, naming. Use when: "write tests", "add a test", "fix this test", or modifying *.test.ts files.
+description: 'Test file conventions: setup functions, factories, Result assertion helpers, organization, type testing, naming, and pruning low-value tests. Use when: "write tests", "add a test", "fix this test", "delete tests", "prune tests", "audit tests", or modifying *.test.ts files.'
 metadata:
   author: epicenter
   version: '2.0'
 ---
 
 # Test File Conventions
-
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Write or refactor `*.test.ts` files in this codebase.
-- Structure tests with `setup()` functions instead of mutable `beforeEach` setup.
-- Split large test files into focused behavior/type/scenario files.
-- Enforce behavior-based test naming and clear failure intent.
-- Add or review negative type tests using `@ts-expect-error`.
 
 ## References
 
@@ -25,25 +15,48 @@ Load these on demand based on what you're working on:
 - If working with **negative type tests** (`@ts-expect-error`, `bun:test` type strategy, no `as any`), read [references/type-testing.md](references/type-testing.md)
 - If working with **test setup architecture** (`setup()` patterns, composable setup, `beforeEach` avoidance, shared schemas), read [references/setup-pattern.md](references/setup-pattern.md)
 - If working with **test organization structure** (flat tests, `describe()` boundaries, helper-over-nesting), read [references/test-structure.md](references/test-structure.md)
+- If **auditing existing tests** for hedged assertions, pass-through getters, stalled fakes, dead fake surface, or docstrings that contradict the code, read [references/honest-tests.md](references/honest-tests.md)
+- If **deleting or pruning tests** that may not earn their keep, read [references/test-deletion-grill.md](references/test-deletion-grill.md)
 
 External reading:
 
-- Kent C. Dodds, ["Avoid Nesting When You're Testing"](https://kentcdodds.com/blog/avoid-nesting-when-youre-testing) — setup functions over beforeEach, flat tests
-- Kent C. Dodds, ["AHA Testing"](https://kentcdodds.com/blog/aha-testing) — avoid hasty abstractions in tests
-- Kent C. Dodds, [Testing JavaScript](https://testingjavascript.com) — Test Object Factory Pattern
-- Matt Pocock, ["How to test your types"](https://www.totaltypescript.com/how-to-test-your-types) — vitest `expectTypeOf` for type testing
-- Matt Pocock, [`shoehorn`](https://github.com/total-typescript/shoehorn) — partial mocks for test ergonomics
+- Kent C. Dodds, ["Avoid Nesting When You're Testing"](https://kentcdodds.com/blog/avoid-nesting-when-youre-testing) : setup functions over beforeEach, flat tests
+- Kent C. Dodds, ["AHA Testing"](https://kentcdodds.com/blog/aha-testing) : avoid hasty abstractions in tests
+- Kent C. Dodds, [Testing JavaScript](https://testingjavascript.com) : Test Object Factory Pattern
+- Matt Pocock, ["How to test your types"](https://www.totaltypescript.com/how-to-test-your-types) : vitest `expectTypeOf` for type testing
+- Matt Pocock, [`shoehorn`](https://github.com/total-typescript/shoehorn) : partial mocks for test ergonomics
 
 > **Related Skills**: See `services-layer` for the service patterns being tested. See `typescript` for type testing conventions.
+
+## Result Assertions
+
+When a test asserts a wellcrafted `Result`, use `expectOk` and `expectErr`
+from `wellcrafted/testing` instead of hand-rolled error checks.
+
+```ts
+import { expectErr, expectOk } from 'wellcrafted/testing';
+
+const data = expectOk(await service.doThing());
+expect(data.id).toBe('1');
+
+const error = expectErr(await service.doThing({ invalid: true }));
+expect(error.name).toBe('InvalidInput');
+```
+
+Avoid local helper clones, `expect(error).toBeNull()` success checks, and
+`if (error) throw ...` unwrapping when the value is a wellcrafted `Result`.
+
+This rule does not apply to plain response bodies, UI snapshots, or other
+objects that merely have an `error` property.
 
 ## Tests vs. Benchmarks
 
 Two distinct file extensions, two distinct purposes:
 
-- **`*.test.ts`** — asserts behavior with `expect()`. Runs under `bun test`
+- **`*.test.ts`** : asserts behavior with `expect()`. Runs under `bun test`
   (repo default, CI). A test file without at least one `expect()` call does
   not belong under this extension.
-- **`*.bench.ts`** — measures and reports. Prints tables, timings, or
+- **`*.bench.ts`** : measures and reports. Prints tables, timings, or
   storage sizes. Runs under `bun bench` only. No assertions required
   (perf thresholds on shared hardware flake; prefer visual trends).
 

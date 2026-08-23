@@ -2,7 +2,12 @@
 	import type { Skill } from '@epicenter/skills';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import * as Item from '@epicenter/ui/item';
+	import { cn } from '@epicenter/ui/utils';
+	import { getSkills } from '$lib/context.js';
+	import { runSkillsMutation } from '$lib/mutation.js';
+
+	const { state: skillsState } = getSkills();
 
 	let {
 		skill,
@@ -18,20 +23,26 @@
 <ContextMenu.Root>
 	<ContextMenu.Trigger>
 		{#snippet child({ props })}
-			<button
+			<Item.Button
 				{...props}
-				class="flex w-full flex-col items-start gap-0.5 rounded-sm px-3 py-2 text-left hover:bg-accent/50 {isSelected
-					? 'bg-accent text-accent-foreground'
-					: ''}"
-				onclick={() => skillsState.selectSkill(skill.id)}
+				size="sm"
+				class={cn(
+					'w-full text-left',
+					isSelected
+						? 'bg-accent text-accent-foreground'
+						: 'hover:bg-accent/50',
+				)}
 				role="option"
 				aria-selected={isSelected}
+				onclick={() => skillsState.selectSkill(skill.id)}
 			>
-				<span class="font-mono text-sm font-medium">{skill.name}</span>
-				<span class="max-w-full truncate text-xs text-muted-foreground">
-					{skill.description}
-				</span>
-			</button>
+				<Item.Content>
+					<Item.Title class="font-mono">{skill.name}</Item.Title>
+					<Item.Description class="block max-w-full truncate text-xs">
+						{skill.description}
+					</Item.Description>
+				</Item.Content>
+			</Item.Button>
 		{/snippet}
 	</ContextMenu.Trigger>
 	<ContextMenu.Content>
@@ -45,9 +56,14 @@
 				skillsState.selectSkill(skill.id);
 				confirmationDialog.open({
 					title: `Delete ${skill.name}?`,
-					description: 'This will delete the skill and all its references. This action cannot be undone.',
+					description:
+						'This will delete the skill and its known reference records. This action cannot be undone.',
 					confirm: { text: 'Delete', variant: 'destructive' },
-					onConfirm: () => skillsState.deleteSkill(skill.id),
+					onConfirm: () =>
+						runSkillsMutation(
+							() => skillsState.deleteSkill(skill.id),
+							'Could not delete skill',
+						),
 				});
 			}}
 		>

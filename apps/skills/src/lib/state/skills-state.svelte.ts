@@ -1,173 +1,137 @@
-import type { Skill } from '@epicenter/skills';
-import { fromTable } from '@epicenter/svelte';
-import { generateId } from '@epicenter/workspace';
-import { skills as skillsWorkspace } from '$lib/skills/client';
+import type { NonconformingRow } from '@epicenter/data';
+import { InstantString } from '@epicenter/field';
+import {
+	type Reference,
+	SKILL_CONTENT,
+	type Skill,
+	type SkillsData,
+} from '@epicenter/skills';
+
+export type SkillMetadataUpdate = Partial<
+	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
+>;
 
 /**
- * Reactive skills state singleton.
+ * Skills' rows, read straight out of the store.
  *
- * Follows the canonical monorepo pattern: factory function creates
- * `fromTable()` reactive maps, `$derived` arrays, and CRUD methods.
- * Components import the singleton and read directly.
- *
- * @example
- * ```svelte
- * <script>
- *   import { skillsState } from '$lib/state/skills-state.svelte';
- * </script>
- *
- * {#each skillsState.skills as skill (skill.id)}
- *   <p>{skill.name}</p>
- * {/each}
- * ```
+ * There is no `refresh`, no generation counter, and no `await` on a read. The
+ * store's `subscribe` says which rows a commit touched and fires for a local
+ * write and for markdown typed into a row's document alike (ADR-0221), so a
+ * re-read after a mutation is something this module hears about rather than
+ * something every call site remembers. That is also what retired the
+ * generation counter: it existed to discard a stale async scan, and a
+ * synchronous read has no window to be stale in.
  */
-function createSkillsState() {
-	const skillsMap = fromTable(skillsWorkspace.tables.skills);
-	const referencesMap = fromTable(skillsWorkspace.tables.references);
-
-	const skills = $derived(
-		[...skillsMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
-	);
-
+export function createSkillsState({ data }: { data: SkillsData }) {
+	let skillRows = $state.raw<Skill[]>([]);
+	let referenceRows = $state.raw<Reference[]>([]);
+	let nonconforming = $state.raw<NonconformingRow[]>([]);
 	let selectedSkillId = $state<string | null>(null);
 
-	const selectedSkill = $derived.by(() => {
-		if (!selectedSkillId) return null;
-		return skillsMap.get(selectedSkillId) ?? null;
-	});
+	function read(): void {
+		const skills = data.tables.skills.list();
+		const references = data.tables.skillReferences.list();
+		skillRows = skills.rows;
+		referenceRows = references.rows;
+		nonconforming = [...skills.nonconforming, ...references.nonconforming];
+	}
 
-	const selectedReferences = $derived.by(() => {
-		if (!selectedSkillId) return [];
-		return [...referencesMap.values()]
-			.filter((r) => r.skillId === selectedSkillId)
-			.sort((a, b) => a.path.localeCompare(b.path));
-	});
+	read();
+	// Registration is synchronous, does no I/O and never fires initially, so the
+	// read above has already seen everything (ADR-0187).
+	const stopSkills = data.tables.skills.subscribe(read);
+	const stopReferences = data.tables.skillReferences.subscribe(read);
+
+	const sortedSkills = $derived(
+		skillRows.toSorted((left, right) => left.name.localeCompare(right.name)),
+	);
+	const selectedSkill = $derived(
+		selectedSkillId
+			? (skillRows.find((skill) => skill.id === selectedSkillId) ?? null)
+			: null,
+	);
+	const selectedReferences = $derived(
+		selectedSkillId
+			? referenceRows
+					.filter((reference) => reference.skillId === selectedSkillId)
+					.toSorted((left, right) => left.path.localeCompare(right.path))
+			: [],
+	);
 
 	return {
-		[Symbol.dispose]() {
-			skillsMap[Symbol.dispose]();
-			referencesMap[Symbol.dispose]();
-		},
-
-		/** All skills, sorted alphabetically by name. */
 		get skills() {
-			return skills;
+			return sortedSkills;
 		},
 		get selectedSkillId() {
 			return selectedSkillId;
 		},
-		/** The currently selected skill, or `null` if nothing is selected. */
 		get selectedSkill() {
 			return selectedSkill;
 		},
-		/** References belonging to the currently selected skill, sorted by path. */
 		get selectedReferences() {
 			return selectedReferences;
 		},
-
-		/**
-		 * Set the active skill for the editor panel.
-		 *
-		 * Prefer this over raw assignment: gives a single greppable call site
-		 * for selection and a stable extension point for future side effects
-		 * (analytics, scroll-into-view, etc.).
-		 */
+		get nonconforming() {
+			return nonconforming;
+		},
 		selectSkill(id: string | null) {
 			selectedSkillId = id;
 		},
 
-		/**
-		 * Create a new skill and select it.
-		 *
-		 * Inserts a row with a placeholder description and auto-selects
-		 * the new skill so the editor opens immediately.
-		 *
-		 * @returns The generated skill ID.
-		 */
-		createSkill(name: string) {
-			const id = generateId();
-			skillsWorkspace.tables.skills.set({
-				id,
-				name,
-				description: 'TODO: describe when and why to use this skill.',
-				license: undefined,
-				compatibility: undefined,
-				metadata: undefined,
-				allowedTools: undefined,
-				updatedAt: Date.now(),
-				_v: 1,
-			});
-			selectedSkillId = id;
-			return id;
+		/** Apply a change, or throw so the caller's toast can present it. */
+		createSkill(name: string): string {
+			const { data: skill, error } = data.tables.skills.create(
+				{
+					sourceId: crypto.randomUUID(),
+					name,
+					description: 'TODO: describe when and why to use this skill.',
+					updatedAt: InstantString.now(),
+				},
+				// Named here, once, at the only moment there is exactly one creator
+				// (ADR-0215).
+				{ document: [SKILL_CONTENT] },
+			);
+			if (error !== null) throw error;
+			selectedSkillId = skill.id;
+			return skill.id;
 		},
 
-		/**
-		 * Update editable fields on a skill.
-		 *
-		 * Automatically bumps `updatedAt`. Only name, description,
-		 * license, and compatibility are editable through this method.
-		 */
-		updateSkill(
-			id: string,
-			updates: Partial<
-				Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
-			>,
-		) {
-			skillsWorkspace.tables.skills.update(id, {
+		updateSkill(id: string, updates: SkillMetadataUpdate): void {
+			const { error } = data.tables.skills.update(id, {
 				...updates,
-				updatedAt: Date.now(),
+				updatedAt: InstantString.now(),
 			});
+			if (error !== null) throw error;
 		},
 
-		/**
-		 * Delete a skill and cascade-delete all its references.
-		 *
-		 * Uses `batch()` to collapse observer notifications.
-		 * If the deleted skill was selected, selects the next skill
-		 * alphabetically, or clears the selection if none remain.
-		 */
-		deleteSkill(id: string) {
-			skillsWorkspace.batch(() => {
-				for (const ref of referencesMap.values()) {
-					if (ref.skillId === id) {
-						skillsWorkspace.tables.references.delete(ref.id);
-					}
-				}
-				skillsWorkspace.tables.skills.delete(id);
-			});
-
+		deleteSkill(id: string): void {
+			for (const reference of referenceRows) {
+				if (reference.skillId !== id) continue;
+				data.tables.skillReferences.delete(reference.id);
+			}
+			data.tables.skills.delete(id);
 			if (selectedSkillId === id) {
-				const next = skills.find((s) => s.id !== id);
-				selectedSkillId = next?.id ?? null;
+				selectedSkillId =
+					sortedSkills.find((skill) => skill.id !== id)?.id ?? null;
 			}
 		},
 
-		/**
-		 * Add a file reference to a skill.
-		 *
-		 * @returns The generated reference ID.
-		 */
-		createReference(skillId: string, path: string) {
-			const id = generateId();
-			skillsWorkspace.tables.references.set({
-				id,
-				skillId,
-				path,
-				updatedAt: Date.now(),
-				_v: 1,
-			});
-			return id;
+		createReference(skillId: string, path: string): string {
+			const { data: reference, error } = data.tables.skillReferences.create(
+				{ skillId, path, updatedAt: InstantString.now() },
+				{ document: [SKILL_CONTENT] },
+			);
+			if (error !== null) throw error;
+			return reference.id;
 		},
 
-		/** Remove a file reference by ID. */
-		deleteReference(id: string) {
-			skillsWorkspace.tables.references.delete(id);
+		deleteReference(id: string): void {
+			data.tables.skillReferences.delete(id);
+		},
+
+		[Symbol.dispose]() {
+			stopSkills();
+			stopReferences();
 		},
 	};
-}
-
-export const skillsState = createSkillsState();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => skillsState[Symbol.dispose]());
 }

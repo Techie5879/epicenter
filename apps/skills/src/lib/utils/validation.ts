@@ -5,7 +5,7 @@
  * - Lowercase alphanumeric + hyphens only
  * - Must start and end with alphanumeric
  * - No consecutive hyphens
- * - 1–64 characters
+ * - 1-64 characters
  */
 const SKILL_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 
@@ -13,7 +13,7 @@ const SKILL_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
  * Validate skill fields against the Agent Skills spec.
  *
  * Returns an array of human-readable error strings. Empty array = valid.
- * Runs on save and before export—never blocks editing.
+ * Runs on save and before export, never blocks editing.
  *
  * @example
  * ```typescript
@@ -24,12 +24,15 @@ const SKILL_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 export function validateSkill(fields: {
 	name: string;
 	description: string;
-	license?: string;
-	compatibility?: string;
+	/**
+	 * Omitted by a caller validating a name before a row exists; `null` on a
+	 * row that declares none, because a workspace has no optional fields (ADR-0213).
+	 */
+	compatibility?: string | null;
 }): string[] {
 	const errors: string[] = [];
 
-	// name: required, 1–64 chars, lowercase + hyphens, no leading/trailing/consecutive hyphens
+	// name: required, 1-64 chars, lowercase + hyphens, no leading/trailing/consecutive hyphens
 	if (!fields.name) {
 		errors.push('name is required');
 	} else if (fields.name.length > 64) {
@@ -43,7 +46,7 @@ export function validateSkill(fields: {
 		errors.push('name must not contain consecutive hyphens');
 	}
 
-	// description: required, 1–1024 chars
+	// description: required, 1-1024 chars
 	if (!fields.description) {
 		errors.push('description is required');
 	} else if (fields.description.length > 1024) {

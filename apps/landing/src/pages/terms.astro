@@ -1,0 +1,58 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const lastUpdated = 'June 21, 2026';
+---
+
+<BaseLayout
+	title="Terms - Epicenter"
+	description="Epicenter is free, open-source, local-first software, built in the open and provided as-is."
+>
+	<main class="mx-auto max-w-2xl px-6 py-16 leading-relaxed">
+		<a href="/" class="text-sm text-muted-foreground hover:underline"
+			>&larr; epicenter</a
+		>
+		<h1 class="mt-6 text-3xl font-bold tracking-tight">Terms</h1>
+		<p class="mt-2 text-sm text-muted-foreground">
+			Last updated: {lastUpdated}
+		</p>
+
+		<section class="mt-8 space-y-5">
+			<p>
+				Epicenter is free and open source, under AGPL-3.0. The code is on
+				<a class="underline" href="https://github.com/EpicenterHQ/epicenter"
+					>GitHub</a
+				>, and you are welcome to read it, run it, and change it.
+			</p>
+
+			<p>
+				It comes with no warranty. I build these tools with care, but I cannot
+				promise they are perfect, so you run them at your own risk, and your
+				data and your credentials are yours to look after.
+			</p>
+
+			<p>
+				Some of these are experiments, and they might change or go away. That is
+				part of the point of local-first: even if a tool disappears, your files
+				don't. They are plain SQLite and Markdown on your own disk, and they
+				stay yours.
+			</p>
+
+			<p>
+				If you connect a service like QuickBooks, you are also agreeing to that
+				service's terms. Epicenter is not affiliated with or endorsed by the
+				services it can connect to.
+			</p>
+
+			<p>
+				Questions are welcome:
+				<a class="underline" href="mailto:hello@epicenter.so"
+					>hello@epicenter.so</a
+				>, or open an issue on
+				<a class="underline" href="https://github.com/EpicenterHQ/epicenter"
+					>GitHub</a
+				>.
+			</p>
+		</section>
+	</main>
+</BaseLayout>

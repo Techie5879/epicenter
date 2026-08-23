@@ -1,6 +1,6 @@
 ---
 name: monorepo
-description: Monorepo scripts, package boilerplate, conventions. Use when: "how do I run", "bun run", "build this", "run tests", "typecheck", "create a new package", linting, scaffolding packages.
+description: 'Monorepo scripts, package boilerplate, conventions. Use when: "how do I run", "bun run", "build this", "run tests", "typecheck", "create a new package", linting, scaffolding packages.'
 metadata:
   author: epicenter
   version: '2.0'
@@ -8,21 +8,9 @@ metadata:
 
 # Script Commands
 
-## Reference Repositories
+The monorepo uses consistent script naming conventions.
 
-- [jsrepo](https://github.com/jsrepojs/jsrepo) — Package distribution for monorepos
-- [WXT](https://github.com/wxt-dev/wxt) — Browser extension framework (used by tab-manager app)
-
-The monorepo uses consistent script naming conventions:
-
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Run formatting, linting, or type-check scripts in this monorepo.
-- Choose between auto-fix commands and `:check` CI-only variants.
-- Verify final changes with the repo-standard `bun typecheck` workflow.
-- Scaffold a new package in `packages/`.
+## Commands
 
 | Command            | Purpose                                        | When to use |
 | ------------------ | ---------------------------------------------- | ----------- |
@@ -40,32 +28,63 @@ Use this pattern when you need to:
 - `:check` suffix = check only (for CI, no modifications)
 - `typecheck` alone = type checking (separate concern, cannot auto-fix)
 - `test` runs only `*.test.ts`; `bench` runs only `*.bench.ts`. A file is
-  one or the other — never both. Benchmarks print reports; tests assert.
+  one or the other : never both. Benchmarks print reports; tests assert.
+
+## The declaration build gate
+
+`@epicenter/field` and `@epicenter/workspace` export `./dist` only, because their
+declarations are published and then typechecked inside a stranger's project
+(ADR-0186). Every in-repo consumer therefore resolves them through
+`node_modules` to build output, so a test that reaches either one is testing
+the last build rather than the working tree.
+
+Root `test` runs `build:declarations` first for exactly that reason. It is one
+gate rather than a `pretest` in each affected package, and it is not redundant
+with `postinstall`: `postinstall` makes `dist` fresh once, and an edit after
+that is invisible until something rebuilds.
+
+Two things follow. Running one package's tests directly (`bun test <path>`, or
+`bun run --cwd packages/workspace test`) does **not** rebuild, so build first when
+the change is in `field` or `workspace`. And a module both clients depend on for
+correctness earns a test inside its own package, where the import is source:
+`packages/workspace/src/workspace.test.ts` is the worked example.
+
+Do not fix this with a `development` or `bun` export condition. In-repo tests
+and published consumers would then run different code, which is the same
+problem in a place nobody looks.
 
 ## Dev Scripts
 
-Every app uses explicit `dev:local` / `dev:remote` naming:
+Start apps from the repo root, not by cd-ing into the app. Root
+`bun dev:<app>` runs every process the app needs; for apps that talk to the
+hosted API (honeycrisp, vocab, whispering, and the
+api dashboard), it also starts `@epicenter/api` on `localhost:8787` via
+`bun run --filter`. Root `bun dev:<app>:ui` runs the app's frontend
+alone when that split exists; for Tauri apps, it maps to the package's
+`dev:web`. `bun dev:api` runs just the backend. Local Books, Local Mail, and
+Super Chat have their own multi-process flows documented in their READMEs;
+they have no root `dev:*` target.
+
+Inside a single package, the conventions are:
+
+Non-Tauri apps use a single `dev` script that runs the underlying tool
+directly (`vite dev`, `astro dev`, `wrangler dev`). Tauri desktop apps
+(honeycrisp, whispering, matter) have two dev surfaces and name them
+explicitly: `dev` launches the desktop shell (aliasing `dev:desktop`), and
+`dev:web` runs Vite alone, which each app's `tauri.conf.json` invokes as its
+`beforeDevCommand`. The suffix convention applies primarily to database
+commands:
 
 | Script | Meaning |
 | --- | --- |
-| `dev:local` | Local everything—local API, local secrets |
-| `dev:remote` | Local app, remote/prod resources |
-| `dev` | Alias for `dev:local` (convenience) |
+| `dev` | The default local workflow. May still require Infisical login for app secrets (e.g. API keys), but only ever talks to local infrastructure at runtime. |
+| `dev:web` | Tauri apps: the Vite dev server alone, no desktop shell. Invoked by `tauri.conf.json` as `beforeDevCommand`. |
+| `dev:desktop` | Tauri apps: launches the native desktop app (`tauri dev`). `dev` aliases this. |
+| `db:*:local` | Runs against local Postgres. Works without Infisical login. |
+| `db:*:remote` | Wraps with `infisical run --env=prod`. Production data; treat as admin. |
 
-Not every app has `dev:remote`—only add it when there's a real use case.
-
-## CLI (`epicenter`)
-
-From the monorepo root, `bun epicenter` runs the local CLI against `localhost:8787`:
-
-```bash
-bun epicenter start playground/opensidian-e2e --verbose
-bun epicenter list files -C playground/opensidian-e2e
-```
-
-The bare `epicenter` command (global install) defaults to `api.epicenter.so`.
-Config files read `process.env.EPICENTER_SERVER` with a prod fallback—the root
-script sets it automatically.
+There is no `dev:remote`. Production data is reached only through `:remote` db
+scripts and `deploy`, never through a development server.
 
 ## After Completing Code Changes
 
@@ -75,7 +94,7 @@ Run type checking to verify:
 bun typecheck
 ```
 
-This runs `turbo run typecheck` which executes the `typecheck` script in each package (e.g., `tsc --noEmit`, `svelte-check`).
+This runs `bun run --filter '*' typecheck` which executes the `typecheck` script in each package (e.g., `tsc --noEmit`, `svelte-check`).
 
 ## New Package Boilerplate
 
@@ -87,12 +106,10 @@ When creating a new package in `packages/`, follow this exact structure.
 {
   "name": "@epicenter/<package-name>",
   "version": "0.0.1",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
@@ -106,23 +123,27 @@ When creating a new package in `packages/`, follow this exact structure.
 
 Key conventions:
 
-- `main` and `types` both point to `./src/index.ts` (no build step—consumers import source directly).
+- `exports` only, no `main`/`types`: modern resolvers ignore `main`/`types` when `exports` is present. The entry point is `./src/index.ts`; there is no build step, consumers import the source directly.
 - Use `"workspace:*"` for internal deps (e.g., `"@epicenter/workspace": "workspace:*"`).
 - Use `"catalog:"` for shared versions managed in the root `package.json` catalogs.
 - `peerDependencies` for packages consumers must also install (e.g., `yjs`).
+- `license`: default `AGPL-3.0-or-later` (everything Epicenter ships or runs). Use `MIT` only if the package is meant for third-party developers to embed in their own software (the toolkit). See `docs/licensing/licensing-strategy.md`; `bun run check:licenses` fails if an MIT package can reach an AGPL one.
 
 ### `tsconfig.json`
+
+A leaf config picks a tier and adds nothing that repeats a base. For a Bun library:
 
 ```json
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "module": "preserve",
+    "types": ["bun"],
     "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noPropertyAccessFromIndexSignature": false
+    "noUnusedParameters": true
   }
 }
 ```
+
+A Svelte or browser library extends `../../tsconfig.dom.json` instead. For all eight leaf tiers, the never-redeclare list, and the module strategy, see the `tsconfig` skill.
 
 After creating the package, run `bun install` from the repo root to register it in the workspace.

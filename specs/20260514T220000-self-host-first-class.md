@@ -683,7 +683,7 @@ The flag wins over the env, which wins over the default. The flag is parsed in `
 
 This change is small: a `--base-url` option plumbed into `epicenter auth login`, `epicenter auth status`, and `epicenter auth logout`. The auth package already accepts `baseURL` as a parameter; nothing inside the package changes.
 
-Persisted auth (`~/.epicenter/auth.json`) is unchanged. If a user switches their CLI between hosted and self-hosted, the existing same-user-guard at `/api/me` response time handles it: the userId from the new instance will not match the cached one, the cell is wiped, and the next sign-in lands clean.
+Persisted auth remains in the env-paths machine auth file keyed by API host. If a user switches their CLI between hosted and self-hosted, host-specific files keep the cells separate; the same-user guard at `/api/me` response time still wipes a mismatched cell if an operator reuses a host with a different identity.
 
 ### Encryption secrets on self-host
 
@@ -875,7 +875,7 @@ V7. Trusted-OAuth-clients selection: with oauth-clients.local.ts absent,
 V8. CLI base URL override: `epicenter auth login --base-url http://localhost:8787`
     opens the browser at `http://localhost:8787/auth/oauth2/authorize`,
     completes the OOB dance against the self-hosted server, and writes
-    a `~/.epicenter/auth.json` whose `accessToken` validates against the
+    an env-paths machine auth file whose `accessToken` validates against the
     self-hosted /api/health endpoint.
 
 V9. Missing optional secret graceful: with GOOGLE_CLIENT_ID unset, the

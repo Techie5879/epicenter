@@ -59,7 +59,7 @@ One auth path means one set of behaviors to test, one set of edge cases, one men
 
 ## The domain coupling problem
 
-`crossSubDomainCookies` sets `Domain=.epicenter.so` on cookies, so any `*.epicenter.so` subdomain can send them. This works today. But the moment an app moves to its own domain (`zhongwen.studio`, say), cookies stop being sent. You'd need `SameSite=None` (weaker CSRF posture) or a reverse proxy to make it work again.
+`crossSubDomainCookies` sets `Domain=.epicenter.so` on cookies, so any `*.epicenter.so` subdomain can send them. Epicenter actually shipped this for a while, then deleted it: the knob doesn't exist in the codebase anymore. Production cookies today are host-only, `SameSite=Lax`, scoped to `api.epicenter.so`, and the only consumer is the dashboard the API serves from its own origin. Every cross-origin client, including web apps on their own subdomains, authenticates as a bearer client instead. That is the domain coupling problem made concrete: the moment an app moves to its own domain (`zhongwen.studio`, say), a `Domain=.epicenter.so` cookie stops being sent. You'd need `SameSite=None` (weaker CSRF posture) or a reverse proxy to make it work again, and you'd still be back here for the next app that isn't on `*.epicenter.so`.
 
 Bearer tokens don't care what domain the app is on. The token is a string. Send it from anywhere.
 
@@ -73,7 +73,7 @@ But OWASP also says the real defense against XSS is preventing it: Content-Secur
 
 Bearer tokens everywhere. One auth path for all clients. The security delta between httpOnly cookies and localStorage is real but narrow (exfiltration prevention only), and the simplicity of a single auth strategy outweighs it.
 
-If this calculus changes (we drop non-browser clients, or we start handling data sensitive enough that token exfiltration becomes the primary threat model), we revisit. Better Auth's `crossSubDomainCookies` makes the switch straightforward. But for now, simplicity wins.
+If this calculus changes (we drop non-browser clients, or we start handling data sensitive enough that token exfiltration becomes the primary threat model), we revisit. We've already tried the cookie route once, with `crossSubDomainCookies`, and deleted it; switching back would mean re-introducing a `Domain=.epicenter.so` cookie and its wider CSRF surface, not flipping a config flag. But for now, simplicity wins.
 
 ## See also
 

@@ -1,65 +1,97 @@
+<!--
+	The (app) route layout is the session root and the boot owner. It mounts
+	once and persists across navigation, so the app is acquired
+	exactly once per launch: the raw {#await} below owns pending, fulfilled,
+	and failed rendering from the moment this component initialises, and the
+	fulfilled branch mounts the provider that supplies the ready app
+	to every descendant. AppEffects, GlobalDialogs, and the build-selected
+	DictationIndicator start exactly once, inside the ready subtree. Only the
+	nav chrome and ContentShell swap on a breakpoint change.
+-->
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import { Loading } from '@epicenter/ui/loading';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-	import { onDestroy, onMount } from 'svelte';
+	import * as Tooltip from '@epicenter/ui/tooltip';
+	import { onDestroy } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
-	import { goto } from '$app/navigation';
-	import { migrateOldSettings } from '$lib/migration/migrate-settings';
-	import { rpc } from '$lib/query';
-	import { services } from '$lib/services';
-	import AppLayout from './_components/AppLayout.svelte';
+	import { createLogger } from 'wellcrafted/logger';
+	import { auth } from '#platform/auth';
+	import DictationIndicator from '#platform/dictation-indicator';
+	import { whisperingDependencies } from '$lib/whispering/dependencies';
+	import WhisperingUiSessionProvider from '$lib/whispering/WhisperingUiSessionProvider.svelte';
+	import { createWhisperingUiSessionOpening } from '$lib/whispering/ui-session-opening';
+	import {
+		openWhisperingUiSession,
+		WhisperingUiSessionError,
+	} from '$lib/whispering/ui-session';
+	import AppEffects from './_components/AppEffects.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
+	import ContentShell from './_components/ContentShell.svelte';
+	import GlobalDialogs from './_components/GlobalDialogs.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
 
-	// Migrate old monolithic settings blob to per-key stores (one-time, idempotent)
-	migrateOldSettings();
+	const log = createLogger('whispering/app-layout');
 
 	let { children } = $props();
 
 	let sidebarOpen = $state(false);
-	let unlistenNavigate: UnlistenFn | null = null;
 
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
 
-	$effect(() => {
-		const unlisten = services.localShortcutManager.listen();
-		return () => unlisten();
-	});
-
-	// Log app started event once on mount
-	$effect(() => {
-		rpc.analytics.logEvent({ type: 'app_started' });
-	});
-
-	// Listen for navigation events from other windows
-	onMount(async () => {
-		if (!window.__TAURI_INTERNALS__) return;
-		unlistenNavigate = await listen<{ path: string }>(
-			'navigate-main-window',
-			(event) => {
-				goto(event.payload.path);
-			},
-		);
-	});
-
-	onDestroy(() => {
-		unlistenNavigate?.();
-	});
+	// Created during component initialisation, so the {#await} owns the
+	// acquisition before any failure can settle. Boot retry is a full page
+	// reload. Unmount/HMR aborts an in-flight acquisition; after fulfillment,
+	// this route owner drains shell, query, and app resources together.
+	const owner = createWhisperingUiSessionOpening((signal) =>
+		openWhisperingUiSession(whisperingDependencies, signal),
+	);
+	const opening = owner.opening;
+	const dispose = () =>
+		void owner[Symbol.asyncDispose]().catch((cause) => {
+			log.warn(WhisperingUiSessionError.TeardownFailed({ cause }));
+		});
+	onDestroy(dispose);
 </script>
 
-{#if isNarrow.current}
-	<div class="flex h-full min-h-svh flex-col">
-		<div class="flex-1 pb-14">
-			<AppLayout> {@render children()} </AppLayout>
+{#await opening}
+	<Loading class="h-dvh" />
+{:then session}
+	<WhisperingUiSessionProvider {session}>
+		<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
+		<Tooltip.Provider>
+			<AppEffects />
+
+			{#if isNarrow.current}
+				<div class="flex h-full min-h-svh flex-col">
+					<div class="flex-1 pb-14">
+						<ContentShell>{@render children()}</ContentShell>
+					</div>
+					<BottomNav />
+				</div>
+			{:else}
+				<Sidebar.Provider bind:open={sidebarOpen}>
+					<VerticalNav />
+					<Sidebar.Inset>
+						<ContentShell>{@render children()}</ContentShell>
+					</Sidebar.Inset>
+				</Sidebar.Provider>
+			{/if}
+
+			<GlobalDialogs />
+			<DictationIndicator />
+		</Tooltip.Provider>
+	</WhisperingUiSessionProvider>
+{:catch error}
+	<div class="flex h-dvh flex-col items-center justify-center gap-4 p-8 text-center">
+		<h1 class="text-lg font-semibold">Whispering could not start</h1>
+		<p class="text-muted-foreground max-w-md text-sm">
+			{error instanceof Error ? error.message : String(error)}
+		</p>
+		<div class="flex gap-2">
+			<Button onclick={() => location.reload()}>Reload</Button>
+			<Button variant="outline" onclick={() => auth.signOut()}>Sign out</Button>
 		</div>
-		<BottomNav />
 	</div>
-{:else}
-	<Sidebar.Provider bind:open={sidebarOpen}>
-		<VerticalNav />
-		<Sidebar.Inset>
-			<AppLayout> {@render children()} </AppLayout>
-		</Sidebar.Inset>
-	</Sidebar.Provider>
-{/if}
+{/await}

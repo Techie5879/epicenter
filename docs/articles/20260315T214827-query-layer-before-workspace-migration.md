@@ -1,8 +1,10 @@
 # The Query Layer That Did Everything
 
-> **Historical snapshot**: This is the query layer README from before the workspace migration moved domain data (recordings, transformations, runs) to Yjs-backed workspace state modules. At this point, TanStack Query managed all CRUD operations—the query layer co-located service calls, runtime settings injection, and cache manipulation in one place. The architecture has since evolved: workspace state handles domain CRUD, and the query layer focuses on audio blob access, external API calls, hardware state, and coordination logic. See `apps/whispering/src/lib/query/README.md` for the current version.
+> **Historical snapshot**: This is the query layer README from before the workspace migration moved domain data (recordings, transformations, runs) to Yjs-backed workspace state modules. At this point, TanStack Query managed all CRUD operations: the query layer co-located service calls, runtime settings injection, and cache manipulation in one place. The architecture has since evolved: workspace state handles domain CRUD, and the RPC layer focuses on audio blob access, external API calls, hardware state, and coordination logic. See `apps/whispering/src/lib/rpc/README.md` for the current version.
 
-The key architectural insight worth preserving: the query layer co-locates three things in one place—the service call, runtime settings injection based on reactive variables, and cache manipulation (also reactive). This creates a layer that bridges reactivity with services in an intuitive way, and gives developers a consistent place to put this logic. Whether the cache lives in TanStack Query or Yjs, the co-location principle still holds.
+> **Do not copy the Wellcrafted query API examples from older revisions of this article.** Current shared queries expose `.options`, `.fetch()`, and `.ensure()` and are not callable. Current shared mutations expose `.options` and are callable. Svelte Query hooks should receive an accessor, such as `createQuery(() => rpc.thing.options)` or `createMutation(() => rpc.thing.options)`.
+
+The key architectural insight worth preserving: the query layer co-locates three things in one place: the service call, runtime settings injection based on reactive variables, and cache manipulation. This creates a layer that bridges reactivity with services in an intuitive way, and gives developers a consistent place to put this logic. Whether the cache lives in TanStack Query or Yjs, the co-location principle still holds.
 
 ---
 
@@ -18,14 +20,14 @@ export const { defineQuery, defineMutation } =
 	createQueryFactories(queryClient);
 ```
 
-These factory functions `defineQuery` and `defineMutations` take in query options with result query functions, you get two ways to use it:
+These factory functions `defineQuery` and `defineMutation` take in Result-aware query or mutation options:
 
 1. **`.options`** - A static object containing query/mutation options. Wrap in an accessor function for reactive use: `() => x.options`
-2. **`.fetch()`/`.execute()`** - Imperative fetching/execution without subscriptions. These still go through TanStack Query's cache/mutation cache, so mutations still register and can be debugged in the devtools.
+2. **`.fetch()` / `.ensure()` for queries, direct calls for mutations** - Imperative usage without subscriptions. These still go through TanStack Query's cache or mutation cache, so mutations still register and can be debugged in the devtools.
 
-## The Dual Interface Pattern
+## Reactive And Imperative Pattern
 
-Every operation in the query layer provides **two interfaces** to match how you want to use it:
+Query layer definitions support reactive hook usage and explicit imperative usage:
 
 ### Reactive Interface (`.options`) - Automatic State Management
 
@@ -59,16 +61,16 @@ Examples:
 - Automatic re-renders when data changes
 - Cache synchronization across components
 
-### Imperative Interface (`.execute()`) - Direct Execution
+### Imperative Interface - Direct Execution
 
 ```typescript
 // Imperative in actions - lightweight and fast
 const { data, error } =
-	await rpc.recordings.deleteRecording.execute(recordingId);
+	await rpc.recordings.deleteRecording(recordingId);
 // No observers, no subscriptions, just the result
 ```
 
-**Perfect for** when you don't need the overhead of observers or subscriptions, and when you want to call operations outside of component lifecycle. This avoids having to create mutations first or prop-drill mutation functions down to child components. You can call `.execute()` directly from anywhere without being constrained by component boundaries.
+**Perfect for** when you don't need the overhead of observers or subscriptions, and when you want to call operations outside of component lifecycle. This avoids having to create mutations first or prop-drill mutation functions down to child components. Mutations can be called directly from anywhere without being constrained by component boundaries.
 
 Examples:
 
@@ -80,7 +82,7 @@ Examples:
 
 ## Runtime Dependency Injection
 
-The query layer handles **runtime dependency injection**—dynamically switching service implementations based on user settings. Unlike services which use build-time platform detection, the query layer makes decisions based on reactive variables:
+The query layer handles **runtime dependency injection**: dynamically switching service implementations based on user settings. Unlike services which use build-time platform detection, the query layer makes decisions based on reactive variables:
 
 ```typescript
 // Simplified example inspired by the actual transcription implementation
@@ -125,7 +127,7 @@ createRecording: defineMutation({
 });
 ```
 
-The query layer co-locates three key things in one place: (1) the service call, (2) runtime settings injection based on reactive variables, and (3) cache manipulation (also reactive). This creates a layer that bridges reactivity with services in an intuitive way, and gives developers a consistent place to put this logic—now developers know that all cache manipulation lives in the query folder.
+The query layer co-locates three key things in one place: (1) the service call, (2) runtime settings injection based on reactive variables, and (3) cache manipulation (also reactive). This creates a layer that bridges reactivity with services in an intuitive way, and gives developers a consistent place to put this logic. Now developers know that all cache manipulation lives in the query folder.
 
 ## Error Transformation Pattern
 
@@ -152,7 +154,7 @@ startRecording: defineMutation({
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 			await services.recorder.startRecording(recordingSettings, {
 				sendStatus: (options) =>
-					notify.loading.execute({ id: toastId, ...options }),
+					notify.loading({ id: toastId, ...options }),
 			});
 
 		// Transform service error to WhisperingError
@@ -170,7 +172,7 @@ startRecording: defineMutation({
 	// WhisperingError is now available in onError hook
 	onError: (error) => {
 		// error is WhisperingError, ready for toast display
-		notify.error.execute(error);
+		notify.error(error);
 	},
 });
 ```
@@ -182,7 +184,7 @@ startRecording: defineMutation({
    ```typescript
    // In manual-recorder.ts
    const { RecorderError } = defineErrors({
-   	RecorderError: {},
+	RecorderError: {},
    });
    ```
 
@@ -190,19 +192,19 @@ startRecording: defineMutation({
 
    ```typescript
    if (serviceError) {
-   	return Err(
-   		WhisperingError({
-   			title: '❌ User-friendly title',
-   			description: serviceError.message, // Preserve detailed message
-   			action: { type: 'more-details', error: serviceError },
-   		}),
-   	);
+	return Err(
+		WhisperingError({
+			title: '❌ User-friendly title',
+			description: serviceError.message, // Preserve detailed message
+			action: { type: 'more-details', error: serviceError },
+		}),
+	);
    }
    ```
 
 3. **UI Layer**: Receives `WhisperingError` in hooks, perfect for toasts
    ```typescript
-   onError: (error) => notify.error.execute(error); // error is WhisperingError
+   onError: (error) => notify.error(error); // error is WhisperingError
    ```
 
 ### Why This Pattern?
@@ -249,7 +251,7 @@ if (getRecorderStateError) {
 		description: getRecorderStateError.message,
 		action: { type: 'more-details', error: getRecorderStateError },
 	});
-	notify.error.execute({ id: nanoid(), ...whisperingError.error });
+	notify.error({ id: nanoid(), ...whisperingError.error });
 	return whisperingError;
 }
 ```
@@ -287,7 +289,7 @@ getRecorderState: defineQuery({
 
 // In UI/command layer - use WhisperingError directly
 if (error) {
-	notify.error.execute(error); // No re-wrapping!
+	notify.error(error); // No re-wrapping!
 }
 ```
 
@@ -308,9 +310,9 @@ Unlike server-side rendered applications where the query client lifecycle is man
 - Direct Query Client Access: We can call `queryClient.fetchQuery()` and `queryClient.getMutationCache().build()` directly
 - Imperative Control: No need to go through reactive hooks for one-time operations
 - Performance Benefits: We can build mutations using direct execution rather than creating unnecessary subscribers
-- Flexible Interfaces: Both reactive (`.options`) and imperative (`.execute()`, `.fetch()`) patterns work seamlessly
+- Flexible Interfaces: Both reactive (`.options`) and imperative (`.fetch()`, `.ensure()`, or direct mutation call) patterns work seamlessly
 
-This enables our unique dual interface pattern where every query and mutation provides both reactive and imperative APIs.
+This enables a query layer where every shared definition has a reactive hook bridge and explicit imperative behavior.
 
 ## What is RPC?
 
@@ -334,13 +336,13 @@ The `notify` API demonstrates how the query layer coordinates multiple services:
 import { notify } from '$lib/query';
 
 // Shows BOTH a toast (in-app) AND OS notification
-await notify.success.execute({
+await notify.success({
 	title: 'Recording saved',
 	description: 'Your recording has been transcribed',
 });
 
 // Loading states only show toasts (no OS notification spam)
-const loadingId = await notify.loading.execute({
+const loadingId = await notify.loading({
 	title: 'Processing...',
 });
 notify.dismiss(loadingId);
@@ -361,7 +363,7 @@ The name "RPC" is inspired by Remote Procedure Calls, but adapted for our needs:
 
 > **Author's Note**: I know, I know... "RPC" traditionally stands for "Remote Procedure Call," but I've reused the acronym to mean because it's fun and technically this builds off the Result type. People are already familiar with the RPC mental model, and honestly it just feels good to write `rpc`. Plus, it sounds way cooler than "query namespace" or whatever. 🤷‍♂️
 
-## The .execute() Performance Advantage
+## The Direct Mutation Call Performance Advantage
 
 When you call `createMutation()`, you're creating a _mutation observer_ that subscribes to reactive state changes. If you don't need the reactive state (like `isPending`, `isError`, etc.), you're paying a performance cost for functionality you're not using.
 
@@ -369,7 +371,7 @@ When you call `createMutation()`, you're creating a _mutation observer_ that sub
 
 ```typescript
 // ❌ createMutation() approach - Creates subscriber
-const mutation = createMutation(rpc.recordings.createRecording.options);
+const mutation = createMutation(() => rpc.recordings.createRecording.options);
 // This creates a mutation observer that:
 // - Subscribes to state changes
 // - Triggers component re-renders
@@ -388,8 +390,8 @@ mutation.mutate(recording, {
 ```
 
 ```typescript
-// ✅ .execute() approach - Direct execution
-const { data, error } = await rpc.recordings.createRecording.execute(recording);
+// ✅ Direct mutation call approach - Direct execution
+const { data, error } = await rpc.recordings.createRecording(recording);
 // This directly:
 // - Executes the mutation immediately
 // - Returns a simple Result<T, E>
@@ -400,7 +402,7 @@ const { data, error } = await rpc.recordings.createRecording.execute(recording);
 
 ### When to Use Each Approach
 
-**Use `.execute()` when:**
+**Use direct mutation calls when:**
 
 - Event handlers that just need the result
 - Sequential operations in commands/workflows
@@ -461,7 +463,7 @@ RPC provides:
 1. **Services**: Pure functions that return `Result<T, E>` (never throw)
 2. **Query Layer**: Uses WellCrafted's factories to wrap service functions
 3. **RPC Namespace**: Bundles all queries into one global object for easy access
-4. **UI Components**: Choose reactive (`.options`) or imperative (`.execute()`) based on needs
+4. **UI Components**: Choose reactive (`.options`) or imperative direct mutation calls based on needs
 
 ## Real-World RPC Usage Throughout the App
 
@@ -497,11 +499,11 @@ RPC provides:
 // From: /lib/deliverTextToUser.ts
 // ✅ Direct execution - no reactive overhead
 async function copyToClipboard(text: string) {
-	const { error } = await rpc.clipboard.copyToClipboard.execute({ text });
+	const { error } = await rpc.clipboard.copyToClipboard({ text });
 
 	if (error) {
 		// Using the notify API to show both toast and OS notification
-		await notify.error.execute({
+		await notify.error({
 			title: 'Error copying to clipboard',
 			description: error.message,
 			action: { type: 'more-details', error },
@@ -514,14 +516,14 @@ async function copyToClipboard(text: string) {
 // copyMutation.mutate({ text }); // Creates observer, manages state we don't need
 ```
 
-### 3. Sequential Operations - The .execute() Sweet Spot
+### 3. Sequential Operations - The Direct Mutation Call Sweet Spot
 
 ```typescript
 // From: /lib/commands.ts
-// ✅ Perfect use case for .execute() - sequential workflow without UI reactivity
+// ✅ Perfect use case for direct mutation calls - sequential workflow without UI reactivity
 async function stopAndTranscribe() {
 	// Step 1: Stop recording
-	const { data: blob, error } = await rpc.manualRecorder.stopRecording.execute({
+	const { data: blob, error } = await rpc.manualRecorder.stopRecording({
 		toastId,
 	});
 
@@ -531,11 +533,11 @@ async function stopAndTranscribe() {
 	}
 
 	// Step 2: Play sound effect (fire-and-forget)
-	rpc.sound.playSoundIfEnabled.execute('manual-stop');
+	rpc.sound.playSoundIfEnabled('manual-stop');
 
 	// Step 3: Create recording in database
 	const { data: recording, error: createError } =
-		await rpc.recordings.createRecording.execute({
+		await rpc.recordings.createRecording({
 			blob,
 			timestamp: new Date(),
 			transcriptionStatus: 'PENDING',
@@ -544,7 +546,7 @@ async function stopAndTranscribe() {
 	if (createError) return;
 
 	// Step 4: Transcribe the recording
-	await rpc.transcription.transcribeRecording.execute(recording);
+	await rpc.transcription.transcribeRecording(recording);
 }
 
 // ❌ With createMutation (overkill for workflows)
@@ -558,7 +560,7 @@ async function stopAndTranscribe() {
 ```typescript
 // From: /routes/(config)/settings/recording/SelectRecordingDevice.svelte
 // Enumerate available recording devices
-const devices = createQuery(rpc.recorder.enumerateDevices.options);
+const devices = createQuery(() => rpc.recorder.enumerateDevices.options);
 ```
 
 ### 5. Options Factory Pattern for Conditional Queries
@@ -647,7 +649,7 @@ The easiest way to understand the query layer is to see it in action:
 	import { rpc } from '$lib/query';
 
 	// This automatically subscribes to all recordings
-	const recordingsQuery = createQuery(rpc.recordings.getAllRecordings.options);
+	const recordingsQuery = createQuery(() => rpc.recordings.getAllRecordings.options);
 </script>
 
 {#if recordingsQuery.isPending}
@@ -665,9 +667,9 @@ Or imperatively in an event handler:
 
 ```typescript
 async function handleDelete(id: string) {
-	const { error } = await rpc.recordings.deleteRecording.execute(id);
+	const { error } = await rpc.recordings.deleteRecording(id);
 	if (error) {
-		notify.error.execute({
+		notify.error({
 			title: 'Failed to delete',
 			description: error.message,
 		});
@@ -684,7 +686,7 @@ WellCrafted handles the `Result<T, E>` unwrapping, so TanStack Query gets regula
 These factory functions (`defineQuery` and `defineMutation`) take query options with result functions - functions that return `Result<T, E>`. From there, you get two ways to use it:
 
 - `.options` - Static object with query/mutation options (wrap in accessor: `() => x.options`)
-- `.fetch()` / `.execute()` - Direct execution methods
+- `.fetch()` / `.ensure()` for queries, direct calls for mutations - Direct execution methods
 
 **`defineQuery`** - For data fetching:
 
@@ -733,7 +735,7 @@ const mutation = createMutation(() => createRecording.options);
 // - Useful for loading states and error displays
 
 // ✅ Imperative interface - direct execution
-const { error } = await createRecording.execute(recording);
+const { error } = await createRecording(recording);
 // - Uses queryClient.getMutationCache().build() directly
 // - Returns simple Result<T, E>
 // - No reactive state management
@@ -801,7 +803,7 @@ function transcribeBlob(blob: Blob) {
 transcribeRecording: defineMutation({
   mutationFn: async (recording) => {
     // Step 1: Update status
-    await recordings.updateRecording.execute({
+    await recordings.updateRecording({
       ...recording,
       transcriptionStatus: 'TRANSCRIBING',
     });
@@ -810,7 +812,7 @@ transcribeRecording: defineMutation({
     const { data, error } = await transcribeBlob(recording.blob);
 
     // Step 3: Update with results
-    await recordings.updateRecording.execute({
+    await recordings.updateRecording({
       ...recording,
       transcribedText: data,
       transcriptionStatus: error ? 'FAILED' : 'DONE',
@@ -849,7 +851,7 @@ transcribeRecording: defineMutation({
 
 ```typescript
 async function handleDelete(recording: Recording) {
-	const { error } = await rpc.recordings.deleteRecording.execute(recording);
+	const { error } = await rpc.recordings.deleteRecording(recording);
 
 	if (error) {
 		toast.error({
@@ -875,17 +877,17 @@ Each feature file typically exports an object with:
 
 ## Actions: Always Return Ok
 
-Actions in the query layer always return `Ok` after handling errors. They notify the user and return success because the action itself executed—error handling is part of that execution.
+Actions in the query layer always return `Ok` after handling errors. They notify the user and return success because the action itself executed; error handling is part of that execution.
 
 ```typescript
 const startManualRecording = defineMutation({
 	mutationFn: async () => {
-		const { error } = await recorder.startRecording.execute();
+		const { error } = await recorder.startRecording();
 		if (error) {
-			notify.error.execute(error); // Notify user
+			notify.error(error); // Notify user
 			return Ok(undefined); // Action succeeded
 		}
-		notify.success.execute({ title: 'Recording started' });
+		notify.success({ title: 'Recording started' });
 		return Ok(undefined);
 	},
 });
@@ -898,11 +900,11 @@ Actions are UI-boundary mutations invoked from anywhere: command registry (`/lib
 1. Always use Result types - Never throw errors in query/mutation functions
 2. **Mutation Pattern Preference**:
    - **In `.svelte` files**: Always prefer `createMutation` unless you have a specific reason not to (e.g., you don't need pending states)
-   - **In `.ts` files**: Always use `.execute()` since createMutation requires component context
+   - **In `.ts` files**: Use direct mutation calls since createMutation requires component context
    - This gives you consistent loading states, error handling, and better UX in components
 3. **Mutation callback pattern**: When using `createMutation`, pass callbacks as the second argument to `.mutate()` for maximum context
 4. Choose the right interface for the job:
-   - Use `.execute()` in `.ts` files and when you don't need pending state
+   - Use direct mutation calls in `.ts` files and when you don't need pending state
    - Use `createMutation()` when you need reactive state for UI feedback
 5. Keep queries simple - Complex logic belongs in services or orchestration mutations
 6. Update cache optimistically - Better UX for mutations
@@ -915,7 +917,7 @@ Actions are UI-boundary mutations invoked from anywhere: command registry (`/lib
 
 ```typescript
 // In component
-const recordingsQuery = createQuery(rpc.recordings.getAllRecordings.options);
+const recordingsQuery = createQuery(() => rpc.recordings.getAllRecordings.options);
 
 // In template
 {#if recordingsQuery.isPending}Loading...{/if}
@@ -962,7 +964,7 @@ const { data, error } = await rpc.recordings.getAllRecordings.fetch();
 // - Perfect for prefetching or one-time fetches
 
 // ✅ Mutations - uses queryClient.getMutationCache().build() directly
-const { data, error } = await rpc.recordings.createRecording.execute(recording);
+const { data, error } = await rpc.recordings.createRecording(recording);
 // - Direct execution without mutation observer
 // - No reactive state management overhead
 // - Ideal for event handlers and workflows
@@ -971,7 +973,7 @@ const { data, error } = await rpc.recordings.createRecording.execute(recording);
 ### Error Handling Pattern
 
 ```typescript
-const { data, error } = await rpc.clipboard.copyToClipboard.execute({ text });
+const { data, error } = await rpc.clipboard.copyToClipboard({ text });
 if (error) {
 	toast.error({
 		title: 'Failed to copy',

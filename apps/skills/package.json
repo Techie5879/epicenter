@@ -5,11 +5,11 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"dev": "bun run dev:local",
-		"dev:local": "vite dev",
+		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
+		"test": "bun test",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check": "bun run typecheck"
 	},
@@ -18,30 +18,30 @@
 		"@codemirror/lang-markdown": "^6.5.0",
 		"@codemirror/language": "^6.12.2",
 		"@codemirror/state": "^6.6.0",
-		"@codemirror/view": "^6.40.0",
+		"@codemirror/view": "^6.41.0",
+		"@epicenter/field": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/ui": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
-		"@epicenter/svelte": "workspace:*",
-		"shiki": "^3.7.0",
+		"@lucide/svelte": "catalog:",
 		"@sveltejs/adapter-auto": "catalog:",
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",
 		"@types/bun": "catalog:",
-		"@lucide/svelte": "catalog:",
+		"fake-indexeddb": "^6.2.5",
+		"shiki": "^3.7.0",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"svelte-sonner": "catalog:",
 		"tailwindcss": "catalog:",
 		"typescript": "catalog:",
-		"vite": "catalog:",
-		"y-codemirror.next": "^0.3.5",
-		"y-indexeddb": "catalog:",
-		"yjs": "catalog:"
+		"vite": "catalog:"
 	},
-	"license": "MIT",
+	"license": "AGPL-3.0-or-later",
 	"dependencies": {
-		"mode-watcher": "^1.1.0"
+		"@epicenter/data": "workspace:*",
+		"@epicenter/database": "workspace:*",
+		"mode-watcher": "^1.1.0",
+		"wellcrafted": "catalog:"
 	}
 }

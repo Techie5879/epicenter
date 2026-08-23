@@ -1,13 +1,13 @@
 # Settings Components
 
-Components directly bound to reactive settings state. Each component encapsulates settings management logic and provides reusable UI for configuring the application.
+Components directly bound to reactive settings state. Each component encapsulates settings management logic and provides reusable UI for configuring the app.
 
 ## Two Settings Stores
 
 Components here import from one or both stores depending on where the setting lives:
 
-- **`settings`** — synced settings (Yjs KV). Sound toggles, output behavior, transcription service, UI prefs.
-- **`deviceConfig`** — device-bound config (per-key localStorage). API keys, hardware IDs, model paths, global shortcuts.
+- **`settings`**: synced settings (Yjs KV). Sound toggles, output behavior, transcription service, UI prefs.
+- **`deviceConfig`**: device-bound config (per-key localStorage). API keys, hardware IDs, model paths, global shortcuts.
 
 ```svelte
 <script lang="ts">
@@ -23,44 +23,42 @@ Components in this directory:
 - Import and use `settings` and/or `deviceConfig` from `$lib/state/`
 - Either take **no props** or only take **minimal configuration props** (like `mode` or `settingKey`) to determine which setting to bind to
 - Update settings directly using `.set(key, value)` methods
-- Are self-contained and can be used globally throughout the application
+- Are self-contained and can be used globally throughout the app
 
 ## Component Organization
 
 ```
 settings/
-├── api-key-inputs/         # API key input components (deviceConfig)
-│   ├── OpenAiApiKeyInput.svelte
-│   ├── GroqApiKeyInput.svelte
-│   ├── AnthropicApiKeyInput.svelte
-│   ├── ElevenLabsApiKeyInput.svelte
-│   ├── GoogleApiKeyInput.svelte
-│   ├── DeepgramApiKeyInput.svelte
-│   ├── MistralApiKeyInput.svelte
-│   ├── OpenRouterApiKeyInput.svelte
-│   └── CustomEndpointInput.svelte
-├── selectors/              # Various selector components
+├── TranscriptionRuntimeConfig.svelte # Audio stage: access-sectioned transcription setup catalog (propless)
+├── CompletionRuntimeConfig.svelte    # Text stage: Polish/Recipes AI provider + its config (propless)
+├── ProviderConfigFields.svelte       # Per-provider API key and endpoint fields (deviceConfig)
+├── AdvancedDisclosure.svelte         # Collapsible wrapper for advanced fields
+├── SettingSelect.svelte              # Shared select bound to a settings key
+├── SettingSwitch.svelte              # Shared switch bound to a settings key
+├── selectors/                        # Various selector components
+│   ├── CaptureSurfaceSelector.svelte
 │   ├── ManualDeviceSelector.svelte
-│   ├── VadDeviceSelector.svelte
-│   ├── TransformationSelector.svelte
 │   ├── TranscriptionSelector.svelte
-│   ├── RecordingModeSelector.svelte
-│   └── CompressionSelector.svelte
-├── LocalModelDownloadCard.svelte
-├── CompressionBody.svelte
-└── README.md               # This file
+│   └── VadDeviceSelector.svelte
+└── README.md                         # This file
 ```
+
+The two runtime-config components (`TranscriptionRuntimeConfig`,
+`CompletionRuntimeConfig`) are the Privacy & Processing page's two stages.
+`TranscriptionRuntimeConfig` is setup-only; active transcription switching lives
+in the recorder popover. Both components take **no props**, so the page renders
+them as `<TranscriptionRuntimeConfig />` and `<CompletionRuntimeConfig />`.
 
 ## Usage Examples
 
-### Basic Usage (No Props)
+### Basic Usage (Minimal Props)
 
 ```svelte
 <script>
-	import OpenAiApiKeyInput from '$lib/components/settings/api-key-inputs/OpenAiApiKeyInput.svelte';
+	import { ProviderConfigFields } from '$lib/components/settings';
 </script>
 
-<OpenAiApiKeyInput />
+<ProviderConfigFields provider="OpenAI" />
 ```
 
 ### With Settings Key Prop
@@ -79,7 +77,7 @@ settings/
 
    ```svelte
    <script lang="ts">
-   	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
    </script>
    ```
 
@@ -87,9 +85,8 @@ settings/
 
    ```svelte
    <Input
-	bind:value={() => settings.get('apiKeys.openai'),
-		(value) => settings.set('apiKeys.openai', value)}
-   		(value) => deviceConfig.set('apiKeys.openai', value)}
+	bind:value={() => deviceConfig.get('providers.openai.apiKey'),
+		(value) => deviceConfig.set('providers.openai.apiKey', value)}
    />
    ```
 

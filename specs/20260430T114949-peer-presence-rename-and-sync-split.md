@@ -5,7 +5,7 @@
 **Author**: AI-assisted
 **Related**: `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md`, `specs/20260430T120000-cli-naming-decision.md`
 **Reconciled Against**: `87bf8e751 refactor(fuji): simplify script surface`
-**Also Reflects Working Tree**: daemon config route modules via `defineConfig({ daemon: { routes } })`
+**Also Reflects Working Tree**: historical daemon config route modules. Current project config default-exports `Mount[]`.
 
 ## Overview
 
@@ -25,20 +25,20 @@ A workspace exposes an explicit action registry, then peer presence maps stable 
 
 ```ts
 const sync = attachSync(doc, {
-	url,
-	waitFor: idb,
-	device: {
-		id: getOrCreateDeviceId(localStorage),
-		name: 'Fuji',
-		platform: 'web',
-	},
-	actions,
+  url,
+  waitFor: idb,
+  device: {
+    id: getOrCreateDeviceId(localStorage),
+    name: "Fuji",
+    platform: "web",
+  },
+  actions,
 });
 
 const peers = sync.peers();
-const found = sync.find('macbook-pro');
+const found = sync.find("macbook-pro");
 const remote = createRemoteClient({ presence, rpc }).actions<typeof tabManager>(
-	'macbook-pro',
+  "macbook-pro",
 );
 ```
 
@@ -137,15 +137,15 @@ Awareness is not the correct place for full capabilities, schemas, permissions, 
 
 The current public surface is split across these concepts:
 
-| Concept | Current name | Problem |
-| --- | --- | --- |
-| Stable live runtime identity | `DeviceDescriptor` | Too tied to physical device language |
-| Awareness schema file | `peer-presence-defs.ts` | Sounds generic, but it is Epicenter peer presence |
-| Local config | `device` | Hides that passing it enables peer discovery |
-| Lookup | `sync.find(deviceId)` | Too generic and tied to the old noun |
-| Snapshot | `sync.peers()` | Correct noun, but it lives on sync even without presence |
-| Remote proxy | old direct helper | Mechanism-oriented name and old target noun |
-| Discovery | old direct helper | Same issue |
+| Concept                      | Current name            | Problem                                                  |
+| ---------------------------- | ----------------------- | -------------------------------------------------------- |
+| Stable live runtime identity | `DeviceDescriptor`      | Too tied to physical device language                     |
+| Awareness schema file        | `peer-presence-defs.ts` | Sounds generic, but it is Epicenter peer presence        |
+| Local config                 | `device`                | Hides that passing it enables peer discovery             |
+| Lookup                       | `sync.find(deviceId)`   | Too generic and tied to the old noun                     |
+| Snapshot                     | `sync.peers()`          | Correct noun, but it lives on sync even without presence |
+| Remote proxy                 | old direct helper       | Mechanism-oriented name and old target noun              |
+| Discovery                    | old direct helper       | Same issue                                               |
 
 ### Related Spec
 
@@ -181,22 +181,22 @@ actions.tabs.close
 
 ## Design Decisions
 
-| Decision | Choice | Rationale |
-| --- | --- | --- |
-| Standard concept name | `peer` | The runtime is routable and online. It might not be a physical device. |
-| Stable id name | `peer.id` in presence, `installationId` in storage helpers | Presence needs a short routing key. Storage should say where the id comes from. |
-| Runtime platform name | Open: current `platform`, target `runtime` | Current code still uses `platform`. Rename only if doing the peer type vocabulary pass. |
-| Awareness namespace | Open: current `state.peer`, target `state.epicenter.peer` | Namespacing is cleaner long term, but current code already works with `state.peer`. |
-| Awareness version | Deferred | Only needed if the awareness state becomes namespaced or gains migration pressure. |
-| `attachSync` name | Keep | It synchronizes a Y.Doc. `attachTransport` would describe an implementation detail. |
-| Presence ownership | `sync.attachPresence({ peer })` | Presence is a sub-protocol riding on the sync connection. It should not be a top-level attachment with a hidden dependency. |
-| RPC ownership | `sync.attachRpc(actions)` | RPC registers message handlers and pending cleanup. The current positional form is implemented consistently. |
-| Action exposure root | `workspace.actions` | The public callable surface should be a named registry, not inferred from bundle layout. |
-| Action registry helper | Deferred | `Actions` and registry-relative call sites already carry the boundary. Add `defineActions(tree)` only if validation earns the extra API. |
-| Bundle walking | Internal or debug utility only | Useful traversal implementation, but not the public CLI, AI, or RPC contract. |
-| CLI and AI paths | Registry-relative paths | Tool names and CLI paths should be stable across unrelated workspace bundle refactors. |
-| Generic awareness | Keep separate | Custom cursors, selections, and typing state should still use `attachAwareness`. Standard peer presence is a specific convention. |
-| Compatibility aliases | No aliases in the clean break | Aliases keep the old vocabulary alive and make docs worse. |
+| Decision               | Choice                                                     | Rationale                                                                                                                                |
+| ---------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Standard concept name  | `peer`                                                     | The runtime is routable and online. It might not be a physical device.                                                                   |
+| Stable id name         | `peer.id` in presence, `installationId` in storage helpers | Presence needs a short routing key. Storage should say where the id comes from.                                                          |
+| Runtime platform name  | Open: current `platform`, target `runtime`                 | Current code still uses `platform`. Rename only if doing the peer type vocabulary pass.                                                  |
+| Awareness namespace    | Open: current `state.peer`, target `state.epicenter.peer`  | Namespacing is cleaner long term, but current code already works with `state.peer`.                                                      |
+| Awareness version      | Deferred                                                   | Only needed if the awareness state becomes namespaced or gains migration pressure.                                                       |
+| `attachSync` name      | Keep                                                       | It synchronizes a Y.Doc. `attachTransport` would describe an implementation detail.                                                      |
+| Presence ownership     | `sync.attachPresence({ peer })`                            | Presence is a sub-protocol riding on the sync connection. It should not be a top-level attachment with a hidden dependency.              |
+| RPC ownership          | `sync.attachRpc(actions)`                                  | RPC registers message handlers and pending cleanup. The current positional form is implemented consistently.                             |
+| Action exposure root   | `workspace.actions`                                        | The public callable surface should be a named registry, not inferred from bundle layout.                                                 |
+| Action registry helper | Deferred                                                   | `Actions` and registry-relative call sites already carry the boundary. Add `defineActions(tree)` only if validation earns the extra API. |
+| Bundle walking         | Internal or debug utility only                             | Useful traversal implementation, but not the public CLI, AI, or RPC contract.                                                            |
+| CLI and AI paths       | Registry-relative paths                                    | Tool names and CLI paths should be stable across unrelated workspace bundle refactors.                                                   |
+| Generic awareness      | Keep separate                                              | Custom cursors, selections, and typing state should still use `attachAwareness`. Standard peer presence is a specific convention.        |
+| Compatibility aliases  | No aliases in the clean break                              | Aliases keep the old vocabulary alive and make docs worse.                                                                               |
 
 ## Current Implementation Checkpoint
 
@@ -210,31 +210,31 @@ Current HEAD:
 
 Implemented:
 
-| Area | Current code | Notes |
-| --- | --- | --- |
-| Explicit daemon action root | `DaemonRuntime.actions: Actions` in `packages/workspace/src/daemon/types.ts` | Daemon action paths are now relative to the hosted runtime's `actions` root. |
-| Daemon runtime attachments | `DaemonRuntime` requires `sync`, `presence`, and `rpc` | The daemon no longer treats peer and RPC methods as optional fields on sync. |
-| Daemon config shape | `defineConfig({ daemon: { routes } })` with route modules | `defineDaemon({ route, start })` and host arrays are no longer the active config shape in the working tree. |
-| Split sync API | `sync.attachPresence({ peer })` and `sync.attachRpc(actions)` exist | The implementation uses positional `attachRpc(actions)`, not `attachRpc({ actions })`. |
-| App daemon factories | Fuji, Honeycrisp, Opensidian, Tab Manager, and Zhongwen daemon factories attach presence and RPC explicitly | Open the app daemon files before planning more migration work. |
-| AI action root | App clients call `actionsToAiTools(workspace.actions)` | The whole-workspace discovery direction is already superseded. |
-| CLI daemon run path | `packages/workspace/src/daemon/run-handler.ts` resolves against `workspace.actions` | The explicit action root is already the daemon execution boundary. |
-| Installation id helper | `getOrCreateInstallationId` and async variant exist | `getOrCreateDeviceId` is no longer the active helper. |
-| Peer presence attachment | `packages/workspace/src/document/peer-presence.ts` exists | It now uses peer presence type names imported from `peer-presence-defs.ts`. |
-| Remote client | `createRemoteClient({ presence, rpc })` exists | The bound client owns the local peer-calling capability. The proxy builder is now an implementation detail behind `remote.actions(peerId)`. |
-| Script snapshot surfaces | `apps/fuji/src/lib/fuji/script.ts` opens read-only snapshot tables plus daemon actions | Script helpers are not daemon runtimes. Do not require them to expose sync, presence, or RPC attachments. |
+| Area                        | Current code                                                                                                | Notes                                                                                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Explicit daemon action root | `DaemonRuntime.actions: Actions` in `packages/workspace/src/daemon/types.ts`                                | Daemon action paths are now relative to the hosted runtime's `actions` root.                                                                |
+| Daemon runtime attachments  | `DaemonRuntime` requires `sync`, `presence`, and `rpc`                                                      | The daemon no longer treats peer and RPC methods as optional fields on sync.                                                                |
+| Daemon config shape         | Historical: `defineConfig({ daemon: { routes } })` with route modules                                       | Current project config default-exports `Mount[]`; this checkpoint is no longer the active config shape.                                     |
+| Split sync API              | `sync.attachPresence({ peer })` and `sync.attachRpc(actions)` exist                                         | The implementation uses positional `attachRpc(actions)`, not `attachRpc({ actions })`.                                                      |
+| App daemon factories        | Fuji, Honeycrisp, Opensidian, Tab Manager, and Zhongwen daemon factories attach presence and RPC explicitly | Open the app daemon files before planning more migration work.                                                                              |
+| AI action root              | App clients call `actionsToAiTools(workspace.actions)`                                                      | The whole-workspace discovery direction is already superseded.                                                                              |
+| CLI daemon run path         | `packages/workspace/src/daemon/run-handler.ts` resolves against `workspace.actions`                         | The explicit action root is already the daemon execution boundary.                                                                          |
+| Installation id helper      | `getOrCreateInstallationId` and async variant exist                                                         | `getOrCreateDeviceId` is no longer the active helper.                                                                                       |
+| Peer presence attachment    | `packages/workspace/src/document/peer-presence.ts` exists                                                   | It now uses peer presence type names imported from `peer-presence-defs.ts`.                                                                 |
+| Remote client               | `createRemoteClient({ presence, rpc })` exists                                                              | The bound client owns the local peer-calling capability. The proxy builder is now an implementation detail behind `remote.actions(peerId)`. |
+| Script snapshot surfaces    | `apps/fuji/src/lib/fuji/script.ts` opens read-only snapshot tables plus daemon actions                      | Script helpers are not daemon runtimes. Do not require them to expose sync, presence, or RPC attachments.                                   |
 
 Still not implemented:
 
-| Area | Current code | Target in this spec |
-| --- | --- | --- |
-| Action registry helper | No `defineActions` helper | Decide whether to add it or keep plain `Actions` as enough. |
-| RPC attach signature | `sync.attachRpc(actions)` | Decide whether object form `sync.attachRpc({ actions })` is worth the churn. |
-| Presence schema namespace | Awareness state is `state.peer` | Decide whether `state.epicenter.peer` earns the extra migration. |
-| Presence type names | `PeerRuntime`, `PeerIdentity`, `PeerIdentityInput`, `PeerPresenceState`, `ResolvedPeer` | Vocabulary pass is complete. |
-| Presence method names | `presence.find()` and `presence.observe()` | Decide whether `resolve` or `subscribe` are worth the rename. |
-| File boundary | `peer-presence-defs.ts` exists beside `peer-presence.ts` | Definitions stay separate from attachment behavior. |
-| Remote helper names | Public API is `createRemoteClient` plus `remote.actions(peerId)` and `remote.describe(peerId)` | The intermediate helper names no longer need to be public. |
+| Area                      | Current code                                                                                   | Target in this spec                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Action registry helper    | No `defineActions` helper                                                                      | Decide whether to add it or keep plain `Actions` as enough.                  |
+| RPC attach signature      | `sync.attachRpc(actions)`                                                                      | Decide whether object form `sync.attachRpc({ actions })` is worth the churn. |
+| Presence schema namespace | Awareness state is `state.peer`                                                                | Decide whether `state.epicenter.peer` earns the extra migration.             |
+| Presence type names       | `PeerRuntime`, `PeerIdentity`, `PeerIdentityInput`, `PeerPresenceState`, `ResolvedPeer`        | Vocabulary pass is complete.                                                 |
+| Presence method names     | `presence.find()` and `presence.observe()`                                                     | Decide whether `resolve` or `subscribe` are worth the rename.                |
+| File boundary             | `peer-presence-defs.ts` exists beside `peer-presence.ts`                                       | Definitions stay separate from attachment behavior.                          |
+| Remote helper names       | Public API is `createRemoteClient` plus `remote.actions(peerId)` and `remote.describe(peerId)` | The intermediate helper names no longer need to be public.                   |
 
 The next implementation wave should start from this checkpoint, not from the initial motivation examples.
 
@@ -366,37 +366,39 @@ The action utilities should target the registry:
 ```ts
 describeActions(workspace.actions);
 walkActions(workspace.actions);
-resolveActionPath(workspace.actions, 'tabs.close');
+resolveActionPath(workspace.actions, "tabs.close");
 actionsToAiTools(workspace.actions);
 ```
 
 ### Peer Presence Types
 
 ```ts
-export const PeerRuntime = type('"web" | "tauri" | "chrome-extension" | "node"');
+export const PeerRuntime = type(
+  '"web" | "tauri" | "chrome-extension" | "node"',
+);
 export type PeerRuntime = typeof PeerRuntime.infer;
 
 export const PeerIdentity = type({
-	id: 'string',
-	name: 'string',
-	platform: PeerRuntime,
+  id: "string",
+  name: "string",
+  platform: PeerRuntime,
 });
 export type PeerIdentity = typeof PeerIdentity.infer;
 
 export type PeerIdentityInput<TId extends string = string> = {
-	id: TId;
-	name: string;
-	platform: PeerRuntime;
+  id: TId;
+  name: string;
+  platform: PeerRuntime;
 };
 
 export const PeerPresenceState = type({
-	peer: PeerIdentity,
+  peer: PeerIdentity,
 });
 export type PeerPresenceState = typeof PeerPresenceState.infer;
 
 export type ResolvedPeer = {
-	clientId: number;
-	state: PeerPresenceState;
+  clientId: number;
+  state: PeerPresenceState;
 };
 ```
 
@@ -404,13 +406,13 @@ export type ResolvedPeer = {
 
 ```ts
 const sync = attachSync(ydoc, {
-	url,
-	waitFor,
-	getToken,
+  url,
+  waitFor,
+  getToken,
 });
 
 const presence = sync.attachPresence({
-	peer,
+  peer,
 });
 
 const rpc = sync.attachRpc(actions);
@@ -420,10 +422,10 @@ const rpc = sync.attachRpc(actions);
 
 ```ts
 type PresenceAttachment = {
-	peers(): Map<number, PeerPresenceState>;
-	find(peerId: string): ResolvedPeer | undefined;
-	observe(callback: () => void): () => void;
-	raw: { awareness: YAwareness };
+  peers(): Map<number, PeerPresenceState>;
+  find(peerId: string): ResolvedPeer | undefined;
+  observe(callback: () => void): () => void;
+  raw: { awareness: YAwareness };
 };
 ```
 
@@ -431,12 +433,15 @@ type PresenceAttachment = {
 
 ```ts
 type RpcAttachment = {
-	rpc<TMap extends RpcActionMap = DefaultRpcMap, TAction extends string & keyof TMap = string & keyof TMap>(
-		target: number,
-		action: TAction,
-		input?: TMap[TAction]['input'],
-		options?: RemoteCallOptions,
-	): Promise<Result<TMap[TAction]['output'], RpcError>>;
+  rpc<
+    TMap extends RpcActionMap = DefaultRpcMap,
+    TAction extends string & keyof TMap = string & keyof TMap,
+  >(
+    target: number,
+    action: TAction,
+    input?: TMap[TAction]["input"],
+    options?: RemoteCallOptions,
+  ): Promise<Result<TMap[TAction]["output"], RpcError>>;
 };
 ```
 
@@ -454,72 +459,72 @@ Normal app bundles can hide the pair:
 
 ```ts
 return {
-	...doc,
-	sync,
-	presence,
-	rpc,
-	remote,
+  ...doc,
+  sync,
+  presence,
+  rpc,
+  remote,
 };
 ```
 
 ## Rename Map
 
-| Current | Recommended target | Notes |
-| --- | --- | --- |
-| `standard-awareness-defs.ts` | `peer-presence-defs.ts` | File says what convention it owns. |
-| `Platform` | `PeerRuntime` | Avoid broad platform naming. |
-| `PeerDevice` | `PeerIdentity` | This is identity for a live peer. |
-| `DeviceDescriptor` | `PeerIdentityInput` | Generic input type for branded ids. |
-| `PeerAwarenessState` | `PeerPresenceState` | Presence is the concept, awareness is the Yjs mechanism. |
-| `FoundPeer` | `ResolvedPeer` | Resolution maps peer id to client id. |
-| `standardAwarenessDefs` | `peerPresenceDefs` | Keep private unless a real public custom composition appears. |
-| `config.device` | `sync.attachPresence({ peer })` | Presence becomes explicit. |
-| `state.device` | `state.peer` | Current branch shape. Consider `state.epicenter.peer` only if namespacing earns the migration. |
-| `sync.peers()` | `presence.peers()` | No more no-op method on sync. |
-| `sync.find(deviceId)` | `presence.find(peerId)` | Keep current verb unless the vocabulary pass chooses `resolve`. |
-| `sync.observe()` | `presence.observe()` | Keep current verb unless the vocabulary pass chooses `subscribe`. |
-| local `{ presence, rpc }` bag | `createRemoteClient({ presence, rpc })` | The local peer-calling capability should be bound once. |
-| old remote action helper | `remote.actions(peerId)` | The helper is private implementation detail. Public callers bind once with `createRemoteClient`. |
-| old remote describe helper | `remote.describe(peerId)` | Same bound-client shape as action proxies. |
-| `getOrCreateDeviceId` | `getOrCreateInstallationId` | Storage helper names the durable source. |
-| `deviceId` call-site names | `peerId` or `installationId` | Use `peerId` for routing, `installationId` for storage. |
-| `walkActions(workspace)` | `walkActions(workspace.actions)` | Public path root becomes explicit. |
-| `describeActions(workspace)` | `describeActions(workspace.actions)` | CLI and manifests use registry-relative paths. |
-| `actionsToAiTools(workspace)` | `actionsToAiTools(workspace.actions)` | AI tool names should not include implementation grouping. |
-| `InferSyncRpcMap<typeof workspace>` | `InferSyncRpcMap<typeof workspace.actions>` | The type contract matches the runtime root. |
+| Current                             | Recommended target                          | Notes                                                                                            |
+| ----------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `standard-awareness-defs.ts`        | `peer-presence-defs.ts`                     | File says what convention it owns.                                                               |
+| `Platform`                          | `PeerRuntime`                               | Avoid broad platform naming.                                                                     |
+| `PeerDevice`                        | `PeerIdentity`                              | This is identity for a live peer.                                                                |
+| `DeviceDescriptor`                  | `PeerIdentityInput`                         | Generic input type for branded ids.                                                              |
+| `PeerAwarenessState`                | `PeerPresenceState`                         | Presence is the concept, awareness is the Yjs mechanism.                                         |
+| `FoundPeer`                         | `ResolvedPeer`                              | Resolution maps peer id to client id.                                                            |
+| `standardAwarenessDefs`             | `peerPresenceDefs`                          | Keep private unless a real public custom composition appears.                                    |
+| `config.device`                     | `sync.attachPresence({ peer })`             | Presence becomes explicit.                                                                       |
+| `state.device`                      | `state.peer`                                | Current branch shape. Consider `state.epicenter.peer` only if namespacing earns the migration.   |
+| `sync.peers()`                      | `presence.peers()`                          | No more no-op method on sync.                                                                    |
+| `sync.find(deviceId)`               | `presence.find(peerId)`                     | Keep current verb unless the vocabulary pass chooses `resolve`.                                  |
+| `sync.observe()`                    | `presence.observe()`                        | Keep current verb unless the vocabulary pass chooses `subscribe`.                                |
+| local `{ presence, rpc }` bag       | `createRemoteClient({ presence, rpc })`     | The local peer-calling capability should be bound once.                                          |
+| old remote action helper            | `remote.actions(peerId)`                    | The helper is private implementation detail. Public callers bind once with `createRemoteClient`. |
+| old remote describe helper          | `remote.describe(peerId)`                   | Same bound-client shape as action proxies.                                                       |
+| `getOrCreateDeviceId`               | `getOrCreateInstallationId`                 | Storage helper names the durable source.                                                         |
+| `deviceId` call-site names          | `peerId` or `installationId`                | Use `peerId` for routing, `installationId` for storage.                                          |
+| `walkActions(workspace)`            | `walkActions(workspace.actions)`            | Public path root becomes explicit.                                                               |
+| `describeActions(workspace)`        | `describeActions(workspace.actions)`        | CLI and manifests use registry-relative paths.                                                   |
+| `actionsToAiTools(workspace)`       | `actionsToAiTools(workspace.actions)`       | AI tool names should not include implementation grouping.                                        |
+| `InferSyncRpcMap<typeof workspace>` | `InferSyncRpcMap<typeof workspace.actions>` | The type contract matches the runtime root.                                                      |
 
 ## Files Likely Touched
 
-| File | Change |
-| --- | --- |
-| `packages/workspace/src/shared/actions.ts` | Reframe `Actions` as the public registry shape; keep canonical traversal but target registry roots in public docs. Add `defineActions` only if the helper earns its keep. |
-| `packages/workspace/src/ai/tool-bridge.ts` | Change examples and call sites back to action registries. Keep one traversal path. |
-| `packages/workspace/src/rpc/types.ts` | Update examples and tests to infer RPC maps from `typeof actions`. |
-| `packages/workspace/src/document/attach-sync.ts` | Remove presence and RPC ownership from base return. Add `attachPresence`, `attachRpc`, and internal frame registration surface. |
-| `packages/workspace/src/document/peer-presence.ts` | Standard peer presence implementation and resolver helpers. Should own the names currently split with `peer-presence-defs.ts`. |
-| `packages/workspace/src/document/attach-presence.ts` | New presence attachment implementation. Owns awareness send and receive through sync. |
-| `packages/workspace/src/document/attach-rpc.ts` | RPC attachment implementation. Owns pending requests, request handling, response handling, and `system.describe`. |
-| `packages/workspace/src/rpc/remote-actions.ts` | Keep `createRemoteClient({ presence, rpc })` public. Keep proxy construction private unless another package proves it needs the lower-level hook. |
-| `packages/workspace/src/shared/device-id.ts` | Rename storage helpers to installation id helpers. |
-| `packages/workspace/src/index.ts` | Update public exports. Remove old device-based names. |
-| `packages/workspace/src/document/attach-sync.test.ts` | Keep supervisor and sync protocol tests. Move presence and RPC tests out. |
-| `packages/workspace/src/document/attach-presence.test.ts` | Tests for peer awareness state and peer lookup. |
-| `packages/workspace/src/document/attach-rpc.test.ts` | New tests for RPC frame handling and system describe. |
-| `packages/workspace/src/rpc/peer.test.ts` | Update mocks from one sync object to `{ presence, rpc }`. |
-| `packages/workspace/src/ai/tool-bridge.test.ts` | Assert tool names are registry-relative. |
-| `packages/cli/src/daemon/run-handler.ts` | Resolve actions from `workspace.actions`, not the whole workspace. |
-| `packages/cli/src/daemon/app.ts` | Describe `workspace.actions` for `/list`; read `entry.workspace.presence.peers()` for `/peers`. |
-| `apps/fuji/src/lib/fuji/client.ts` | Rename id helper and `device` construction. |
-| `apps/fuji/src/lib/fuji/browser.ts` | Attach sync, presence, and RPC separately. |
-| `apps/honeycrisp/src/lib/honeycrisp/client.ts` | Same pattern. |
-| `apps/honeycrisp/src/lib/honeycrisp/browser.ts` | Same pattern. |
-| `apps/opensidian/src/lib/opensidian/client.ts` | Same pattern. |
-| `apps/opensidian/src/lib/opensidian/browser.ts` | Same pattern, including explicit `actions` RPC attachment. |
-| `apps/tab-manager/src/lib/tab-manager/client.ts` | Rename generated descriptor to peer identity. Keep app table ids branded. |
-| `apps/tab-manager/src/lib/tab-manager/extension.ts` | Attach sync, presence, and RPC separately. |
-| `packages/cli/src/load-config.ts` | Update public workspace entry shape and type aliases. |
-| `packages/cli/src/util/peer-wait.ts` | Find peers via presence, not sync. |
-| `packages/workspace/SYNC_ARCHITECTURE.md` | Rewrite diagrams around sync, presence, and RPC. |
+| File                                                      | Change                                                                                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/workspace/src/shared/actions.ts`                | Reframe `Actions` as the public registry shape; keep canonical traversal but target registry roots in public docs. Add `defineActions` only if the helper earns its keep. |
+| `packages/workspace/src/ai/tool-bridge.ts`                | Change examples and call sites back to action registries. Keep one traversal path.                                                                                        |
+| `packages/workspace/src/rpc/types.ts`                     | Update examples and tests to infer RPC maps from `typeof actions`.                                                                                                        |
+| `packages/workspace/src/document/attach-sync.ts`          | Remove presence and RPC ownership from base return. Add `attachPresence`, `attachRpc`, and internal frame registration surface.                                           |
+| `packages/workspace/src/document/peer-presence.ts`        | Standard peer presence implementation and resolver helpers. Should own the names currently split with `peer-presence-defs.ts`.                                            |
+| `packages/workspace/src/document/attach-presence.ts`      | New presence attachment implementation. Owns awareness send and receive through sync.                                                                                     |
+| `packages/workspace/src/document/attach-rpc.ts`           | RPC attachment implementation. Owns pending requests, request handling, response handling, and `system.describe`.                                                         |
+| `packages/workspace/src/rpc/remote-actions.ts`            | Keep `createRemoteClient({ presence, rpc })` public. Keep proxy construction private unless another package proves it needs the lower-level hook.                         |
+| `packages/workspace/src/shared/device-id.ts`              | Rename storage helpers to installation id helpers.                                                                                                                        |
+| `packages/workspace/src/index.ts`                         | Update public exports. Remove old device-based names.                                                                                                                     |
+| `packages/workspace/src/document/attach-sync.test.ts`     | Keep supervisor and sync protocol tests. Move presence and RPC tests out.                                                                                                 |
+| `packages/workspace/src/document/attach-presence.test.ts` | Tests for peer awareness state and peer lookup.                                                                                                                           |
+| `packages/workspace/src/document/attach-rpc.test.ts`      | New tests for RPC frame handling and system describe.                                                                                                                     |
+| `packages/workspace/src/rpc/peer.test.ts`                 | Update mocks from one sync object to `{ presence, rpc }`.                                                                                                                 |
+| `packages/workspace/src/ai/tool-bridge.test.ts`           | Assert tool names are registry-relative.                                                                                                                                  |
+| `packages/cli/src/daemon/run-handler.ts`                  | Resolve actions from `workspace.actions`, not the whole workspace.                                                                                                        |
+| `packages/cli/src/daemon/app.ts`                          | Describe `workspace.actions` for `/list`; read `entry.workspace.presence.peers()` for `/peers`.                                                                           |
+| `apps/fuji/src/lib/fuji/client.ts`                        | Rename id helper and `device` construction.                                                                                                                               |
+| `apps/fuji/src/lib/fuji/browser.ts`                       | Attach sync, presence, and RPC separately.                                                                                                                                |
+| `apps/honeycrisp/src/lib/honeycrisp/client.ts`            | Same pattern.                                                                                                                                                             |
+| `apps/honeycrisp/src/lib/honeycrisp/browser.ts`           | Same pattern.                                                                                                                                                             |
+| `apps/opensidian/src/lib/opensidian/client.ts`            | Same pattern.                                                                                                                                                             |
+| `apps/opensidian/src/lib/opensidian/browser.ts`           | Same pattern, including explicit `actions` RPC attachment.                                                                                                                |
+| `apps/tab-manager/src/lib/tab-manager/client.ts`          | Rename generated descriptor to peer identity. Keep app table ids branded.                                                                                                 |
+| `apps/tab-manager/src/lib/tab-manager/extension.ts`       | Attach sync, presence, and RPC separately.                                                                                                                                |
+| `packages/cli/src/load-config.ts`                         | Update public workspace entry shape and type aliases.                                                                                                                     |
+| `packages/cli/src/util/peer-wait.ts`                      | Find peers via presence, not sync.                                                                                                                                        |
+| `packages/workspace/SYNC_ARCHITECTURE.md`                 | Rewrite diagrams around sync, presence, and RPC.                                                                                                                          |
 
 ## Remaining Implementation Plan
 
@@ -613,7 +618,7 @@ RPC can target a raw Yjs client id and does not require presence. `createRemoteC
 Expected behavior:
 
 ```ts
-await rpc.rpc(clientId, 'tabs.close', input);
+await rpc.rpc(clientId, "tabs.close", input);
 createRemoteClient({ presence, rpc }).actions(peerId);
 ```
 
@@ -637,10 +642,14 @@ Apps may still use generic `attachAwareness` for cursors, selections, and typing
 Expected behavior:
 
 ```ts
-const editorAwareness = attachAwareness(ydoc, {
-	cursor: Cursor,
-	selection: Selection,
-}, initial);
+const editorAwareness = attachAwareness(
+  ydoc,
+  {
+    cursor: Cursor,
+    selection: Selection,
+  },
+  initial,
+);
 ```
 
 Standard peer presence remains separate:
@@ -678,13 +687,13 @@ Expected behavior:
 ```ts
 describeActions(workspace.actions);
 actionsToAiTools(workspace.actions);
-resolveActionPath(workspace.actions, 'tabs.close');
+resolveActionPath(workspace.actions, "tabs.close");
 ```
 
 Do not expose:
 
 ```ts
-actions.tabs.close
+actions.tabs.close;
 ```
 
 unless the registry itself intentionally contains an `actions` namespace.

@@ -1,16 +1,64 @@
+import type {
+	DeviceConfigKey,
+	SecretKey,
+} from '$lib/state/device-config.svelte';
+import {
+	INFERENCE_PROVIDER_IDS,
+	type InferenceProviderId,
+} from './inference-provider-ids';
+
+export {
+	INFERENCE_PROVIDER_IDS,
+	type InferenceProviderId,
+} from './inference-provider-ids';
+
+type InferenceProvider = {
+	label: string;
+	/**
+	 * Canonical OpenAI-compatible base URL this provider's completions run
+	 * against, or null when the user must supply it (Custom). Anthropic and Google
+	 * point at their OpenAI-compatibility endpoints (ADR-0060), so every provider
+	 * speaks one wire and completion has a single code path with no per-provider
+	 * client. An endpoint override in deviceConfig still wins over this default.
+	 */
+	defaultBaseUrl: string | null;
+	/** Fixed model list, or null when the model is typed free-form (OpenRouter, Custom). */
+	models: readonly string[] | null;
+	/**
+	 * The provider's API key: a secret, so it routes through the credential facade
+	 * (`secrets.get`), not raw `deviceConfig`. `SecretKey` (not the wider
+	 * `DeviceConfigKey`) makes that structural, per ADR-0074.
+	 */
+	apiKeyConfigKey: SecretKey;
+	/** Device config key for the endpoint override; null when not configurable. */
+	endpointConfigKey: DeviceConfigKey | null;
+};
+
 /**
- * Single source of truth for inference providers and their models.
+ * Single source of truth for inference providers: their models, labels, the
+ * deviceConfig key NAMES holding each provider's credential and endpoint override,
+ * and the canonical base URL each provider's completions run against. SDK-free
+ * (only a type import), so the workspace schema imports it without bundling any
+ * provider client. This is the completion twin of transcription's `PROVIDERS`:
+ * every provider speaks the OpenAI completion wire (Anthropic and Google through
+ * their OpenAI-compatibility endpoints), so a completion resolves a
+ * `{ baseUrl, apiKey? }` connection from this table and hands it to one
+ * `complete()` call: no per-provider dispatch, no bespoke client.
  *
  * Access patterns:
  * - Provider IDs:  `keyof typeof INFERENCE` → 'OpenAI' | 'Groq' | ...
  * - Models:        `INFERENCE.OpenAI.models` → readonly ['gpt-5', ...]
  * - Labels:        `INFERENCE.OpenAI.label` → 'OpenAI'
+ * - Config keys:   `INFERENCE.OpenAI.apiKeyConfigKey` → 'providers.openai.apiKey'
  * - Enumerate:     `Object.keys(INFERENCE)` / `Object.entries(INFERENCE)`
  * - Schema:        `type.enumerated(...INFERENCE.OpenAI.models)`
  */
 export const INFERENCE = {
 	OpenAI: {
 		label: 'OpenAI',
+		defaultBaseUrl: 'https://api.openai.com/v1',
+		apiKeyConfigKey: 'providers.openai.apiKey',
+		endpointConfigKey: 'providers.openai.endpoint',
 		models: [
 			'gpt-5',
 			'gpt-5-mini',
@@ -27,6 +75,9 @@ export const INFERENCE = {
 	},
 	Groq: {
 		label: 'Groq',
+		defaultBaseUrl: 'https://api.groq.com/openai/v1',
+		apiKeyConfigKey: 'providers.groq.apiKey',
+		endpointConfigKey: 'providers.groq.endpoint',
 		models: [
 			// Production models
 			'gemma2-9b-it',
@@ -46,6 +97,9 @@ export const INFERENCE = {
 	},
 	Anthropic: {
 		label: 'Anthropic',
+		defaultBaseUrl: 'https://api.anthropic.com/v1',
+		apiKeyConfigKey: 'providers.anthropic.apiKey',
+		endpointConfigKey: null,
 		models: [
 			// Claude 4.5 models (latest generation - recommended)
 			'claude-sonnet-4-5-20250929',
@@ -71,6 +125,9 @@ export const INFERENCE = {
 	},
 	Google: {
 		label: 'Google',
+		defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+		apiKeyConfigKey: 'providers.google.apiKey',
+		endpointConfigKey: null,
 		models: [
 			'gemini-2.5-pro',
 			'gemini-2.5-flash',
@@ -82,20 +139,34 @@ export const INFERENCE = {
 	},
 	OpenRouter: {
 		label: 'OpenRouter',
+		defaultBaseUrl: 'https://openrouter.ai/api/v1',
+		apiKeyConfigKey: 'providers.openrouter.apiKey',
+		endpointConfigKey: null,
 		models: null,
 	},
 	Custom: {
 		label: 'Custom (OpenAI-compatible)',
+		defaultBaseUrl: null,
+		apiKeyConfigKey: 'providers.custom.apiKey',
+		endpointConfigKey: 'providers.custom.endpoint',
 		models: null,
 	},
-} as const;
+} as const satisfies Record<InferenceProviderId, InferenceProvider>;
 
-export type InferenceProviderId = keyof typeof INFERENCE;
+/**
+ * Inference providers with a fixed model list (`models` is non-null), i.e.
+ * the ones whose model is picked from a select instead of typed free-form.
+ */
+export type ModelSelectProviderId = {
+	[K in InferenceProviderId]: (typeof INFERENCE)[K]['models'] extends null
+		? never
+		: K;
+}[InferenceProviderId];
 
-/** Convenience array for `type.enumerated(...INFERENCE_PROVIDER_IDS)` in schemas. */
-export const INFERENCE_PROVIDER_IDS = Object.keys(
-	INFERENCE,
-) as InferenceProviderId[];
+/** Narrow a provider to one whose model comes from a fixed list. */
+export const hasModelSelect = (
+	provider: InferenceProviderId,
+): provider is ModelSelectProviderId => INFERENCE[provider].models !== null;
 
 /** UI dropdown options for provider selection. */
 export const INFERENCE_PROVIDER_OPTIONS = INFERENCE_PROVIDER_IDS.map((id) => ({

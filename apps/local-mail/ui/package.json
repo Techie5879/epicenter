@@ -1,0 +1,40 @@
+{
+	"name": "@epicenter/local-mail-ui",
+	"description": "Local Mail triage SPA, served same-origin by `local-mail app`",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+	},
+	"devDependencies": {
+		"@epicenter/local-mail": "workspace:*",
+		"@epicenter/ui": "workspace:*",
+		"@lucide/svelte": "catalog:",
+		"@sveltejs/adapter-static": "catalog:",
+		"@sveltejs/kit": "catalog:",
+		"@sveltejs/vite-plugin-svelte": "catalog:",
+		"@tailwindcss/vite": "catalog:",
+		"@types/bun": "catalog:",
+		"@types/jsdom": "^21.1.7",
+		"jsdom": "^26.1.0",
+		"mode-watcher": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"svelte-sonner": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:"
+	},
+	"dependencies": {
+		"@epicenter/constants": "workspace:*",
+		"@tanstack/svelte-query": "catalog:",
+		"dompurify": "^3.4.10",
+		"hono": "catalog:"
+	},
+	"license": "AGPL-3.0-or-later"
+}

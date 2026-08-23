@@ -1,6 +1,6 @@
 {
-	"id": "f0d547d1-b5cd-4653-b4d6-e6e1c290d0b6",
-	"prevId": "b28ec1b2-02bb-4070-b6b9-741b0e8562ef",
+	"id": "1462a78c-bd6b-4f7f-bf8f-df88be412bd9",
+	"prevId": "a2137ab1-be10-4106-9061-a5cb59867e0e",
 	"version": "7",
 	"dialect": "postgresql",
 	"tables": {
@@ -122,165 +122,6 @@
 			"checkConstraints": {},
 			"isRLSEnabled": false
 		},
-		"public.asset": {
-			"name": "asset",
-			"schema": "",
-			"columns": {
-				"id": {
-					"name": "id",
-					"type": "text",
-					"primaryKey": true,
-					"notNull": true
-				},
-				"user_id": {
-					"name": "user_id",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"content_type": {
-					"name": "content_type",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"size_bytes": {
-					"name": "size_bytes",
-					"type": "bigint",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"original_name": {
-					"name": "original_name",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"uploaded_at": {
-					"name": "uploaded_at",
-					"type": "timestamp",
-					"primaryKey": false,
-					"notNull": true,
-					"default": "now()"
-				}
-			},
-			"indexes": {
-				"asset_user_id_idx": {
-					"name": "asset_user_id_idx",
-					"columns": [
-						{
-							"expression": "user_id",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						}
-					],
-					"isUnique": false,
-					"concurrently": false,
-					"method": "btree",
-					"with": {}
-				}
-			},
-			"foreignKeys": {
-				"asset_user_id_user_id_fk": {
-					"name": "asset_user_id_user_id_fk",
-					"tableFrom": "asset",
-					"tableTo": "user",
-					"columnsFrom": ["user_id"],
-					"columnsTo": ["id"],
-					"onDelete": "cascade",
-					"onUpdate": "no action"
-				}
-			},
-			"compositePrimaryKeys": {},
-			"uniqueConstraints": {},
-			"policies": {},
-			"checkConstraints": {},
-			"isRLSEnabled": false
-		},
-		"public.durable_object_instance": {
-			"name": "durable_object_instance",
-			"schema": "",
-			"columns": {
-				"user_id": {
-					"name": "user_id",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"resource_name": {
-					"name": "resource_name",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"do_name": {
-					"name": "do_name",
-					"type": "text",
-					"primaryKey": true,
-					"notNull": true
-				},
-				"storage_bytes": {
-					"name": "storage_bytes",
-					"type": "bigint",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"created_at": {
-					"name": "created_at",
-					"type": "timestamp",
-					"primaryKey": false,
-					"notNull": true,
-					"default": "now()"
-				},
-				"last_accessed_at": {
-					"name": "last_accessed_at",
-					"type": "timestamp",
-					"primaryKey": false,
-					"notNull": true,
-					"default": "now()"
-				},
-				"storage_measured_at": {
-					"name": "storage_measured_at",
-					"type": "timestamp",
-					"primaryKey": false,
-					"notNull": false
-				}
-			},
-			"indexes": {
-				"doi_user_id_idx": {
-					"name": "doi_user_id_idx",
-					"columns": [
-						{
-							"expression": "user_id",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						}
-					],
-					"isUnique": false,
-					"concurrently": false,
-					"method": "btree",
-					"with": {}
-				}
-			},
-			"foreignKeys": {
-				"durable_object_instance_user_id_user_id_fk": {
-					"name": "durable_object_instance_user_id_user_id_fk",
-					"tableFrom": "durable_object_instance",
-					"tableTo": "user",
-					"columnsFrom": ["user_id"],
-					"columnsTo": ["id"],
-					"onDelete": "cascade",
-					"onUpdate": "no action"
-				}
-			},
-			"compositePrimaryKeys": {},
-			"uniqueConstraints": {},
-			"policies": {},
-			"checkConstraints": {},
-			"isRLSEnabled": false
-		},
 		"public.jwks": {
 			"name": "jwks",
 			"schema": "",
@@ -389,7 +230,68 @@
 					"notNull": true
 				}
 			},
-			"indexes": {},
+			"indexes": {
+				"oauthAccessToken_clientId_idx": {
+					"name": "oauthAccessToken_clientId_idx",
+					"columns": [
+						{
+							"expression": "client_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"oauthAccessToken_sessionId_idx": {
+					"name": "oauthAccessToken_sessionId_idx",
+					"columns": [
+						{
+							"expression": "session_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"oauthAccessToken_userId_idx": {
+					"name": "oauthAccessToken_userId_idx",
+					"columns": [
+						{
+							"expression": "user_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"oauthAccessToken_refreshId_idx": {
+					"name": "oauthAccessToken_refreshId_idx",
+					"columns": [
+						{
+							"expression": "refresh_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
 			"foreignKeys": {
 				"oauth_access_token_client_id_oauth_client_client_id_fk": {
 					"name": "oauth_access_token_client_id_oauth_client_client_id_fk",
@@ -478,6 +380,12 @@
 				"enable_end_session": {
 					"name": "enable_end_session",
 					"type": "boolean",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"subject_type": {
+					"name": "subject_type",
+					"type": "text",
 					"primaryKey": false,
 					"notNull": false
 				},
@@ -620,7 +528,23 @@
 					"notNull": false
 				}
 			},
-			"indexes": {},
+			"indexes": {
+				"oauthClient_userId_idx": {
+					"name": "oauthClient_userId_idx",
+					"columns": [
+						{
+							"expression": "user_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
 			"foreignKeys": {
 				"oauth_client_user_id_user_id_fk": {
 					"name": "oauth_client_user_id_user_id_fk",
@@ -691,7 +615,38 @@
 					"notNull": false
 				}
 			},
-			"indexes": {},
+			"indexes": {
+				"oauthConsent_clientId_idx": {
+					"name": "oauthConsent_clientId_idx",
+					"columns": [
+						{
+							"expression": "client_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"oauthConsent_userId_idx": {
+					"name": "oauthConsent_userId_idx",
+					"columns": [
+						{
+							"expression": "user_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
 			"foreignKeys": {
 				"oauth_consent_client_id_oauth_client_client_id_fk": {
 					"name": "oauth_consent_client_id_oauth_client_client_id_fk",
@@ -789,7 +744,53 @@
 					"notNull": true
 				}
 			},
-			"indexes": {},
+			"indexes": {
+				"oauthRefreshToken_clientId_idx": {
+					"name": "oauthRefreshToken_clientId_idx",
+					"columns": [
+						{
+							"expression": "client_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"oauthRefreshToken_sessionId_idx": {
+					"name": "oauthRefreshToken_sessionId_idx",
+					"columns": [
+						{
+							"expression": "session_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"oauthRefreshToken_userId_idx": {
+					"name": "oauthRefreshToken_userId_idx",
+					"columns": [
+						{
+							"expression": "user_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				}
+			},
 			"foreignKeys": {
 				"oauth_refresh_token_client_id_oauth_client_client_id_fk": {
 					"name": "oauth_refresh_token_client_id_oauth_client_client_id_fk",
@@ -820,7 +821,13 @@
 				}
 			},
 			"compositePrimaryKeys": {},
-			"uniqueConstraints": {},
+			"uniqueConstraints": {
+				"oauth_refresh_token_token_unique": {
+					"name": "oauth_refresh_token_token_unique",
+					"nullsNotDistinct": false,
+					"columns": ["token"]
+				}
+			},
 			"policies": {},
 			"checkConstraints": {},
 			"isRLSEnabled": false

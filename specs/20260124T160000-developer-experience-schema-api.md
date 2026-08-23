@@ -21,7 +21,7 @@
 **Status**: Draft (Partially Superseded)
 **Date**: 2026-01-24
 **Context**: Designing the ideal developer experience for defining schemas, tables, and KV stores with YJS, focusing on migrations and conflict handling
-**Builds on**: `specs/20260124T004528-versioned-table-api-design.md`, `specs/20260124T125300-workspace-schema-versioning.md`, `specs/20260116T082500-schema-migration-patterns.md`
+**Builds on**: `specs/20260124T004528-versioned-table-api-design.md`, `specs/20260124T125300-workspace-schema-versioning.md`, plus the removed schema-migration strategy spec recoverable through `docs/spec-history.md`
 
 ---
 
@@ -306,7 +306,7 @@ export const whisperingWorkspace = defineWorkspace({
 **Key points**:
 - Each version is a complete schema snapshot
 - New fields MUST have defaults (for migration)
-- No explicit migration functions for additive changes—defaults are sufficient
+- No explicit migration functions for additive changes. Defaults are sufficient
 
 #### Alternative: Callback-Based Evolution (More Explicit)
 
@@ -807,7 +807,7 @@ kv.subscribe('theme', (value) => {
    - Might need special handling for content migrations
 
 4. **Should we expose version history in the API?**
-   - `table.getVersionHistory(id)` — useful for debugging?
+   - `table.getVersionHistory(id)`: useful for debugging?
 
 5. **How to handle schema validation errors?**
    - Current: Return `{ status: 'invalid', errors }` from `get()`
@@ -817,10 +817,10 @@ kv.subscribe('theme', (value) => {
 
 ## Related Documents
 
-- `specs/20260124T004528-versioned-table-api-design.md` — Deep dive on row versioning
-- `specs/20260124T125300-workspace-schema-versioning.md` — Workspace-level versioning
-- `specs/20260116T082500-schema-migration-patterns.md` — Migration strategy overview
-- `apps/whispering/src/lib/services/isomorphic/db/models/transformation-steps.ts` — Real example of ArkType versioned schema
+- `specs/20260124T004528-versioned-table-api-design.md`: Deep dive on row versioning
+- `specs/20260124T125300-workspace-schema-versioning.md`: Workspace-level versioning
+- Removed `specs/20260116T082500-schema-migration-patterns.md`: historical migration strategy overview, recoverable through `docs/spec-history.md`
+- `apps/whispering/src/lib/services/isomorphic/db/models/transformation-steps.ts`: Real example of ArkType versioned schema
 
 ---
 

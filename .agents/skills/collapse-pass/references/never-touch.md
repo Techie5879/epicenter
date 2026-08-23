@@ -4,82 +4,76 @@ Codebase-specific facts that the collapse pass must respect. These strings, shap
 
 ## Durable strings: never change without explicit product decision
 
-These appear in encrypted blobs, on-disk paths, sync wire format, or schemas other apps validate against. They are part of the durable vocabulary of Epicenter.
+These appear in on-disk paths, sync wire format, or schemas other apps validate against. They are part of the durable vocabulary of Epicenter.
 
-### HKDF info labels
-
-```
-"subject:{subject}"
-"workspace:{workspaceId}"
-```
-
-Used by the encryption package to derive workspace-scoped keys. Changing the label rotates every derived key.
-
-### IndexedDB prefix
+### IndexedDB database name
 
 ```
-"epicenter.owner.{ownerId}.yjs.{guid}"
+"epicenter/{namespace}/private"
+"epicenter/{namespace}/workspace/{principalId}"
 ```
 
-Used by the browser-side workspace runtime. Changing the prefix detaches every existing IndexedDB store from its consumer.
+The durable address of one browser document (`packages/data/src/store/browser.ts`), holding the three relations that have to survive a reload: `updates`, `outbox`, and `cursor`. It reads as ownership (ADR-0233): the application, then the private document or the account whose replica this is. Changing the shape detaches every existing store from its consumer, and what is lost is not the work (the authority still owes it to the device) but the guarantee that a reload sees it.
 
-### Durable Object name format
+Three identities meet here and none may stand in for another: the namespace (which application), the principal id (whose replica), and the authority document id (which current Yjs document, kept inside the store because rebuild changes it).
+
+`epicenter-store-{namespace}` and `epicenter-store-{namespace}#{private,workspace}` are the superseded shapes. They are deletion targets at every open, never read.
+
+### Durable Object name format and URL shape
 
 ```
-"subject:{subject}:rooms:{room}"
+"principals/{principalId}/stores/{namespace}"
 ```
 
-Used by the sync hub to address rooms. Changing the format breaks the routing contract between client and hub.
+One store authority per principal and application (ADR-0225), named in `packages/server/src/store-sync/route.ts`. Changing the format detaches every authority from its data.
 
-### EncryptedBlob format bytes
+The wire shape is not parallel to it, and that is deliberate: the connect URL is one path, `/api/store/v1/sync?namespace=...&cursor=...` (`packages/sync/src/store-route.ts`). Whose data it is never appears in the query, because it comes from the resolved bearer server-side, so no value a client puts there can reach another partition (ADR-0092). Do not "fix" the asymmetry by moving the principal into the URL.
 
-- `blob[0] = 1` (format version)
-- `blob[1] = key version`
-
-Both bytes are part of the on-disk and on-wire encryption envelope. Bumping them is a migration, not a refactor.
+In the per-user topology `principalId` is the signed-in user's id; in the instance topology it is the literal `INSTANCE_PRINCIPAL_ID` (`'instance'`). The path is uniform across topologies.
 
 ### Public arktype schemas
 
 Other apps validate inputs against these by name and shape. Renaming a field or changing a brand silently invalidates their parsers.
 
-- `PersistedAuth`
-- `ApiMeResponse`
-- `SubjectKeyring`
-- `RootKeyring`
+- `PersistedAuth` (`packages/auth/src/auth-types.ts`)
+- `ApiSessionResponse` (`packages/auth/src/auth-types.ts`)
+- `PrincipalId`, `INSTANCE_PRINCIPAL_ID` (`packages/identity/src/identity.ts`)
 
-### Identity strings inside documents
+Per-user vs instance partitioning is intentionally NOT in this list: there is no
+`OwnershipRule` engine or discriminated union (the old `perUser` / `instance`
+constants and `packages/server/src/ownership.ts` are gone). The partition path
+is one unconditional `principals/<principalId>/` shape in
+`packages/server/src/principal.ts`; which principal a request resolves to is
+decided at the bearer resolver, carries no arktype validator, and never crosses
+the wire as config.
 
-- Y.Doc guid values (workspace identity for sync and persistence)
-- Sync room names
-- Child document GUIDs (deterministic per row, used by materializers and editors)
+### Root names inside a document
 
-### Migration shims
+An application is one `Y.Doc` whose roots are `tables:{name}` and `kv` (`packages/data/src/store/document.ts`). `Doc.get` is `setIfUndefined`, so it mints on miss, and a root can never be removed: renaming one strands every row under the old name permanently.
 
-- `LegacyPersistedAuth` (and any other `*Legacy*` validator). These carry the historic on-disk vocabulary by design. Even when no current writer produces the legacy shape, readers must still accept it. Do not delete legacy migration shims; their presence is the migration contract.
+A row's document roots (`db.notes.create({...}, { document: ['body'] })`) are named by the application and allocated with the row. Renaming one orphans the prose written into it.
 
 ## Pause and ask before
 
 The collapse pass should stop and surface to the user (not silently proceed) when about to:
 
 - Change any string from the list above
-- Delete a public exported name that has zero in-repo callers but plausible external CLI or SDK consumers (the `@epicenter/cli` binary and the `@epicenter/workspace` published API are the load-bearing examples)
+- Delete a public exported name that has zero in-repo callers but plausible external consumers (the published MIT packages, `@epicenter/workspace` and `@epicenter/field`, are the load-bearing example: they emit to `dist` for toolchains we do not control)
 - Collapse two files where one's JSDoc documents a non-obvious invariant (the JSDoc is the documentation of a contract; losing it loses the contract)
 - Merge packages or move exports across package boundaries
 - Change a function signature that crosses a published package boundary
+- Collapse a `defineErrors` factory call to an inline `{ name, message, ...fields }` object, even for a single-variant log-only error. The factory call is the idiomatic shape; see `define-errors`, `error-handling`, and `logging` skills. Single-variant `defineErrors` is fine: the variant tag carries idiom consistency, forward-compat, self-documenting call sites, and a centralized message template that prevents drift across multiple log sites.
 
 ## Scope tiers
 
 Default collapse-pass targets, narrowest to widest:
 
 1. `packages/auth`
-2. `packages/auth-svelte`
-3. `packages/encryption`
-4. `packages/workspace`
-5. `packages/svelte-utils`
-6. `packages/cli`
-7. `apps/api`
+2. `packages/data`
+3. `packages/svelte-utils`
+4. `apps/api`
 
 Out of scope without an explicit pass declaration:
 
-- First-party apps: `apps/whispering`, `apps/tab-manager`, `apps/fuji`, `apps/honeycrisp`, `apps/opensidian`, `apps/zhongwen`. These are owned by separate waves and have their own architecture tests.
-- `specs/`, `docs/articles/`, migration history (`*-legacy-*.md`, archived ADRs)
+- First-party apps: `apps/honeycrisp`, `apps/whispering`, `apps/vocab`, `apps/local-mail`. These are owned by separate waves and have their own architecture tests.
+- `specs/`, `docs/articles/`, migration history (`*-legacy-*.md`, archived decision docs)

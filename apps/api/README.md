@@ -1,10 +1,28 @@
-# Epicenter API
+# Epicenter API (Hosted Personal Cloud)
 
-The hub server. Handles authentication, real-time sync, and AI inference: everything that needs a single authority across devices.
+Epicenter Cloud Worker. Handles authentication, real-time sync, AI inference, and billing for the hosted personal cloud product. Cloud composes `@epicenter/server` by resolving Better Auth users as principals.
 
-Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. Self-hosting the unmodified server is encouraged; see the encryption and trust model below.
+This folder is a single Cloudflare Worker deployment: `worker/` (Hono code) and `ui/` (SvelteKit dashboard SPA) ship together. The self-hosted single-partition instance lives in the sibling `apps/self-host`; it resolves one operator bearer to the literal `instance` principal, has no billing surface, and (because it composes no Better Auth) no Postgres either (ADR-0075, ADR-0076).
 
-Runs on Cloudflare Workers with Durable Objects. Each user gets dedicated sync-room Durable Objects, providing per-user isolation with WebSocket-based real-time sync.
+Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. See `apps/self-host` for the self-hosted reference and the trust model below.
+
+Runs on Cloudflare Workers with Durable Objects. Store sync is one WebSocket
+route, `/api/store/v1/sync`, mounted by `mountStoreSyncApp`
+(`packages/server/src/store-sync/`). It resolves one Durable Object per
+(principal, application id), named
+`principals/<principalId>/stores/<workspaceId>`, holding a snapshot plus the
+entries after it (ADR-0220, ADR-0225).
+
+The principal is stamped from the resolved bearer and the Durable Object is
+addressed by it, so a client supplies a workspace id and a cursor and nothing
+else. There is no catalog, grant table, or authorization lookup, and no value a
+client can put in the query that reaches another partition: the isolation is
+structural rather than checked. **Being signed in on two devices is the whole of
+the sharing model.** Both devices resolve to one principal, address one
+authority, and converge; nothing is paired, invited, or approved.
+
+The authority reads nothing it stores (ADR-0218). It holds opaque bytes, hands
+them back in order, and imports neither Yjs nor a workspace.
 
 ## Why a hub exists
 
@@ -14,70 +32,95 @@ The hub handles auth, sync relay, and AI. Local servers handle filesystem access
 
 ## Stack and priorities
 
-Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is more ergonomic, and it runs natively on Bun. But Elysia depends on Bun-specific APIs that don't exist in the Cloudflare Workers runtime, and Workers compatibility was non-negotiable. Hono runs on Cloudflare Workers, Node.js, Deno, Bun, and AWS Lambda. When we build self-hosting adapters, the route layer comes along for free.
+Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is more ergonomic, and it runs natively on Bun. But Elysia depends on Bun-specific APIs that don't exist in the Cloudflare Workers runtime, and Workers compatibility was non-negotiable. Hono runs on Cloudflare Workers, Node.js, Deno, Bun, and AWS Lambda, so when the server moved to a second runtime (ADR-0066), the route layer came along for free.
 
-Cloudflare Durable Objects are the current deployment target. Three things make them a natural fit for per-user Yjs sync:
+Cloudflare Durable Objects are the hosted deployment target. Three things make them a natural fit for a store authority:
 
-- **Single-threaded per object.** Each user's Room runs in its own isolate. No mutex, no race conditions on CRDT state. The runtime guarantees it.
+- **Single-threaded per object.** Each authority runs in its own isolate. No mutex, no race conditions on the log. The runtime guarantees it.
 - **Built-in SQLite.** The update log lives inside the Durable Object's storage. No external database for sync state, no connection pooling, no cold-start latency from network hops.
-- **WebSocket Hibernation.** Idle connections don't consume compute. A user can leave a tab open for hours and the DO sleeps until the next message arrives. Costs stay proportional to actual sync traffic, not connection count.
+- **WebSocket Hibernation.** Idle connections don't consume compute. A user can leave a tab open for hours and the object sleeps until the next message arrives. Costs stay proportional to actual sync traffic, not connection count. A woken object rebuilds each socket's position from the attachment the socket carries.
 
-We're focused on Durable Objects to keep the maintenance surface small and iterate fast. The Cloudflare-specific sync code lives in `room.ts`. Everything else, routes, auth, AI, and validation, is runtime-portable Hono code.
+`StoreAuthority` (`packages/server/src/store-sync/authority.ts`) is a thin
+adapter and nothing more. Every rule about who has been sent what lives in
+`@epicenter/data/sync`, so what is deployed here and what the transport's tests
+drive are the same object rather than two that agree today. Routes, auth, AI,
+and validation are plain runtime-portable Hono.
 
-We want self-hosting adapters. The plan is to stabilize the API surface on Durable Objects first, then extract the sync room logic into a runtime-agnostic layer backed by Node.js WebSockets + SQLite. If you want to deploy today, fork the repo and use the existing `wrangler.jsonc`. Everything you need is in there.
+`apps/self-host` is the sibling deployable: the single-partition instance, a Bun
+binary or a Cloudflare Worker that composes no Better Auth and no Postgres
+(ADR-0075, ADR-0076), so the whole box is one bearer token. It is
+community-supported, not Epicenter-operated, and it does not mount store sync
+today. `apps/api/server.ts` here is this hosted cloud on Bun (local dev and the
+runtime-parity smoke), booting the same composition against plain Postgres and
+any S3 endpoint with no Cloudflare account. The surfaces that need Worker-only
+bindings are absent there: store sync and attach ride Durable Objects, the
+dashboard shell comes from `ASSETS`, and billing needs the Autumn secret and the
+after-response drain. `runtime-profile.test.ts` is where that divergence is
+declared and checked against both entries.
 
-Better Auth handles identity: email/password and Google OAuth for sign-in, plus an OAuth provider plugin that turns the hub into a standards-compliant OAuth server. Desktop and mobile clients authenticate via OAuth/PKCE flows, get a token, and use it for all subsequent API calls and WebSocket connections.
+Better Auth handles identity. Hosted Epicenter requires Google, GitHub, and Microsoft social sign-in (email/password is disabled in `base-config.ts`), plus an OAuth provider plugin that turns the hub into a standards-compliant OAuth server. Desktop and mobile clients authenticate via OAuth/PKCE flows, get a token, and use it for all subsequent API calls and WebSocket connections.
 
-## Encryption and trust model
+## Trust model
 
-Workspace data is encrypted at the CRDT level using XChaCha20-Poly1305 via @noble/ciphers (audited by Cure53). The encryption wraps YKeyValueLww, a synchronous layer that encrypts individual values within the data structure itself. Durable Objects see the CRDT skeleton (key names like `tab-1`, timestamps for conflict resolution) but every value is an opaque ciphertext blob: `[formatVersion(1) ‖ keyVersion(1) ‖ nonce(24) ‖ ciphertext ‖ tag(16)]`. Yjs `writeAny` serializes `Uint8Array` natively as binary (type tag 116), so there is no base64 overhead.
+Epicenter Cloud is operated by Epicenter, so Epicenter infrastructure is inside
+the trust boundary for hosted data. `BETTER_AUTH_SECRET` signs auth cookies,
+tokens, and OAuth state; it is not a data encryption root.
 
-The workspace encryption key derives from `ENCRYPTION_SECRETS`, not from Better Auth's auth secret. This is server-managed, deployment-level encryption: the same model used by Notion, Linear, and most SaaS products, but applied deeper (individual CRDT values rather than database-level). Better Auth keeps using `BETTER_AUTH_SECRET` for auth cookies, tokens, and OAuth state. The server can decrypt workspace data to power search indexing, AI summarization, and password recovery.
+Self-hosted deployments move the trust boundary to infrastructure the deployer
+operates. Epicenter never holds or sees data stored in a self-hosted deployment,
+so self-hosting is functionally zero-knowledge against Epicenter.
 
-| Deployment | Key source | Who can decrypt | Trade-off |
-|---|---|---|---|
-| Epicenter Cloud | Derived from deployment secret | Epicenter infrastructure | Enables search, AI, password reset, device migration |
-| Self-hosted | Same derivation, your secret | Only you | Functionally zero-knowledge. The key never leaves your infra |
-
-Self-hosting makes this zero-knowledge in practice. The encryption key sits on a machine you control; Epicenter never sees it. Same binary, same API surface. The deployment is the trust boundary.
+That confidentiality covers content, not the wire, and it does not erase three
+things a self-hoster should weigh. The operator still sees the metadata around
+the bytes (principal id, application id, message timing, size, and IP);
+that operator is Epicenter when hosted and you when self-hosted, and even a
+future blind server keeps seeing this envelope. Blobs land wherever
+`BLOBS_S3_ENDPOINT` points, so renting Epicenter's blob service puts your media
+in Epicenter's R2 even on a self-hosted instance; point the store at your own S3
+to keep media local. And hosted sign-in leans on social OAuth (email/password is
+disabled in `base-config.ts`); a self-hosted instance uses one operator-supplied
+bearer instead and registers no OAuth app at all (ADR-0071, ADR-0075). The full
+ledger, with the reasoning, is in [docs/trust-model.md](/docs/trust-model.md).
 
 ### Why not zero-knowledge?
 
-Zero-knowledge means the server can't read your data. The cost: password recovery doesn't work (the server can't re-derive your key), search doesn't work (the server can't index ciphertext), AI doesn't work (the server can't read your notes to summarize them), and device migration requires a key transfer ceremony.
+Zero-knowledge means the server can't read your data. The cost: account recovery doesn't work (the server can't re-derive your key, so a lost key is lost data), search doesn't work (the server can't index ciphertext), AI doesn't work (the server can't read your notes to summarize them), and moving to a new device means transferring the key by hand.
 
-PGP has been trying to make key management practical for thirty years. Signal works because messaging is one-dimensional. The server is a relay that never processes content. Most apps aren't relays. Epicenter needs to search documents, run AI against notes, and let users reset passwords without losing everything.
-
-### Overhead
-
-Encryption adds a fixed 42 bytes per value (2-byte header + 24-byte nonce + 16-byte Poly1305 auth tag) with zero proportional expansion. Blobs are stored as raw `Uint8Array` via Yjs binary serialization. For typical workspace data (100 to 2000 byte values), total overhead is 2 to 42%. Performance impact is negligible. XChaCha20-Poly1305 via @noble/ciphers encrypts 1 KB in about 0.01 ms, and decrypting an entire workspace (500 entries) takes under 5 ms.
+PGP has been trying to make key management practical for thirty years. Signal works because messaging is one-dimensional. The server is a relay that never processes content. Most apps aren't relays. Epicenter needs to search documents, run AI against notes, and let users recover a lost account without losing everything. The relay reads plaintext, which is what makes those features possible; if you want a server that can't read your data, self-host it.
 
 For the full argument:
 
+- [Trust model](/docs/trust-model.md): what the relay sees, the metadata it still sees, and the two deployments
+- [Don't Encrypt the Data, Don't Hold It](/docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md): why the encryption layer was removed and the anchor direction
 - [Why E2E Encryption Keeps Failing](/docs/articles/why-e2e-encryption-keeps-failing.md): PGP, Signal, and the structural problem
 - [Let the Server Handle Encryption](/docs/articles/let-the-server-handle-encryption.md): the pragmatic alternative
 - [If You Don't Trust the Server, Become the Server](/docs/articles/if-you-dont-trust-the-server-become-the-server.md): self-hosting as the clean answer
-- [Encrypted Workspace Storage spec](/specs/20260213T005300-encrypted-workspace-storage.md): implementation details
 
 ## Architecture
 
 ```
 Cloudflare Workers
-├── Hono app (src/app.ts)
-│   ├── /auth/*          Better Auth (email/password, Google OAuth, OAuth provider)
-│   ├── /ai/chat         AI streaming (OpenAI, Anthropic via @tanstack/ai)
-│   └── /rooms/:room     Yjs sync (WebSocket upgrade or HTTP)
+├── Hono app (worker/index.ts)
+│   ├── /auth/*                Better Auth (social OAuth, OAuth provider)
+│   ├── /api/session           the principal projection
+│   ├── /v1/*                  OpenAI-compatible chat and STT gateways
+│   ├── /api/blobs             content-addressed blob store (presigned S3)
+│   ├── /api/billing/*         Autumn (hosted-only, worker/billing/)
+│   └── /api/store/v1/sync     store sync upgrade (mountStoreSyncApp)
 │
-└── Room (Durable Object, SQLite-backed)
-    └── Per-user Yjs document for any app-owned room id
+├── StoreAuthority (Durable Object, SQLite-backed)
+│   └── One opaque log per (principal, application id)
 ```
 
 API keys for AI providers are environment secrets (`wrangler secret put`). They never leave the hub. The client sends a session token, the hub validates it and swaps in the real key before forwarding to the provider.
 
 ## Development
 
-Prerequisites: Bun, local PostgreSQL, and Infisical CLI access to the API dev
-environment. `dev:local` exports secrets from Infisical before Wrangler starts,
-so Postgres alone is not enough.
+Prerequisites: Bun, local PostgreSQL, and Infisical CLI authentication
+(`infisical login`). `bun run dev` pipes secrets from Infisical's dev
+environment into Wrangler via `process.env`, so Postgres alone is not enough.
+This package owns the hosted API `.infisical.json`; account-wide operator
+commands live in `ops`. The monorepo root intentionally has no Infisical config.
 
 ### Local Postgres setup
 
@@ -101,25 +144,60 @@ There are three layers, each with a different URL source:
 
 | Layer | Source | Used by |
 |---|---|---|
-| Local dev (runtime) | `wrangler.jsonc` Hyperdrive `localConnectionString` | `bun dev:local` (wrangler) |
-| Local dev (drizzle-kit) | `DATABASE_URL` from `.dev.vars` (generated from Infisical dev env) | `db:push:local`, `db:studio:local` |
+| Local dev (runtime) | `wrangler.jsonc` Hyperdrive `localConnectionString` | `bun dev` (wrangler) |
+| Local dev (drizzle-kit) | `LOCAL_DATABASE_URL` parsed from `wrangler.jsonc` | `db:push:local`, `db:studio:local` |
 | Remote admin | `DATABASE_URL` injected by `infisical run` | `db:migrate:remote`, `db:studio:remote` |
 
-`dev:local` regenerates `.dev.vars` from Infisical's dev environment on every run. Infisical dev has `DATABASE_URL` set to the local Postgres URL, so `.dev.vars` always points to local. Remote database commands use `infisical run` and should be treated as admin operations, not dev mode.
+`bun run dev` runs `infisical run -- wrangler dev` with a local-only `--var` override for `API_PUBLIC_ORIGIN`. Wrangler reads required auth bindings from the spawned process via the `secrets.required` config, including `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, so local OAuth uses the Google client stored in Infisical's dev environment. No `.dev.vars` file is produced. Remote database commands use `infisical run` against the prod environment and should be treated as admin operations, not dev mode.
 
 ### Running the server
 
 ```bash
-bun dev:local        # Local dev server (uses local Postgres)
+bun dev              # Local dev server (uses local Postgres)
+bun run smoke:local  # Runtime-parity smoke with dev auth and fake local env
 bun deploy           # Deploy to Cloudflare Workers
 bun run typecheck    # Type check
 bun test             # Run tests
 ```
 
+`smoke:local` is the no-Infisical verification path. It starts `server.dev.ts`,
+runs `apps/api/scripts/smoke.ts`, keeps its server log and data directory under a
+temporary directory, and skips the blob leg unless `BLOBS_S3_*` points at a
+local S3-compatible store.
+
+### Local blob storage
+
+Blob storage is optional: omit `BLOBS_S3_*` and the blob routes answer `503
+StorageNotConfigured` while everything else runs. To exercise blobs locally, run
+a real S3-compatible store alongside the server. `compose.yaml` starts
+[versitygw](https://github.com/versity/versitygw) (an S3 API over a plain folder)
+and creates the `epicenter-blobs` bucket:
+
+```bash
+docker compose up -d
+```
+
+Then set the `BLOBS_S3_*` values from `.env.example` (endpoint
+`http://localhost:7070`). Your blobs land as ordinary files under
+`.data/blobs/epicenter-blobs/`.
+
+Browser replicas upload and download through short-lived presigned object-store
+URLs. The bucket CORS policy must allow each trusted application origin to use
+`GET` and `PUT`, and must allow the `Content-Type` and `If-None-Match` request
+headers. This is deployment configuration, not Worker CORS: a missing
+`If-None-Match` allowance makes immutable browser uploads fail at preflight.
+
+The server runs the same portable S3 client against versitygw, Garage, AWS S3, or
+R2; the store is endpoint-as-config, so swapping it is a config change, never a
+code change. There is no filesystem blob backend in the codebase by design: the
+self-host story is "run the server next to an S3-compatible service," exactly as
+the hosted Worker runs next to R2. `apps/api/scripts/smoke.ts` exercises the full
+blob round-trip against whichever store the server points at.
+
 ### Database commands
 
 ```bash
-bun run auth:generate    # Generate Better Auth schema
+bun run auth:generate:remote # Generate Better Auth schema
 bun run db:generate      # Generate Drizzle migrations
 bun run db:push:local     # Push schema to local Postgres (dev only, use migrations for remote)
 bun run db:migrate:remote # Run migrations against remote (via Infisical)
@@ -127,8 +205,8 @@ bun run db:studio:local  # Open Drizzle Studio (local)
 bun run db:studio:remote # Open Drizzle Studio (remote, via Infisical)
 ```
 
-See `wrangler.jsonc` for Durable Object bindings, KV namespaces, and Hyperdrive (Postgres connection pool) configuration.
+See `wrangler.jsonc` for Durable Object bindings and Hyperdrive (Postgres connection pool) configuration.
 
 ## License
 
-[AGPL-3.0](../../licenses/LICENSE-AGPL-3.0). The sync server and sync protocol are AGPL so that anyone hosting a modified version shares their changes. Client libraries and apps are MIT. This follows the same pattern as Yjs (MIT core, AGPL y-redis), Liveblocks (Apache clients, AGPL server), and Bitwarden (GPL clients, AGPL server).
+[AGPL-3.0](../../licenses/LICENSE-AGPL-3.0). The apps, the shared server library, and internal glue are AGPL so that anyone hosting a modified version shares their changes. The embeddable toolkit (`data`, `workspace`, `field`, `sqlite`, `sync`, `ui`, `identity`, `chat`, `agent`, `agent-protocol`) is MIT. This follows the same pattern as Yjs (MIT core, AGPL y-redis), Liveblocks (Apache clients, AGPL server), and Bitwarden (GPL clients, AGPL server).

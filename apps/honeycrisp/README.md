@@ -1,8 +1,8 @@
 # Honeycrisp
 
-Honeycrisp is a notes app that works offline first and syncs when it can. Notes, folders, and rich text are all Yjs CRDTs—two devices can edit the same note simultaneously and converge without conflicts. Open two browser tabs and try it.
+Honeycrisp is a local-first notes app. The whole application is one Yjs document: folders and notes are rows in it, and each note's prose is a rich-text type inside the row that merges per character.
 
-Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT licensed.
+Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed.
 
 ---
 
@@ -14,72 +14,115 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 
 ### Data layer
 
-All state lives in an Epicenter workspace (`id: "epicenter.honeycrisp"`). The workspace is created once on startup, wired to IndexedDB for local persistence, and connected to a WebSocket server for real-time sync. Auth tokens and encryption keys are applied at login before any data is read or written.
+Honeycrisp declares one inert workspace over `so.epicenter.honeycrisp` (`src/lib/workspace/index.ts`) and opens it as a store the app owns:
+
+```txt
+openDevice(honeycrispWorkspace)                          sqlite-wasm in the page,
+openAccount(honeycrispWorkspace, { principalId })        durable relations in
+                                                    IndexedDB, one database
+                                                    per document
+db.tables.notes.list()                              synchronous from here on
+```
+
+The workspace names the application and the opener names which durable document it
+means and whose it is (ADR-0229 as amended by ADR-0233): one device document
+that never syncs and opens every generation, and one retained replica per
+account that also opens when the boot auth carries that principal. The root
+composes both in `src/lib/databases.ts`, and nothing else opens a store.
+
+Every build opens its own store, with no platform seam, and reaches one
+authority per signed-in account (ADR-0225/0226). The desktop host serves
+Honeycrisp's bundle and brokers its credential; it owns none of its data.
+
+**Reads are synchronous.** Opening the store is the only asynchronous thing
+the application does: it replays a durable log into one `Y.Doc` and everything
+after that is a property access. `db.notes.list()` returns rows, not a promise.
+
+**Nothing polls and nothing refreshes.** `db.notes.subscribe(...)` reports which
+rows a commit touched, and it fires for a local write, for prose typed into a
+note, and for bytes that arrived from another device alike (ADR-0221). The state
+modules re-read on that signal; there is no generation counter and no manual
+refresh anywhere.
 
 ### Rich-text editing
 
-Each note's body is a `Y.XmlFragment` stored as an attached document on the `notes` table. ProseMirror binds to it via `y-prosemirror`, giving collaborative editing for free. The editor schema covers paragraphs, headings, lists, task lists, underline, and strikethrough. Every ProseMirror transaction extracts a title, preview snippet, and word count, which are written back to the note's table row.
+A note's prose is a live type at the `body` root inside the note's own document,
+allocated when the row is created (`{ document: ['body'] }`) so two devices
+first-opening one note cannot each mint their own and lose one. `NoteBodyPane.svelte`
+reads it with `db.notes.document(noteId).get('body')` and hands it straight to
+ProseMirror through `@y/prosemirror`. There is no handle to open, nothing to
+await, and nothing to dispose.
+
+User edits extract the title, preview, and word count and write them back to the note row with an explicit `updatedAt`. Binding-origin transactions do not update metadata, so opening or remotely hydrating a note does not make it look newly edited.
 
 ### Soft deletion
 
-Notes are never removed from the CRDT—they're soft-deleted with a `deletedAt` timestamp. This matters when two devices diverge: one deletes a note while the other keeps editing it. Without soft deletion, the CRDT has no way to represent "deleted but also modified." With it, you can restore the note and keep the edits. Soft-deleted notes appear in "Recently Deleted" where you can restore or permanently remove them.
+Normal deletion is soft deletion: the note row gets a `deletedAt` timestamp and appears in Recently Deleted. Permanent deletion removes the canonical row and revokes its document lease.
 
-### Auth
+### Auth and sync
 
-Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted across reloads. Encryption keys are applied on login before the workspace connects.
+Sign-in is optional and never a door: the app opens against local storage and
+works completely signed out. Signing in attaches sync, and that is the whole of
+the sharing model. Every device signed into one account dials one authority
+(`principals/<id>/stores/so.epicenter.honeycrisp`) and converges; there is
+nothing to pair, invite, or approve.
+
+`src/lib/sync.ts` is Honeycrisp's entire share of the transport: a URL.
+Reconnecting on close, reconnecting when the client is stuck behind a gap,
+putting the cursor in the URL and watching for a submission nobody answers are
+all the library's, because every one of them is correctness rather than
+transport (ADR-0222).
 
 ---
 
 ## Workspace schema
 
-**Workspace ID:** `epicenter.honeycrisp`
+**Workspace ID:** `epicenter-honeycrisp`
 
 ### Tables
 
 **`folders`**
 | Field | Type |
 |---|---|
-| `id` | `FolderId` |
+| `id` | `string` (runtime-minted) |
 | `name` | `string` |
-| `icon` | `string` (optional) |
+| `icon` | `string \| null` |
 | `sortOrder` | `number` |
-| `_v` | version |
 
-**`notes`** (v2, migrated from v1)
+**`notes`**
 | Field | Type |
 |---|---|
-| `id` | `NoteId` |
-| `folderId` | `FolderId` (optional) |
+| `id` | `string` (runtime-minted) |
+| `folderId` | `string \| null` |
 | `title` | `string` |
 | `preview` | `string` |
 | `pinned` | `boolean` |
-| `createdAt` | `number` |
-| `updatedAt` | `number` |
-| `deletedAt` | `number` (optional, soft delete) |
-| `wordCount` | `number` (optional) |
+| `createdAt` | `string.date.iso` |
+| `updatedAt` | `string.date.iso` |
+| `deletedAt` | `string.date.iso \| null` (soft delete) |
+| `wordCount` | `number \| null` |
 
-Each note's body lives in a separate Y.Doc opened by a per-row content-doc factory (a dedicated `defineDocument` keyed on the row's content guid). The factory yields a `Y.XmlFragment` that ProseMirror binds to; updates flow back through `onUpdate` to refresh the row's title/preview/word count.
+A workspace has no optional fields: a field has to be one type through the CRDT
+attribute, the projection column and the row alike, and "absent" is not a SQL
+type. So what would have been optional is nullable with a `= null` default,
+which a read applies and a write never stores.
 
-The v1→v2 migration adds `deletedAt` and `wordCount`.
+Each note's prose lives at the `body` root inside that note's document. The
+application names the root and picks its format; Epicenter allocates the
+container with the row, collects it with the row, and never looks inside.
 
-### KV
-
-| Key | Type |
-|---|---|
-| `selectedFolderId` | `FolderId` |
-| `selectedNoteId` | `NoteId` |
-| `sortBy` | `'dateEdited' \| 'dateCreated' \| 'title'` |
+Honeycrisp has no KV schema. View selection, sorting, and URL state live in the Svelte state layer.
 
 ---
 
 ## Other features
 
-- **Pin/unpin**—pinned notes sort to the top of the list.
-- **Folder deletion**—re-parents all notes in the folder to unfiled, keeping data intact.
-- **Sorting**—by date edited, date created, or title.
-- **Search**—filters by title and preview content.
-- **Keyboard shortcuts**—`Cmd+N` (new note), `Cmd+Shift+N` (new folder).
-- **Context menus**—per-note actions: pin, move to folder, delete, restore.
+- **Pin/unpin**: pinned notes sort to the top of the list.
+- **Folder deletion**: re-parents all notes in the folder to unfiled, keeping data intact.
+- **Sorting**: by date edited, date created, or title.
+- **Search**: filters by title and preview content.
+- **Keyboard shortcuts**: `Cmd+N` (new note), `Cmd+Shift+N` (new folder).
+- **Context menus**: per-note actions: pin, move to folder, delete, restore.
 
 ---
 
@@ -91,27 +134,43 @@ Prerequisites: [Bun](https://bun.sh).
 git clone https://github.com/EpicenterHQ/epicenter.git
 cd epicenter
 bun install
-cd apps/honeycrisp
-bun dev
+bun dev:honeycrisp
 ```
 
-This starts the app dev server on port 5175. Auth and sync expect the local API on `localhost:8787`; start it from the repo root with `bun run dev:api`.
+This starts the desktop app on port 5175 alongside the local API on `localhost:8787`, which auth and sync expect. `bun dev:honeycrisp:ui` runs the browser UI without the API or Tauri shell.
+
+### Checking it actually works
+
+```bash
+bun run --cwd apps/honeycrisp evidence:runs   # against a running dev:web
+```
+
+Drives the real app in a real browser: make a note, type prose into it, reload,
+and assert both survived. The reload is the point, since the page holds an
+in-memory SQLite and IndexedDB holds what has to outlive it.
+
+### Manual two-client check
+
+Open the Honeycrisp web UI in two isolated browser profiles and sign both into
+the same account. Do not use two ordinary tabs in one profile: they share a
+storage partition (ADR-0177), so they are one device rather than two.
 
 ---
 
 ## Tech stack
 
-- [SvelteKit](https://kit.svelte.dev)—UI framework (static adapter, SSR disabled)
-- [ProseMirror](https://prosemirror.net) + [y-prosemirror](https://github.com/yjs/y-prosemirror)—collaborative rich-text editing
-- [Yjs](https://yjs.dev)—CRDT engine (Y.Doc, Y.XmlFragment)
-- [Tailwind CSS](https://tailwindcss.com)—styling
-- [Better Auth](https://better-auth.com)—authentication
-- `@epicenter/workspace`—CRDT-backed tables, versioning, E2E encryption
-- `@epicenter/svelte`—auth, workspace gate, reactive table/KV bindings
-- `@epicenter/ui`—shadcn-svelte component library
+- [SvelteKit](https://kit.svelte.dev): UI framework (static adapter, SSR disabled)
+- [ProseMirror](https://prosemirror.net) + `@y/prosemirror`: collaborative rich-text editing
+- `@y/y` 14: row-owned note body documents
+- [Tailwind CSS](https://tailwindcss.com): styling
+- [Better Auth](https://better-auth.com): authentication
+- `@epicenter/data`: the store, its transport, and the workspace vocabulary
+- `@epicenter/sync`: the bearer-in-subprotocol handshake the upgrade uses
+- `@epicenter/svelte`: auth and browser lifecycle helpers
+- `@epicenter/ui`: shadcn-svelte component library
 
 ---
 
 ## License
 
-MIT
+AGPL-3.0

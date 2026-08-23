@@ -1,6 +1,6 @@
 # Error Handling Pattern for Whispering
 
-> **Partially superseded**: The 3-layer architecture (Service → Query → Command) is still valid. However, the `createTaggedError` API examples here predate the flat `.withFields()` redesign and sealed `.withMessage()`. See `20260226T233600-tagged-error-minimal-design.md` for the current API design and the `services-layer` skill for up-to-date examples.
+> **Partially superseded**: The 3-layer architecture (Service -> Query -> Command) is still valid. However, the `createTaggedError` API examples here predate the flat `.withFields()` redesign and sealed `.withMessage()`. Shared Wellcrafted mutations are now called directly, while shared queries use `.fetch()` or `.ensure()`. See `20260226T233600-tagged-error-minimal-design.md` for the current API design and the `services-layer` skill for up-to-date examples.
 
 ## Overview
 This document defines the error handling pattern used throughout the Whispering codebase to ensure consistency and avoid redundant error wrapping.
@@ -20,7 +20,7 @@ This document defines the error handling pattern used throughout the Whispering 
 
 ### 3. Command Layer (`lib/query/commands.ts`)
 - Receives `WhisperingError` objects from the query layer
-- Passes errors directly to `notify.error.execute()` without re-wrapping
+- Passes errors directly to `notify.error()` without re-wrapping
 - Returns the error as-is for proper type flow
 
 ## Correct Pattern
@@ -65,7 +65,7 @@ getRecorderState: defineQuery({
 // In query/commands.ts
 if (startRecordingError) {
     // Pass WhisperingError directly - no re-wrapping!
-    notify.error.execute({ id: toastId, ...startRecordingError });
+    notify.error({ id: toastId, ...startRecordingError });
     return Err(startRecordingError);
 }
 ```
@@ -81,7 +81,7 @@ if (getRecorderStateError) {
         description: getRecorderStateError.message,
         action: { type: 'more-details', error: getRecorderStateError },
     });
-    notify.error.execute({ id: nanoid(), ...whisperingError.error });
+    notify.error({ id: nanoid(), ...whisperingError.error });
     return whisperingError;
 }
 ```

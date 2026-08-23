@@ -49,7 +49,6 @@ workspaces/
 | `apps/epicenter/src/lib/docs/README.md`                              | Update storage layout diagram and examples |
 | `specs/20260201T120000-simple-definition-first-workspace.md`         | Update storage layout                      |
 | `specs/20260201T120000-simple-definition-first-workspace.handoff.md` | Update storage references                  |
-| `specs/20260109T174900-epicenter-app-three-fetch-migration.md`       | Update path reference                      |
 | `packages/epicenter/src/core/schema/schema-file.ts`                  | Update JSDoc comment                       |
 
 ### Files Already Correct (no changes needed)
@@ -80,7 +79,6 @@ These files already reference `definition.json` inside the folder:
 - [ ] Update `apps/epicenter/src/lib/docs/workspace-persistence.ts` comment
 - [ ] Update `specs/20260201T120000-simple-definition-first-workspace.md`
 - [ ] Update `specs/20260201T120000-simple-definition-first-workspace.handoff.md`
-- [ ] Update `specs/20260109T174900-epicenter-app-three-fetch-migration.md`
 - [ ] Update `packages/epicenter/src/core/schema/schema-file.ts` JSDoc
 
 ## Code Changes
@@ -162,7 +160,6 @@ Implemented the consolidation of workspace definition files from `{workspaceId}.
 | `packages/epicenter/src/core/schema/schema-file.ts`                  | Updated JSDoc comment                                                                                                     |
 | `specs/20260201T120000-simple-definition-first-workspace.md`         | Updated storage layout and code examples                                                                                  |
 | `specs/20260201T120000-simple-definition-first-workspace.handoff.md` | Updated storage layout and references                                                                                     |
-| `specs/20260109T174900-epicenter-app-three-fetch-migration.md`       | Updated path reference                                                                                                    |
 
 ### Key Implementation Details
 

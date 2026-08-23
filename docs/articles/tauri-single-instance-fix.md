@@ -11,7 +11,7 @@ The culprit? Tauri's single-instance plugin treats both builds as the same app b
 Override the identifier for your dev builds using the `--config` flag:
 
 ```bash
-tauri dev --config '{"identifier": "com.whispering.app.dev"}'
+tauri dev --config '{"identifier": "so.epicenter.whispering.dev"}'
 ```
 
 That's it. Now your dev and production apps can run side by side.
@@ -29,7 +29,7 @@ Update your dev script in `apps/whispering/package.json`:
 ```json
 {
   "scripts": {
-    "dev": "bun tauri dev --config '{\"identifier\": \"com.bradenwong.whispering.dev\"}'",
+    "dev": "bun tauri dev --config '{\"identifier\": \"so.epicenter.whispering.dev\"}'",
     "build": "NODE_ENV=production vite build"
   }
 }
@@ -45,7 +45,7 @@ fn main() {
 
     #[cfg(debug_assertions)]
     {
-        context.config_mut().identifier = "com.whispering.app.dev".to_string();
+        context.config_mut().identifier = "so.epicenter.whispering.dev".to_string();
     }
 
     tauri::Builder::default()

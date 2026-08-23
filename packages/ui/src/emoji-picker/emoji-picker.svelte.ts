@@ -55,9 +55,13 @@ class EmojiPickerRootState {
 	select(emoji: string) {
 		const { name, skin } = parseValue(emoji);
 
+		const emojiEntry = emojiData.emojis[name];
+		const nativeSkin = emojiEntry?.skins[skin];
+		if (!emojiEntry || !nativeSkin) return;
+
 		const selected = {
-			emoji: emojiData.emojis[name].skins[skin].native,
-			data: emojiData.emojis[name],
+			emoji: nativeSkin.native,
+			data: emojiEntry,
 			skin,
 		};
 
@@ -78,25 +82,28 @@ class EmojiPickerRootState {
 
 		const data = emojiData.emojis[name];
 
-		if (data.skins.length === 1) {
-			this.emojiPickerState.active = {
-				emoji: data.skins[0].native,
-				data: data,
-				skin: 0,
-			};
+		if (!data) {
+			this.emojiPickerState.active = null;
 			return;
 		}
 
-		this.emojiPickerState.active = {
-			emoji: data.skins[emojiSkin].native,
-			data: data,
-			skin: emojiSkin,
-		};
+		if (data.skins.length === 1) {
+			const [firstSkin] = data.skins;
+			this.emojiPickerState.active = firstSkin
+				? { emoji: firstSkin.native, data, skin: 0 }
+				: null;
+			return;
+		}
+
+		const activeSkin = data.skins[emojiSkin];
+		this.emojiPickerState.active = activeSkin
+			? { emoji: activeSkin.native, data, skin: emojiSkin }
+			: null;
 	}
 }
 
 export function parseValue(emojiKey: string): { name: string; skin: number } {
-	const [name, skin] = emojiKey.split(':');
+	const [name = '', skin] = emojiKey.split(':');
 	return { name, skin: skin ? Number(skin) : 0 };
 }
 
@@ -188,9 +195,10 @@ class EmojiPickerSkinToneSelectorState {
 	});
 
 	get preview() {
-		if (!this.previewEmoji) return null;
+		const emoji = this.previewEmoji;
+		if (!emoji) return null;
 
-		return this.previewEmoji.skins[this.root.opts.skin.current].native;
+		return emoji.skins[this.root.opts.skin.current]?.native ?? null;
 	}
 
 	cycleSkinTone() {

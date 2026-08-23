@@ -1,56 +1,25 @@
 /**
- * @fileoverview Server-side entry for the shared skills workspace.
+ * Filesystem import and export over caller-bound Skills data.
  *
- * Exports `openSkillsNodeWorkspace`: a direct Node/Bun workspace opener with
- * NO IndexedDB / BroadcastChannel attachments and WITH `import_from_disk` /
- * `export_to_disk` actions.
- *
- * Uses the same `SKILLS_WORKSPACE_ID` guid as the browser entry, so data
- * authored on either side targets the same logical Y.Doc.
- *
- * @example
- * ```typescript
- * import { openSkillsNodeWorkspace } from '@epicenter/skills/node';
- *
- * using workspace = openSkillsNodeWorkspace({ workspaceId: 'epicenter.skills' });
- * await workspace.actions.import_from_disk({ dir: '.agents/skills' });
- * await workspace.actions.export_to_disk({ dir: '.agents/skills' });
- * ```
- *
- * @module
+ * Synchronous against the store and asynchronous against the disk, which is the
+ * honest split now: a row read is a property access on a document already in
+ * memory, and the only thing worth awaiting is a file.
  */
 
-import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-	attachPlainText,
-	defineActions,
-	defineMutation,
-	generateId,
-	onLocalUpdate,
-} from '@epicenter/workspace';
-import Type from 'typebox';
+import { InstantString } from '@epicenter/field';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, tryAsync } from 'wellcrafted/result';
-import * as Y from 'yjs';
 import { parseSkillMd } from './parse.js';
-import { referenceContentDocGuid } from './reference-content-docs.js';
 import { serializeSkillMd } from './serialize.js';
-import { skillInstructionsDocGuid } from './skill-instructions-docs.js';
-import { createSkillsActions } from './skills-actions.js';
-import type { Skill } from './tables.js';
-import { openSkills } from './workspace.js';
+import { SKILL_CONTENT, type Skill, type SkillsData } from './workspace.js';
 
-export { SKILLS_WORKSPACE_ID } from './constants.js';
-export type { Reference, Skill } from './tables.js';
-export { referencesTable, skillsTable } from './tables.js';
-
-const DirInput = Type.Object({ dir: Type.String() });
+/** Either Skills table, for the document helpers that treat them alike. */
+type SkillsTable = SkillsData['tables']['skills' | 'skillReferences'];
 
 export const SkillsIoError = defineErrors({
 	ScanDirectoryFailed: ({ dir, cause }: { dir: string; cause: unknown }) => ({
@@ -62,286 +31,261 @@ export const SkillsIoError = defineErrors({
 export type SkillsIoError = InferErrors<typeof SkillsIoError>;
 
 /**
- * Open a skills workspace for Node/Bun runtimes. No IndexedDB, no broadcast
- * channel. Callers layer their own persistence if needed. The returned
- * bundle includes `import_from_disk` and `export_to_disk` actions alongside the
- * standard read actions.
- *
- * Uses `SKILLS_WORKSPACE_ID`, the same guid as the browser entry, so
- * data parity across environments is preserved at the CRDT level.
- *
- * Child instruction and reference documents are opened per operation. Node
- * scripts do not need the browser cache's shared live identity or local
- * IndexedDB reset behavior.
+ * Import agentskills.io folders into canonical records and row documents.
+ * Frontmatter ids are portable `sourceId` payloads, never caller-selected
+ * structural record ids.
  */
-export function openSkillsNodeWorkspace({
-	workspaceId,
+export async function importSkillsFromDisk({
+	data,
+	dir,
 }: {
-	workspaceId: string;
+	data: SkillsData;
+	dir: string;
 }) {
-	const doc = openSkills({ workspaceId });
-	const { tables } = doc;
-
-	function openInstructionsDoc(skillId: string) {
-		const ydoc = new Y.Doc({
-			guid: skillInstructionsDocGuid({ workspaceId, skillId }),
-			gc: false,
-		});
-		onLocalUpdate(ydoc, () =>
-			tables.skills.update(skillId, { updatedAt: Date.now() }),
-		);
-		return {
-			ydoc,
-			instructions: attachPlainText(ydoc),
-			whenReady: Promise.resolve(),
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	}
-
-	function openReferenceDoc(referenceId: string) {
-		const ydoc = new Y.Doc({
-			guid: referenceContentDocGuid({ workspaceId, referenceId }),
-			gc: false,
-		});
-		onLocalUpdate(ydoc, () =>
-			tables.references.update(referenceId, { updatedAt: Date.now() }),
-		);
-		return {
-			ydoc,
-			content: attachPlainText(ydoc),
-			whenReady: Promise.resolve(),
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	}
-
-	const readActions = createSkillsActions({
-		tables,
-		async readInstructions(skillId) {
-			using handle = openInstructionsDoc(skillId);
-			await handle.whenReady;
-			return handle.instructions.read();
-		},
-		async readReference(referenceId) {
-			using handle = openReferenceDoc(referenceId);
-			await handle.whenReady;
-			return handle.content.read();
-		},
-	});
-
-	const nodeActions = defineActions({
-		/**
-		 * Scan a directory of SKILL.md files and upsert them into the workspace.
-		 *
-		 * Skills without a `metadata.id` in their frontmatter get one generated
-		 * and written back to the file, so future imports produce stable IDs
-		 * across machines. If two skills in the same batch collide on id, the
-		 * second gets a fresh one and its SKILL.md is rewritten.
-		 *
-		 * References in `references/*.md` subdirectories are imported with
-		 * deterministic IDs derived from `skillId + filename`: no ephemeral IDs,
-		 * no matching needed.
-		 */
-		import_from_disk: defineMutation({
-			description: 'Import skills from an agentskills.io-compliant directory',
-			input: DirInput,
-			handler: async ({ dir }) => {
-				const entries = await readdir(dir, { withFileTypes: true });
-				const skillDirs = entries.filter((e) => e.isDirectory());
-
-				// Phase 1: Read and parse all SKILL.md files in parallel
-				const reads = await Promise.all(
-					skillDirs.map(async (skillDir) => {
-						const skillPath = join(dir, skillDir.name);
-						const { data: rawContent } = await tryAsync({
-							try: () => readFile(join(skillPath, 'SKILL.md'), 'utf-8'),
-							catch: () => Ok(null),
-						});
-						if (rawContent === null) return null;
-
-						const { skill: parsedSkill, instructions } = parseSkillMd(
-							skillDir.name,
-							rawContent,
-						);
-						return { skillPath, parsedSkill, instructions };
-					}),
-				);
-
-				// Phase 2: Assign IDs sequentially (dedup requires ordering),
-				// then import references in parallel within each skill
-				const seenIds = new Set<string>();
-
-				for (const entry of reads) {
-					if (entry === null) continue;
-					const { skillPath, parsedSkill, instructions } = entry;
-
-					const hasUniqueId =
-						parsedSkill.id !== undefined && !seenIds.has(parsedSkill.id);
-					const skillId: string = hasUniqueId
-						? (parsedSkill.id as string)
-						: generateId();
-					seenIds.add(skillId);
-
-					const skill = {
-						...parsedSkill,
-						id: skillId,
-						updatedAt: Date.now(),
-					} satisfies Skill;
-					tables.skills.set(skill);
-
-					// Write back SKILL.md with the id baked into metadata so
-					// future imports on any machine get the same id
-					if (skillId !== parsedSkill.id) {
-						const updatedMd = serializeSkillMd(skill, instructions);
-						await writeFile(join(skillPath, 'SKILL.md'), updatedMd, 'utf-8');
-					}
-
-					{
-						await using h = openInstructionsDoc(skillId);
-						await h.whenReady;
-						h.instructions.write(instructions);
-					}
-
-					// Import references in parallel
-					const refsPath = join(skillPath, 'references');
-					const { data: refEntries } = await tryAsync({
-						try: () => readdir(refsPath),
-						catch: () => Ok(null),
-					});
-					if (refEntries !== null) {
-						const mdFiles = refEntries.filter((f) => f.endsWith('.md'));
-
-						await Promise.all(
-							mdFiles.map(async (fileName) => {
-								const refContent = await readFile(
-									join(refsPath, fileName),
-									'utf-8',
-								);
-								const refId = deriveReferenceId(skillId, fileName);
-
-								tables.references.set({
-									id: refId,
-									skillId,
-									path: fileName,
-									updatedAt: Date.now(),
-									_v: 1,
-								});
-
-								await using h = openReferenceDoc(refId);
-								await h.whenReady;
-								h.content.write(refContent);
-							}),
-						);
-					}
+	const entries = await readdir(dir, { withFileTypes: true });
+	const reads = await Promise.all(
+		entries
+			.filter((entry) => entry.isDirectory())
+			.map(async (entry) => {
+				const skillPath = join(dir, entry.name);
+				try {
+					const raw = await readFile(join(skillPath, 'SKILL.md'), 'utf8');
+					return { skillPath, ...parseSkillMd(entry.name, raw) };
+				} catch (cause) {
+					if (isNotFound(cause)) return null;
+					throw cause;
 				}
-			},
-		}),
-		/**
-		 * Serialize workspace table data to agentskills.io-compliant folders.
-		 *
-		 * One-way publish step. Run this when you want agent runtimes (Codex,
-		 * Claude Code, OpenCode) to pick up the latest skill definitions.
-		 * Stale directories for deleted skills are cleaned up automatically.
-		 */
-		export_to_disk: defineMutation({
-			description: 'Export all skills to an agentskills.io-compliant directory',
-			input: DirInput,
-			handler: async ({ dir }) => {
-				const skills = tables.skills.getAllValid();
-				const skillNames = new Set(skills.map((s) => s.name));
+			}),
+	);
+	const skillsScan = data.tables.skills.list();
+	const referencesScan = data.tables.skillReferences.list();
+	const skillsBySourceId = new Map<string, { id: string }>(
+		skillsScan.rows.map((skill) => [skill.sourceId, { id: skill.id }]),
+	);
+	// A skill this release cannot read is matched too, through its stored
+	// payload: importing over it must repair that row rather than mint a second
+	// one at a new id, and an update validates only the values it is handed
+	// (ADR-0125).
+	for (const error of skillsScan.nonconforming) {
+		const sourceId = error.raw.sourceId;
+		if (typeof sourceId === 'string' && !skillsBySourceId.has(sourceId)) {
+			skillsBySourceId.set(sourceId, { id: error.id });
+		}
+	}
+	const referencesByOwnerAndPath = new Map<string, { id: string }>(
+		referencesScan.rows.map((reference) => [
+			referenceKey(reference.skillId, reference.path),
+			{ id: reference.id },
+		]),
+	);
+	for (const error of referencesScan.nonconforming) {
+		const { skillId, path } = error.raw;
+		if (typeof skillId === 'string' && typeof path === 'string') {
+			const key = referenceKey(skillId, path);
+			if (!referencesByOwnerAndPath.has(key)) {
+				referencesByOwnerAndPath.set(key, { id: error.id });
+			}
+		}
+	}
+	const seenSourceIds = new Set<string>();
+	let created = 0;
+	let updated = 0;
 
-				// Export all skills in parallel
-				await Promise.all(
-					skills.map(async (skill) => {
-						const skillDir = join(dir, skill.name);
-						await mkdir(skillDir, { recursive: true });
-
-						await using h = openInstructionsDoc(skill.id);
-						await h.whenReady;
-						const skillMd = serializeSkillMd(skill, h.instructions.read());
-						await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
-
-						// Write references in parallel
-						const refs = tables.references.filter(
-							(r) => r.skillId === skill.id,
-						);
-						if (refs.length > 0) {
-							const refsDir = join(skillDir, 'references');
-							await mkdir(refsDir, { recursive: true });
-
-							await Promise.all(
-								refs.map(async (ref) => {
-									await using h = openReferenceDoc(ref.id);
-									await h.whenReady;
-									const text = h.content.read();
-									await writeFile(join(refsDir, ref.path), text, 'utf-8');
-								}),
-							);
-						}
-					}),
+	for (const read of reads) {
+		if (read === null) continue;
+		const proposedSourceId = read.skill.sourceId;
+		const sourceId =
+			proposedSourceId && !seenSourceIds.has(proposedSourceId)
+				? proposedSourceId
+				: crypto.randomUUID();
+		seenSourceIds.add(sourceId);
+		const input = { ...read.skill, sourceId };
+		const existing = skillsBySourceId.get(sourceId);
+		let skill: Skill;
+		if (existing) {
+			const written = data.tables.skills.update(existing.id, input);
+			if (written.error !== null) throw written.error;
+			// The write reports only that it landed; the repaired row is `get`'s
+			// answer. The import wrote every declared field, so a read that still
+			// fails means the repair did not take, which is worth failing loudly.
+			const { data: repaired, error: readError } = data.tables.skills.get(
+				existing.id,
+			);
+			if (readError !== null) {
+				throw new Error(
+					`Skill '${existing.id}' still does not read whole after import repaired it`,
+					{ cause: readError },
 				);
+			}
+			if (repaired === undefined) {
+				throw new Error(`Skill '${existing.id}' vanished during import`);
+			}
+			skill = repaired;
+			updated += 1;
+		} else {
+			// The instructions root is named with the row, so there is exactly one
+			// creator for it (ADR-0215).
+			const written = data.tables.skills.create(input, {
+				document: [SKILL_CONTENT],
+			});
+			if (written.error !== null) throw written.error;
+			skill = written.data;
+			skillsBySourceId.set(sourceId, { id: skill.id });
+			created += 1;
+		}
 
-				// Clean up stale directories in parallel
-				const scanResult = await tryAsync({
-					try: () => readdir(dir, { withFileTypes: true }),
-					catch: (error) => {
-						const isNotFound =
-							error instanceof Error &&
-							'code' in error &&
-							error.code === 'ENOENT';
-						if (isNotFound) return Ok([]);
-						return SkillsIoError.ScanDirectoryFailed({ dir, cause: error });
-					},
-				});
-				if (scanResult.error) throw scanResult.error;
+		if (sourceId !== proposedSourceId) {
+			await writeFile(
+				join(read.skillPath, 'SKILL.md'),
+				serializeSkillMd(skill, read.instructions),
+				'utf8',
+			);
+		}
+		writeDocumentText(data.tables.skills, skill.id, read.instructions);
 
-				const staleDirs = scanResult.data.filter(
-					(entry) => entry.isDirectory() && !skillNames.has(entry.name),
-				);
-				await Promise.all(
-					staleDirs.map((entry) =>
-						rm(join(dir, entry.name), { recursive: true, force: true }),
-					),
-				);
-			},
-		}),
-	});
-
-	const actions = { ...readActions, ...nodeActions };
+		const referencesPath = join(read.skillPath, 'references');
+		let referenceFiles: string[] = [];
+		try {
+			referenceFiles = (await readdir(referencesPath)).filter((name) =>
+				name.endsWith('.md'),
+			);
+		} catch (cause) {
+			if (!isNotFound(cause)) throw cause;
+		}
+		await Promise.all(
+			referenceFiles.map(async (path) => {
+				const content = await readFile(join(referencesPath, path), 'utf8');
+				const key = referenceKey(skill.id, path);
+				const existingReference = referencesByOwnerAndPath.get(key);
+				const fields = {
+					skillId: skill.id,
+					path,
+					updatedAt: InstantString.now(),
+				};
+				let referenceId: string;
+				if (existingReference) {
+					const written = data.tables.skillReferences.update(
+						existingReference.id,
+						fields,
+					);
+					if (written.error !== null) throw written.error;
+					referenceId = existingReference.id;
+				} else {
+					const written = data.tables.skillReferences.create(fields, {
+						document: [SKILL_CONTENT],
+					});
+					if (written.error !== null) throw written.error;
+					referenceId = written.data.id;
+				}
+				referencesByOwnerAndPath.set(key, { id: referenceId });
+				writeDocumentText(data.tables.skillReferences, referenceId, content);
+			}),
+		);
+	}
 
 	return {
-		get id() {
-			return doc.ydoc.guid;
-		},
-		ydoc: doc.ydoc,
-		tables,
-		kv: doc.kv,
-		actions,
-		batch: doc.batch,
-		[Symbol.dispose]() {
-			doc[Symbol.dispose]();
-		},
+		created,
+		updated,
+		nonconforming: [
+			...skillsScan.nonconforming,
+			...referencesScan.nonconforming,
+		],
 	};
 }
 
-const REFERENCE_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+/** Publish every conforming skill to agentskills.io folders. */
+export async function exportSkillsToDisk({
+	data,
+	dir,
+}: {
+	data: SkillsData;
+	dir: string;
+}) {
+	const skillsScan = data.tables.skills.list();
+	const referencesScan = data.tables.skillReferences.list();
+	const skillNames = new Set(skillsScan.rows.map((skill) => skill.name));
+	await Promise.all(
+		skillsScan.rows.map(async (skill) => {
+			const skillDir = join(dir, skill.name);
+			await mkdir(skillDir, { recursive: true });
+			await writeFile(
+				join(skillDir, 'SKILL.md'),
+				serializeSkillMd(skill, readDocumentText(data.tables.skills, skill.id)),
+				'utf8',
+			);
+			const references = referencesScan.rows.filter(
+				(reference) => reference.skillId === skill.id,
+			);
+			if (references.length === 0) return;
+			const referencesDir = join(skillDir, 'references');
+			await mkdir(referencesDir, { recursive: true });
+			await Promise.all(
+				references.map((reference) =>
+					writeFile(
+						join(referencesDir, reference.path),
+						readDocumentText(data.tables.skillReferences, reference.id),
+						'utf8',
+					),
+				),
+			);
+		}),
+	);
+
+	let staleNames: string[] = [];
+	try {
+		staleNames = (await readdir(dir, { withFileTypes: true }))
+			.filter((entry) => entry.isDirectory() && !skillNames.has(entry.name))
+			.map((entry) => entry.name);
+	} catch (cause) {
+		if (!isNotFound(cause)) {
+			throw SkillsIoError.ScanDirectoryFailed({ dir, cause }).error;
+		}
+	}
+	await Promise.all(
+		staleNames.map((name) =>
+			rm(join(dir, name), { recursive: true, force: true }),
+		),
+	);
+	return {
+		exported: skillsScan.rows.length,
+		nonconforming: [
+			...skillsScan.nonconforming,
+			...referencesScan.nonconforming,
+		],
+	};
+}
 
 /**
- * Derive a deterministic 10-char ID from `skillId + reference path`.
+ * Replace one row's markdown whole, in a single operation.
  *
- * Uses SHA-256, then maps each byte to the same `[a-z0-9]` alphabet
- * used by `generateId()`. Renaming a reference file naturally creates
- * a new ID. The old file is conceptually a different reference.
+ * One delta rather than a delete followed by an insert: `applyDelta` opens its
+ * own transaction, so two calls would publish an empty document to every peer
+ * in between. It is still a wholesale replace, which is what importing a file
+ * means; a person's typing goes through the editor's own incremental binding.
+ *
+ * A row that vanished between the read and here writes nothing rather than
+ * reviving an address that no longer holds a skill.
  */
-function deriveReferenceId(skillId: string, path: string): string {
-	const hash = createHash('sha256').update(`${skillId}:${path}`).digest();
-	let result = '';
-	for (let i = 0; i < 10; i++) {
-		const byte = hash[i] ?? 0;
-		result += REFERENCE_ID_ALPHABET[byte % REFERENCE_ID_ALPHABET.length];
-	}
-	return result;
+function writeDocumentText(
+	table: SkillsTable,
+	rowId: string,
+	value: string,
+): void {
+	const content = table.document(rowId)?.get(SKILL_CONTENT);
+	if (content === undefined) return;
+	content.applyDelta(
+		content.change.delete(content.length).insert(value) as never,
+	);
+}
+
+function readDocumentText(table: SkillsTable, rowId: string): string {
+	return table.document(rowId)?.get(SKILL_CONTENT).toString() ?? '';
+}
+
+function referenceKey(skillId: string, path: string): string {
+	return `${skillId} ${path}`;
+}
+
+function isNotFound(cause: unknown): boolean {
+	return cause instanceof Error && 'code' in cause && cause.code === 'ENOENT';
 }

@@ -8,21 +8,11 @@ metadata:
 
 # Styling Guidelines
 
-## Reference Repositories
-
-- [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte) — Port of shadcn/ui for Svelte with Bits UI primitives
-- [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras) — Additional components for shadcn-svelte
-- [Svelte](https://github.com/sveltejs/svelte) — Svelte 5 framework
-
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Write Tailwind/CSS for UI components in this repo.
-- Decide whether a wrapper element is necessary or can be removed.
-- Style interactive disabled states using HTML `disabled` and Tailwind variants.
-- Replace JS click guards with semantic disabled behavior.
-- Build scrollable content areas inside flex columns, resizable panes, or split layouts.
+When styling depends on shadcn-svelte structure, class merging, variants, Bits UI
+composition, or local wrapper behavior, read
+[ui-design's component-system reference](../ui-design/references/component-system.md)
+for upstream grounding. Ordinary Tailwind utilities and the repo-local layout
+rules below need no external lookup.
 
 ## Minimize Wrapper Elements
 
@@ -51,10 +41,29 @@ This principle applies to all elements where the styling doesn't conflict with t
 ## Tailwind Best Practices
 
 - Use the `cn()` utility from `$lib/utils` for combining classes conditionally
-- Prefer utility classes over custom CSS
+- Prefer utility classes over custom CSS for local layout and state
+- Prefer shared scale and semantic-token utilities over arbitrary bracketed values and raw colors
 - Use `tailwind-variants` for component variant systems
 - Follow the `background`/`foreground` convention for colors
 - Leverage CSS variables for theme consistency
+
+## Shared Primitive Overrides
+
+When styling a local `@epicenter/ui` primitive, use `ui-design`'s component-system reference. Tailwind classes on shared primitives should usually express parent layout or product state, not redefine the primitive's visual budget.
+
+Good primitive overrides:
+
+```svelte
+<Item.Button size="sm" class="w-full justify-start text-left" />
+```
+
+Suspicious primitive overrides:
+
+```svelte
+<Item.Button size="sm" class="gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent/50" />
+```
+
+If an override repeats size, density, radius, gap, padding, typography, hover, focus, or transition classes, ask whether the primitive needs a size, variant, or semantic wrapper instead.
 
 ## Disabled States: Use HTML `disabled` + Tailwind Variants
 
@@ -62,7 +71,7 @@ When an interactive element can be non-interactive (empty section, loading state
 
 ### Why `disabled` Over JS Guards
 
-- `disabled` natively blocks clicks—no `if (!hasItems) return` needed
+- `disabled` natively blocks clicks: no `if (!hasItems) return` needed
 - Enables the `:disabled` CSS pseudo-class for styling
 - Semantically correct for accessibility (screen readers announce "dimmed" or "unavailable")
 - Tailwind's `enabled:` and `group-disabled:` variants compose cleanly
@@ -83,10 +92,10 @@ When an interactive element can be non-interactive (empty section, loading state
 
 ### Key Variants
 
-- `enabled:cursor-pointer` — pointer cursor only when clickable
-- `enabled:hover:bg-accent/50` — hover effects only when interactive
-- `group-disabled:invisible` — hide child elements (e.g., expand chevron) when parent is disabled
-- `disabled:opacity-50` — dim the element when disabled
+- `enabled:cursor-pointer`: pointer cursor only when clickable
+- `enabled:hover:bg-accent/50`: hover effects only when interactive
+- `group-disabled:invisible`: hide child elements (e.g., expand chevron) when parent is disabled
+- `disabled:opacity-50`: dim the element when disabled
 
 ### Anti-Pattern
 
@@ -102,7 +111,7 @@ The JS guard leaves `cursor-pointer` and `hover:opacity-80` active on a non-inte
 
 ## Flex Column Scroll Trap
 
-When a flex child uses `h-full` (height: 100%) but shares a flex column with siblings (headers, toolbars, footers), it computes to the *full parent height*—overflowing past siblings instead of taking the *remaining space*. The content gets clipped or pushes the layout past the viewport, and scroll areas inside never activate.
+When a flex child uses `h-full` (height: 100%) but shares a flex column with siblings (headers, toolbars, footers), it computes to the *full parent height*: overflowing past siblings instead of taking the *remaining space*. The content gets clipped or pushes the layout past the viewport, and scroll areas inside never activate.
 
 This is the single most common layout bug in this codebase. It appears whenever you have:
 
@@ -160,7 +169,7 @@ Paneforge `Pane` components set width via flex ratios but do not constrain heigh
 
 ### With ScrollArea (bits-ui)
 
-`ScrollArea.Root` renders with `position: relative` and its viewport uses `height: 100%`. This breaks the flex sizing chain—the viewport's percentage height resolves against the `relative` parent, which has no explicit height in a flex context. The content expands instead of scrolling.
+`ScrollArea.Root` renders with `position: relative` and its viewport uses `height: 100%`. This breaks the flex sizing chain: the viewport's percentage height resolves against the `relative` parent, which has no explicit height in a flex context. The content expands instead of scrolling.
 
 Two options:
 

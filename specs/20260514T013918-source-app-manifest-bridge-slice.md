@@ -13,16 +13,15 @@ Define the first source-installed app contract in TypeScript: manifest parsing p
 
 The source runtime package does not exist yet. There is no `@epicenter/app` package, no installed app loader, and no generic Epicenter Tauri shell for source apps.
 
-The shipped action and RPC model is already settled for now:
+The shipped action model is already settled for now:
 
 ```txt
 actions
   defineActions({...})
   flat snake_case keys
 
-remote dispatch
-  collab.dispatch(action, input, { to: connId, signal })
-  RPC rows stored in Yjs state
+generic peer dispatch
+  no current collaboration surface
 ```
 
 This slice must not change that model. The bridge is for trusted same-device SPAs calling Tauri commands. If a later operation needs scripts, agents, CLI, peers, or workers, a later spec can promote it into a flat snake_case action.

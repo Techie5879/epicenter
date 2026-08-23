@@ -1,6 +1,6 @@
 ---
 name: collapse-pass
-description: "Run a continuous collapse-and-simplify pass that surgically removes indirection failing to earn its boundary. Use when the user says 'collapse pass', 'simplify pass', 'reduce indirection', 'shrink the surface', 'find what to delete', when asking to audit a package for dead abstractions, or when the goal is a sequence of small refactor commits that delete more than they add. Pairs with code-audit (smell catalog), refactoring (per-change mechanics), one-sentence-test (cohesion gate), cohesive-clean-breaks (deep redesigns), approachability-audit (first-read sanity), and post-implementation-review (second-read after each commit)."
+description: "Run a continuous collapse-and-simplify pass that surgically removes indirection failing to earn its boundary. Use when the user says 'collapse pass', 'simplify pass', 'simplify this', 'reduce indirection', 'shrink the surface', 'find what to delete', when asking to audit a package for dead abstractions, when reviewing a pull request, branch, or recent merged change for simplification (isolated in a worktree), or when the goal is a sequence of small refactor commits that delete more than they add. When the target is the branching inside one function rather than a surface spanning files, use control-flow instead."
 metadata:
   author: epicenter
   version: '1.0'
@@ -10,7 +10,7 @@ metadata:
 
 A collapse pass is a session-long sequence of small commits that each delete one piece of indirection. Every commit must shrink the public surface, the file count, the call-graph depth, or the first-read effort. If a commit moves none of those needles, revert it and find a deeper smell.
 
-> **Related skills**: [code-audit](../code-audit/SKILL.md) lists the codebase-specific smell categories with grep patterns. [refactoring](../refactoring/SKILL.md) owns the per-change mechanics (caller counting, inlining, surgical commits). [one-sentence-test](../one-sentence-test/SKILL.md) is the cohesion gate for each candidate file. [cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md) covers the deeper redesigns when a collapse won't fit in one commit. [approachability-audit](../approachability-audit/SKILL.md) checks the diff from a stranger's perspective. [post-implementation-review](../post-implementation-review/SKILL.md) is the second-read protocol after each commit.
+> **Related skills**: [code-audit](../code-audit/SKILL.md) lists the codebase-specific smell categories with grep patterns. [refactoring](../refactoring/SKILL.md) owns the per-change mechanics (caller counting, inlining, surgical commits). [one-sentence-test](../one-sentence-test/SKILL.md) is the cohesion gate for each candidate file. [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md) covers the deeper redesigns when a collapse won't fit in one commit. [post-implementation-review](../post-implementation-review/SKILL.md) is the second-read protocol after each commit, and its first-read pass checks the diff from a stranger's perspective.
 
 ## References
 
@@ -21,10 +21,17 @@ Load on demand:
 - For the operating principle that decides hard cases, read [references/library-refusal.md](references/library-refusal.md).
 - For the per-checkpoint surface format and the stop-time final report shape, read [references/report-format.md](references/report-format.md).
 - For a thin `/goal` template that invokes this skill, read [references/goal-template.md](references/goal-template.md).
+- For Epicenter's repeatable monorepo maintenance pass, read [references/periodic-monorepo-pass.md](references/periodic-monorepo-pass.md).
 
 ## Operating principle
 
 When a library refuses your model, treat the refusal as information about the model, not as friction to route around. If a "simplification" requires reimplementing a library's public surface, stop and delete the model instead.
+
+When preserving a promise keeps a second system alive, run
+[asymmetric-wins](../asymmetric-wins/SKILL.md). A collapse pass may sacrifice a
+small amount of fidelity, compatibility, reproducibility, or rare-mode support
+when the product sentence survives and the deletion removes a disproportionate
+implementation family. Name the refused promise before editing.
 
 ## Per-iteration ritual
 
@@ -60,6 +67,25 @@ After each commit, at least one must be true:
 
 If none is true, the change was cosmetic. Revert and find a deeper smell.
 
+## Implementation Gate
+
+When a collapse pass follows a fresh implementation, do not limit the review to
+symbols that existed before the change. New code is often the easiest place to
+remove indirection. Check every new helper, component, wrapper, prop callback,
+options object, and file split before declaring the implementation done.
+
+Use this quick table before staging:
+
+```txt
+boundary             callers  earns itself by
+WidgetHost           1        owns resource and widget lifetime
+WidgetView           1        no, only passes a stable handle
+```
+
+One-caller boundaries can stay when they isolate a lifecycle, unsafe boundary,
+public contract, or long imperative phase. They should collapse when they only
+pass through stable handles, callbacks, or values that the caller already owns.
+
 ## Pause and surface to the user
 
 Stop and ask before:
@@ -91,3 +117,34 @@ A goal that invokes this skill should say:
 - **Starting target**: usually the narrowest surface first (e.g. `packages/auth` before `apps/api`)
 
 Everything else (the ritual, gate, finding format, never-touch list, report shape) is in this skill.
+
+## On a PR or branch diff
+
+When the target is a pull request, a branch, or a recent merged change rather
+than a working package, the ritual above is unchanged; only the scoping differs.
+
+1. Isolate the change in a worktree by default. Do not reset the user's active
+   checkout.
+
+   ```bash
+   # GitHub PR number
+   git fetch origin pull/<number>/head:pr-<number>-collapse
+   git worktree add ../epicenter-pr-<number>-collapse pr-<number>-collapse
+   # or a named branch (slug: replace slashes with hyphens)
+   git fetch origin <branch>:<branch>-collapse
+   git worktree add ../epicenter-<branch-slug>-collapse <branch>-collapse
+   ```
+
+2. Compute scope with `git diff --name-only <base>...HEAD`. Infer the base from
+   PR metadata, the upstream tracking branch, or `origin/main`, in that order.
+3. Read changed files first, then direct callers and tests. Run the
+   per-iteration ritual and anti-cosmetic gate exactly as above. List every file
+   read as an ASCII tree before analysis.
+4. Do not stage, commit, push, or open a PR unless the user asks. Do not leave
+   the worktree dirty without reporting its path and state.
+5. Finish with [post-implementation-review](../post-implementation-review/SKILL.md)
+   and targeted `bun test` / `bun run typecheck` on impacted packages.
+
+When the user asks for an outside review prompt, use
+[handoff](../handoff/SKILL.md) to draft one bounded question with the exact diff
+or file paths the reviewer needs.

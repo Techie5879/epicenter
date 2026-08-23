@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { cn } from '@epicenter/ui/utils';
 	import { page } from '$app/state';
-	import { NAV_ITEMS } from '$lib/constants/ui';
+	import { NAV_ITEMS } from './nav-items';
 </script>
 
+<!-- Keep mobile app chrome below Dialog/Drawer z-40 and AlertDialog z-50. -->
 <nav
-	class="bg-sidebar border-sidebar-border fixed inset-x-0 bottom-0 z-50 flex h-14 items-center gap-1 border-t px-1"
+	class="bg-sidebar border-sidebar-border fixed inset-x-0 bottom-0 z-30 flex h-14 items-center gap-1 border-t px-1"
 >
 	{#each NAV_ITEMS as item}
 		{@const active = item.isActive(page.url.pathname)}

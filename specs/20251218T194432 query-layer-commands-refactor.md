@@ -1,5 +1,7 @@
 # Query Layer Commands Refactor Plan
 
+> Historical note: this plan predates the current Wellcrafted query API. Keep the command-placement ideas, but do not copy the old mutation call syntax. Shared mutations are now called directly, queries use `.fetch()` or `.ensure()`, and `.options` is read through a Svelte Query accessor.
+
 ## Review of Changes
 
 ### Completed Refactoring
@@ -15,7 +17,7 @@ The refactoring has been successfully implemented with the following changes:
 
 2. **Updated `/apps/whispering/src/lib/commands.ts`**
    - Simplified to only contain command metadata and callbacks
-   - Each callback now uses `rpc.commands.*.execute()` pattern
+   - Each callback now calls `rpc.commands.*()` directly
    - Removed all implementation details and direct service calls
 
 3. **Updated `/apps/whispering/src/lib/query/index.ts`**
@@ -27,8 +29,8 @@ The refactoring has been successfully implemented with the following changes:
    - Removed unused imports
 
 5. **Updated `/apps/whispering/src/routes/+page.svelte`**
-   - Changed `rpc.recordings.uploadRecording.execute({ file })` 
-   - To: `rpc.commands.uploadRecording.execute({ file })`
+   - Changed `rpc.recordings.uploadRecording({ file })`
+   - To: `rpc.commands.uploadRecording({ file })`
 
 ### Benefits Achieved
 
@@ -146,9 +148,9 @@ export const commands = {
       }
 
       if (recorderState === 'RECORDING') {
-        return stopManualRecording.execute();
+        return stopManualRecording();
       } else {
-        return startManualRecording.execute();
+        return startManualRecording();
       }
     },
   }),
@@ -167,14 +169,14 @@ export const commands = {
     mutationFn: async () => {
       const toastId = nanoid();
       
-      notify.loading.execute({
+      notify.loading({
         id: toastId,
         title: '🎙️ Preparing to record...',
         description: 'Setting up your recording environment...',
       });
 
       const { data: deviceAcquisitionOutcome, error } = 
-        await manualRecorder.startRecording.execute({ toastId });
+        await manualRecorder.startRecording({ toastId });
 
       if (error) {
         return Err(WhisperingErr({
@@ -266,25 +268,25 @@ export const commands = [
     id: 'pushToTalk',
     title: 'Push to talk',
     on: 'Both',
-    callback: () => rpc.commands.pushToTalk.execute(),
+    callback: () => rpc.commands.pushToTalk(),
   },
   {
     id: 'toggleManualRecording',
     title: 'Toggle recording',
     on: 'Pressed',
-    callback: () => rpc.commands.toggleManualRecording.execute(),
+    callback: () => rpc.commands.toggleManualRecording(),
   },
   {
     id: 'cancelManualRecording',
     title: 'Cancel recording',
     on: 'Pressed',
-    callback: () => rpc.commands.cancelManualRecording.execute(),
+    callback: () => rpc.commands.cancelManualRecording(),
   },
   {
     id: 'toggleVadRecording',
     title: 'Toggle voice activated recording',
     on: 'Pressed',
-    callback: () => rpc.commands.toggleVadRecording.execute(),
+    callback: () => rpc.commands.toggleVadRecording(),
   },
   ...(window.__TAURI_INTERNALS__
     ? ([
@@ -292,13 +294,13 @@ export const commands = [
           id: 'toggleCpalRecording',
           title: 'Toggle CPAL recording',
           on: 'Pressed',
-          callback: () => rpc.commands.toggleCpalRecording.execute(),
+          callback: () => rpc.commands.toggleCpalRecording(),
         },
         {
           id: 'cancelCpalRecording',
           title: 'Cancel CPAL recording',
           on: 'Pressed',
-          callback: () => rpc.commands.cancelCpalRecording.execute(),
+          callback: () => rpc.commands.cancelCpalRecording(),
         },
       ] as const satisfies SatisfiedCommand[])
     : []),
@@ -356,7 +358,7 @@ uploadRecording: defineMutation({
     
     // Use the shared pipeline
     const toastId = nanoid();
-    await rpc.commands.processRecordingPipeline.execute({
+    await rpc.commands.processRecordingPipeline({
       blob: audioBlob,
       toastId,
       completionTitle: '📁 File uploaded successfully!',
@@ -370,7 +372,7 @@ uploadRecording: defineMutation({
 
 ## Benefits of This Refactoring
 
-1. **Consistency**: All commands follow the RPC pattern with `.execute()` calls
+1. **Consistency**: All commands follow the RPC pattern with direct mutation calls
 2. **Testability**: Commands can be tested independently as mutations
 3. **Reusability**: The `processRecordingPipeline` function can be used by any command that produces audio
 4. **Type Safety**: Commands return proper `Result<T, E>` types

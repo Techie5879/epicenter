@@ -4,7 +4,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
+import type { TranscriptionServiceId } from '$lib/services/transcription/providers';
 
 export const AnalyticsError = defineErrors({
 	LogEventFailed: ({ cause }: { cause: unknown }) => ({
@@ -13,9 +13,6 @@ export const AnalyticsError = defineErrors({
 	}),
 });
 export type AnalyticsError = InferErrors<typeof AnalyticsError>;
-
-// Use the TranscriptionServiceId type directly
-type TranscriptionServiceId = (typeof TRANSCRIPTION_SERVICE_IDS)[number];
 
 // Settings sections that can be logged
 type SettingsSection =
@@ -32,12 +29,12 @@ type SettingsSection =
  * No personal data or user-generated content is ever collected.
  */
 export type Event =
-	// Application lifecycle
+	// App lifecycle
 	| { type: 'app_started' }
 	// Recording completion events - always include blob_size, duration when available
 	| { type: 'manual_recording_completed'; blob_size: number; duration?: number }
 	| { type: 'vad_recording_completed'; blob_size: number; duration?: number }
-	| { type: 'file_uploaded'; blob_size: number }
+	| { type: 'file_import_completed'; blob_size: number }
 	// Transcription events
 	| { type: 'transcription_requested'; provider: TranscriptionServiceId }
 	| {
@@ -48,8 +45,8 @@ export type Event =
 	| {
 			type: 'transcription_failed';
 			provider: TranscriptionServiceId;
-			error_title: string;
-			error_description?: string;
+			error_name: string;
+			error_message?: string;
 	  }
 	// Compression events
 	| {

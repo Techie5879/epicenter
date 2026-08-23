@@ -17,7 +17,8 @@
 	bind:this={ref}
 	data-slot="table-cell"
 	class={cn(
-		'whitespace-nowrap bg-clip-padding p-2 align-middle [&:has([role=checkbox])]:pe-0',
+		'cn-table-cell',
+		'bg-clip-padding [&:has([role=checkbox])]:pe-0',
 		variant === 'muted' && 'text-muted-foreground',
 		variant === 'numeric' && 'text-right font-mono',
 		className,

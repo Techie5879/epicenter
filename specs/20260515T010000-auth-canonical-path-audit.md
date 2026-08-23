@@ -270,7 +270,7 @@ Extension
 
 Machine
   launcher: OOB code paste
-  storage: ~/.epicenter/auth.json with 0600 mode
+  storage: env-paths('epicenter').data/auth/<host>.json with 0600 mode
   callback: hosted /auth/cli-callback page
 ```
 
@@ -305,7 +305,7 @@ Daemon is not a fourth auth path. Daemons load the machine cell and construct `c
 
 Browser and extension storage should validate exactly `PersistedAuth | null`.
 
-Machine storage should validate exactly the same shape, with file permissions enforced before parsing. Keep the filename `~/.epicenter/auth.json` unless a product decision introduces multiple accounts or multiple server profiles.
+Machine storage should validate exactly the same shape, with file permissions enforced before parsing. Keep machine auth under `env-paths('epicenter').data/auth/<host>.json`; do not reintroduce top-level `~/.epicenter` or `EPICENTER_HOME`.
 
 Old cells with the current shipped shape must migrate:
 

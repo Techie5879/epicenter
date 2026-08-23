@@ -6,47 +6,54 @@ All workflows live flat in `.github/workflows/` (GitHub Actions requirement). We
 
 | Prefix | Purpose | Scope |
 |---|---|---|
-| `release.{app}` | Tag-triggered desktop builds + GitHub Release | Per Tauri app (expensive 4-platform matrix) |
-| `pr-preview.{app}` | PR preview desktop builds | Per Tauri app (expensive 4-platform matrix) |
-| `deploy.{target}` | Web app deployment | All web apps together (cheap, fast) |
+| `release.{app}` | Tag-triggered desktop builds + GitHub Release | Per Tauri app (expensive 3-platform matrix) |
+| `pr-preview.{app}` | PR preview desktop builds | Per Tauri app (expensive 3-platform matrix) |
+| `deploy.{target}` | Web app deployment | Deployed web targets |
 | `ci.{name}` | Code quality checks | Whole repo |
 | `auto.{name}` | Automated repo maintenance | Whole repo |
 | `meta.{name}` | Repo housekeeping | Whole repo |
 
-Tauri desktop apps get **separate per-app workflows** because builds run a 4-platform matrix (macOS ARM, macOS Intel, Ubuntu, Windows) taking 20+ minutes. A PR touching only Whispering shouldn't trigger an Epicenter build.
+Tauri desktop apps get **separate per-app workflows** when their native release
+matrix earns one. Whispering no longer owns a desktop workflow: its only native
+host is Epicenter, while its independent browser build stays in Cloudflare CI.
 
-Web apps (Cloudflare Workers) deploy **together in one workflow** because deploys are fast (~2 min on a single runner) and share the same build step.
+Web apps (Cloudflare Workers) deploy **together in one workflow** because deploys are fast (~2 min on a single runner) and share the same runtime setup. Each worker's build lives in its own `wrangler.jsonc` `build.command`, which Wrangler runs for both `deploy` and `versions upload`, so production, previews, and local `wrangler deploy` build through one definition. Repo-wide lint, typecheck, and unrelated package builds belong to CI.
 
 ## Workflows
-
-### Desktop Releases
-
-| File | Trigger | What it does |
-|---|---|---|
-| `release.whispering.yml` | `v*` tags, manual | Builds Whispering for 4 platforms, publishes to GitHub Releases as draft. Includes code signing, notarization, and release notes from `docs/release-notes/`. |
-| `pr-preview.whispering.yml` | Pull requests | Builds Whispering for 4 platforms, uploads as PR artifacts. Cancels previous builds via concurrency groups. |
 
 ### Web Deployment (Cloudflare Workers)
 
 | File | Trigger | What it does |
 |---|---|---|
-| `deploy.cloudflare.yml` | Push to `main`, manual | Validates (typecheck, lint, build), then deploys Whispering + Landing to Cloudflare Workers in parallel. Posts Discord notification. |
+| `deploy.cloudflare.yml` | Push to `main`, manual | Deploys Whispering, Landing, and API to Cloudflare Workers. Each `wrangler deploy` runs that worker's `build.command` first, so a deploy can never ship stale assets. Posts Discord notification. |
 | `deploy.cloudflare-preview.yml` | Pull requests touching `apps/whispering/**`, `apps/landing/**`, `packages/**` | Uploads preview versions via `wrangler versions upload --preview-alias`. Posts PR comment with preview URLs. No cleanup needed (aliases auto-expire at 1000). |
 
 ### CI
 
+`ci.format.yml` is the merge gate, and `bun run check` is that same gate on your
+machine. Every step in it is a root script, and the structural checks arrive as
+one `check:structure` step, so a check is added or removed in `package.json` and
+nowhere else. Do not re-list the steps here or in the workflow.
+
 | File | Trigger | What it does |
 |---|---|---|
-| `ci.format.yml` | Push, pull requests | Runs `bun run lint:check` and `bun run typecheck`. |
-| `ci.autofix.yml` | Push, pull requests | Runs `bun run format` and commits fixes back via autofix-ci. |
+| `ci.format.yml` | Push to `main`, pull requests | The merge gate: `lint:ci`, `typecheck`, `test`, `check:structure`. Cancels older runs for the same branch or PR. |
+| `ci.autofix.yml` | Push to `main`, pull requests | Runs `bun run format` and commits fixes back via autofix-ci. This is why the gate does not check formatting. Cancels older runs for the same branch or PR. |
+| `ci.runtime-parity.yml` | Push to `main`, pull requests | Boots the Bun runtime port against Postgres and a local S3 and runs the API smoke. Needs Docker, so it runs on a GitHub-hosted runner and stays out of the main gate. |
+
+Two things stay off the gate deliberately. Formatting, because autofix owns it.
+And `bun run check:doc-hygiene`, whose ADR-staleness rule is time-based, so a
+pull request that changed nothing can go red on a calendar day; it is a review
+command, not a merge blocker. Anything needing live credentials or a network
+endpoint gets its own workflow on its own trigger, as the two below do.
 
 ### Automation
 
 | File | Trigger | What it does |
 |---|---|---|
-| `auto.label-issues.yml` | Issues opened/edited | Uses Claude to auto-label issues by type, priority, platform, and area. |
 | `auto.release.yml` | PR merged to `main` | Bumps version, collects `## Changelog` entries from merged PRs, commits release, tags, creates GitHub Release with grouped changelog. |
-| changesets (manual) | Manual | `bunx changeset version` + `bunx changeset publish`. `@changesets/action` will automate this later. |
+| `local-mail.gmail-drift.yml` | Weekly (Mondays 12:00 UTC), manual | Fetches Gmail's Discovery document and asserts the methods and fields `apps/local-mail` reads still exist. A network call, so it never gates a PR. |
+| npm release (manual) | Manual | `bun run release` (`changeset version` + `scripts/publish-packages.ts`). See "Package Releases (npm)" below. `@changesets/action` will automate this later. |
 
 ## Package Releases (npm)
 
@@ -57,19 +64,20 @@ We use [changesets](https://github.com/changesets/changesets) to version and pub
 | Package | npm name | Published |
 |---|---|---|
 | `packages/workspace` | `@epicenter/workspace` | yes |
-| `packages/cli` | `@epicenter/cli` | yes |
 | `packages/sync` | `@epicenter/sync` | yes |
 | `packages/filesystem` | `@epicenter/filesystem` | yes |
 | `packages/skills` | `@epicenter/skills` | yes |
 | `packages/ui` | `@epicenter/ui` | yes |
-| `packages/svelte-utils` | `@epicenter/svelte` | yes |
-| `packages/ai` | `@epicenter/ai` | no (private) |
+| `packages/field` | `@epicenter/field` | yes |
+| `packages/identity` | `@epicenter/identity` | yes |
+| `packages/svelte-utils` | `@epicenter/svelte` | yes (see note) |
 | `packages/constants` | `@epicenter/constants` | no (private) |
-| `packages/vault` | `@epicenter/vault` | no (private) |
 
 ### Fixed version group
 
-All seven public packages share one version number, configured via the `fixed` array in `.changeset/config.json`. When any one of them changes, all seven bump together. This keeps the ecosystem coherent: if you install `@epicenter/workspace@0.3.0`, you know `@epicenter/cli@0.3.0` is the matching release.
+The framework closure shares one version number, configured via the `fixed` array in `.changeset/config.json`: `sync`, `skills`, `field`, and `identity`. When any one of them changes, all of them bump together. This keeps the ecosystem coherent: if you install `@epicenter/sync@0.3.0`, you know `@epicenter/identity@0.3.0` is the matching release.
+
+Packages published outside that group (`workspace`, `filesystem`, `ui`, `svelte`) version independently.
 
 ### Day-to-day: adding a changeset
 
@@ -87,65 +95,62 @@ Don't skip this step. Without a changeset, the change won't appear in the CHANGE
 
 When you're ready to publish accumulated changesets:
 
-1. Bump versions and write CHANGELOGs:
+1. Verify the packed manifests first (no upload):
    ```bash
-   bunx changeset version
+   bun run release:dry-run
    ```
+   This packs every public package and fails if any tarball still carries an
+   unresolved `catalog:` or `workspace:` string.
 
-2. Commit the result:
+2. Cut the release (bump versions and changelogs, then pack, upload, and tag):
+   ```bash
+   bun run release
+   ```
+   `release` runs `changeset version` followed by `scripts/publish-packages.ts`,
+   which publishes each not-yet-published version with `bun publish --access
+   public` and creates a local `name@version` tag per package.
+
+3. Commit the version bump and push everything:
    ```bash
    git add . && git commit -m "chore: release vX.Y.Z"
-   ```
-
-3. Publish to npm and create git tags:
-   ```bash
-   bunx changeset publish
-   ```
-
-4. Push commits and tags:
-   ```bash
    git push && git push --tags
    ```
+
+### Why bun publish, not changeset publish
+
+`bun publish` resolves bun-only dependency protocols (`catalog:`,
+`workspace:*`) to concrete versions at pack time. The npm-based `changeset
+publish` does not, so it shipped `@epicenter/*@0.1.0` tarballs whose published
+deps still read `catalog:` / `workspace:*`, which 404 on a clean install. We
+keep `changeset version` (it owns version math and changelogs) but replaced
+`changeset publish` with `scripts/publish-packages.ts`.
 
 ### What not to do
 
 - Don't manually edit `version` fields in `package.json`. Changesets owns those.
-- Don't run `npm publish` or `bun publish` directly. `bunx changeset publish` handles the registry upload and git tagging together.
+- Don't run `changeset publish` (it reintroduces the unresolved-protocol bug).
+  Use `bun run release`, which publishes through `bun publish`.
+- Don't run `bun publish` by hand in a package dir without running the dry-run
+  gate first.
 
 ### Meta
 
 | File | Trigger | What it does |
 |---|---|---|
 | `meta.sponsors-readme.yml` | Daily schedule, manual | Updates README sponsors section. |
-| `meta.sync-releases.yml` | Release published/edited, manual | Mirrors releases from EpicenterHQ/epicenter to braden-w/whispering (downstream). |
-| `meta.update-readme-version.yml` | Release published, manual | Updates download link versions in Whispering README via sed. |
-
-### Uncategorized
-
-| File | Trigger | What it does |
-|---|---|---|
-| `claude.yml` | `@claude` mentions in issues/PRs | Runs Claude Code agent to respond. One-off, no prefix needed. |
 
 ## Secrets Reference
 
 | Secret | Used by | Description |
 |---|---|---|
-| `CLOUDFLARE_API_TOKEN` | `deploy.cloudflare`, `deploy.cloudflare-preview` | Cloudflare API token with Workers Scripts:Edit |
+| `CLOUDFLARE_API_TOKEN` | `deploy.cloudflare` | Production Cloudflare API token. Named `github-actions-cloudflare-deploy` in the CF dashboard (Account API Tokens). Uses the "Edit Cloudflare Workers" template (`deploy` needs zone Workers Routes for custom domains, which previews do not). |
+| `CLOUDFLARE_PREVIEW_API_TOKEN` | `deploy.cloudflare-preview` | Least-privilege Cloudflare API token for PR previews. Custom token, **Account › Workers Scripts › Edit** only (covers Static Assets; no zone/routes/KV/R2/D1), scoped to the one account. Separate from the prod token so a leak from the PR-triggered preview path cannot reach production. |
 | `CLOUDFLARE_ACCOUNT_ID` | `deploy.cloudflare`, `deploy.cloudflare-preview` | Cloudflare account ID |
 | `DISCORD_WEBHOOK_URL` | `deploy.cloudflare` | Discord webhook for deployment notifications (optional) |
-| `TAURI_SIGNING_PRIVATE_KEY` | `release.whispering`, `pr-preview.whispering` | Tauri update signing key |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | `release.whispering`, `pr-preview.whispering` | Tauri signing key password |
-| `APPLE_CERTIFICATE` | `release.whispering`, `pr-preview.whispering` | macOS code signing certificate (base64) |
-| `APPLE_CERTIFICATE_PASSWORD` | `release.whispering`, `pr-preview.whispering` | macOS certificate password |
-| `APPLE_SIGNING_IDENTITY` | `release.whispering`, `pr-preview.whispering` | macOS signing identity |
-| `APPLE_ID` | `release.whispering`, `pr-preview.whispering` | Apple ID for notarization |
-| `APPLE_PASSWORD` | `release.whispering`, `pr-preview.whispering` | Apple app-specific password |
-| `APPLE_TEAM_ID` | `release.whispering`, `pr-preview.whispering` | Apple Developer team ID |
-| `GH_ACTIONS_PAT` | `auto.release`, `meta.sync-releases`, `meta.sponsors-readme`, `meta.update-readme-version` | PAT with repo + read:org scope for pushing commits/tags and creating releases |
-| `ANTHROPIC_API_KEY` | `auto.label-issues`, `claude` | Anthropic API key for Claude |
+| `GH_ACTIONS_PAT` | `auto.release`, `meta.sponsors-readme` | PAT with repo + read:org scope for pushing commits/tags and creating releases |
 
 ## Rollback
 
 **Web apps**: Revert the commit on `main` and push, or for immediate rollback: `bunx wrangler rollback --name <worker-name>`.
 
-**Desktop releases**: Delete the draft release and re-tag from an earlier commit.
+**Desktop releases**: Follow the owning Tauri app's release workflow. Whispering has no independent desktop release to roll back.

@@ -1,6 +1,6 @@
 ---
 name: control-flow
-description: Control flow: early returns, guard clauses, linearizing nested logic. Use for "simplify this", "flatten these conditions", "too many nested ifs".
+description: 'Control flow: early returns, guard clauses, linearizing nested logic. Use for "flatten these conditions", "too many nested ifs", "linearize this try-catch", or handlers mixing throw and return. For a broad "simplify this" pass over a diff or package, use collapse-pass instead.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -12,14 +12,7 @@ When refactoring complex control flow, mirror natural human reasoning patterns:
 
 > **Related Skills**: See `refactoring` for systematic code audit methodology including branch collapsing and caller counting.
 
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Refactor nested conditionals into linear guard-clause control flow.
-- Replace mixed `throw`/`return` try-catch logic with readable early returns.
-- Name booleans and branches to read like natural human reasoning.
-- Restructure handlers so failure paths are explicit before the happy path.
+## Core Pattern
 
 1. **Ask the human question first**: "Can I use what I already have?" -> early return for happy path
 2. **Assess the situation**: "What's my current state and what do I need to do?" -> clear, mutually exclusive conditions
@@ -131,9 +124,9 @@ async ({ body, status }) => {
 
 The transformation follows the same human reasoning pattern:
 
-1. **Try the risky thing** — wrap only what can fail
-2. **Check if it failed** — early return with the appropriate error
-3. **Continue with the happy path** — the rest of the function assumes success
+1. **Try the risky thing**: wrap only what can fail
+2. **Check if it failed**: early return with the appropriate error
+3. **Continue with the happy path**: the rest of the function assumes success
 
 This eliminates the nesting, makes `return` vs `throw` consistent, and separates the error boundary from the safe code that follows it.
 
@@ -161,7 +154,7 @@ async ({ body, status }) => {
 	});
 	if (error) return status('Bad Gateway', error.message);
 
-	// Happy path — all guards passed
+	// Happy path: all guards passed
 	return toServerSentEventsResponse(stream);
 };
 ```

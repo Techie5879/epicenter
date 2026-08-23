@@ -1,12 +1,18 @@
 <script lang="ts" module>
 	import { getContext, setContext } from 'svelte';
 	import type { ToggleVariants } from '../toggle/index.js';
-	export function setToggleGroupCtx(props: ToggleVariants) {
+
+	interface ToggleGroupContext extends ToggleVariants {
+		spacing?: number;
+		orientation?: 'horizontal' | 'vertical';
+	}
+
+	export function setToggleGroupCtx(props: ToggleGroupContext) {
 		setContext('toggleGroup', props);
 	}
 
 	export function getToggleGroupCtx() {
-		return getContext<ToggleVariants>('toggleGroup');
+		return getContext<Required<ToggleGroupContext>>('toggleGroup');
 	}
 </script>
 
@@ -19,9 +25,15 @@
 		value = $bindable(),
 		class: className,
 		size = 'default',
+		spacing = 0,
+		orientation = 'horizontal',
 		variant = 'default',
 		...restProps
-	}: ToggleGroupPrimitive.RootProps & ToggleVariants = $props();
+	}: ToggleGroupPrimitive.RootProps &
+		ToggleVariants & {
+			spacing?: number;
+			orientation?: 'horizontal' | 'vertical';
+		} = $props();
 
 	// Use getters so child components receive reactive values when props change
 	setToggleGroupCtx({
@@ -30,6 +42,12 @@
 		},
 		get size() {
 			return size;
+		},
+		get spacing() {
+			return spacing;
+		},
+		get orientation() {
+			return orientation;
 		},
 	});
 </script>
@@ -41,11 +59,14 @@ get along, so we shut typescript up by casting `value` to `never`.
 <ToggleGroupPrimitive.Root
 	bind:value={value as never}
 	bind:ref
+	{orientation}
 	data-slot="toggle-group"
 	data-variant={variant}
 	data-size={size}
+	data-spacing={spacing}
+	style="--gap: {spacing}"
 	class={cn(
-		'group/toggle-group data-[variant=outline]:shadow-xs flex w-fit items-center rounded-md',
+		'cn-toggle-group group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] data-vertical:flex-col data-vertical:items-stretch',
 		className,
 	)}
 	{...restProps}

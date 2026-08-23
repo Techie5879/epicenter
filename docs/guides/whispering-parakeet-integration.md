@@ -77,22 +77,15 @@ This fallback mechanism means if we packaged full-precision models, transcribe-r
 
 ## How Whispering Calls transcribe-rs
 
-In our Tauri command, we instantiate the Parakeet engine and point it to the model directory:
+In our Tauri transcription command, the Parakeet branch instantiates the engine and points it to the model directory:
 
 ```rust
-#[tauri::command]
-pub async fn transcribe_audio_parakeet(
-    audio_data: Vec<u8>,
-    model_path: String,
+fn transcribe_parakeet(
+    samples: Vec<f32>,
+    model_path: &str,
 ) -> Result<String, TranscriptionError> {
-    // Convert audio to required format
-    let samples = extract_samples_from_wav(convert_audio_for_whisper(audio_data)?)?;
-
-    // Create engine and load model directory
     let mut engine = ParakeetEngine::new();
-    engine.load_model_with_params(&PathBuf::from(&model_path), ParakeetModelParams::int8())?;
-
-    // Transcribe
+    engine.load_model_with_params(&PathBuf::from(model_path), ParakeetModelParams::int8())?;
     let result = engine.transcribe_samples(samples, None)?;
     engine.unload_model();
 
@@ -108,7 +101,7 @@ Whispering handles Parakeet model downloads automatically through its UI. When u
 
 The download process is implemented in the [`LocalModelDownloadCard`](https://github.com/EpicenterHQ/epicenter/blob/main/apps/whispering/src/lib/components/settings/LocalModelDownloadCard.svelte) component:
 
-1. Creates the model directory: `{appDataDir}/parakeet-models/parakeet-tdt-0.6b-v3-int8/`
+1. Creates the model directory: `{appDataDir}/models/parakeet/parakeet-tdt-0.6b-v3-int8/`
 2. Downloads each file individually from the [GitHub release](https://github.com/EpicenterHQ/epicenter/releases/tag/models/parakeet-tdt-0.6b-v3-int8)
 3. Places files directly in the correct structure for transcribe-rs
 4. Shows progress for the entire download process
@@ -117,16 +110,18 @@ This approach eliminates the need for archive extraction and provides better dow
 
 ## TypeScript Bridge
 
-The Rust transcription happens through Tauri commands. Our TypeScript layer calls the Rust function:
+The Rust transcription happens through the generated Tauri command bindings. The TypeScript layer pushes an ambient config naming the selected model, then sends only a recording id per transcription:
 
 ```typescript
-const result = await invoke<string>('transcribe_audio_parakeet', {
-    audioData: Array.from(new Uint8Array(arrayBuffer)),
-    modelPath: options.modelPath,
+await commands.setTranscriptionConfig({
+    engine: 'parakeet',
+    modelName: 'parakeet-tdt-0.6b-v3-int8',
+    // language, initialPrompt, unloadPolicy...
 });
+const result = await commands.transcribeRecording(recordingId);
 ```
 
-The `modelPath` is the directory containing our extracted model files. No individual file management needed - just point to the folder and transcribe-rs handles the rest.
+The `modelName` is a folder entry name, never a path. Rust resolves it under `{appDataDir}/models/parakeet/` at load time, so the native command never needs arbitrary filesystem access and a path never exists as data anywhere in the system. Users add their own models by dropping (or symlinking) a directory into that folder; it shows up in the settings list automatically.
 
 ## Why This Works
 

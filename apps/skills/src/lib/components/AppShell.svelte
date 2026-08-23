@@ -4,15 +4,18 @@
 		CommandPalette,
 		type CommandPaletteItem,
 	} from '@epicenter/ui/command-palette';
+	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkills } from '$lib/context.js';
 	import NewSkillDialog from './dialogs/NewSkillDialog.svelte';
 	import SkillEditor from './editor/SkillEditor.svelte';
 	import SkillsList from './SkillsList.svelte';
 	import StorageBadge from './StorageBadge.svelte';
+
+	const { state: skillsState } = getSkills();
 
 	let commandPaletteOpen = $state(false);
 
@@ -39,10 +42,13 @@
 						>
 							Skills
 						</span>
-						<NewSkillDialog />
+						<div class="flex items-center gap-1">
+							<LightSwitch variant="ghost" />
+							<NewSkillDialog />
+						</div>
 					</div>
 
-					<!-- Search Trigger — opens command palette -->
+					<!-- Search Trigger: opens command palette -->
 					<div class="px-2 pt-2">
 						<Button
 							variant="outline"

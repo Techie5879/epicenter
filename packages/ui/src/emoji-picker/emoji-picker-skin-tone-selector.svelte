@@ -24,8 +24,11 @@
 	{variant}
 	{size}
 	class={cn('size-8', className)}
-	onclick={(e: Parameters<NonNullable<EmojiPickerSkinProps['onclick']>>[0]) => {
-		onclick?.(e);
+	onclick={(e) => {
+		// Button is polymorphic (button or anchor), so its onclick event is a
+		// union that the consumer's identically-typed onclick cannot be proven
+		// to accept. Forwarding it is sound; the cast just states that.
+		(onclick as ((event: typeof e) => void) | undefined)?.(e);
 		skinState.cycleSkinTone();
 	}}
 >

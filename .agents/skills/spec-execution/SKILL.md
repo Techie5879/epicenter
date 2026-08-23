@@ -1,6 +1,6 @@
 ---
 name: spec-execution
-description: Execute a spec through planned waves of parallel/sequential changes. Use for "execute this spec", "implement this plan", "run the spec", a specs/*.md file.
+description: Execute `specs/*.md` plans through working checkpoints. Use when the user says "execute this spec", "implement this plan", "run the spec", or points at a spec file.
 metadata:
   author: epicenter
   version: '1.0'
@@ -12,43 +12,63 @@ When handed a specification document (a `specs/*.md` file), execute it methodica
 
 Commits should follow the shape of the work. Commit after a wave when that wave is a natural review unit. Combine waves into one larger commit when the changes are tightly coupled. Break a large wave into smaller commits when that makes the history easier to audit. The goal is working checkpoints first, readable git history second.
 
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Implement a `specs/*.md` plan end-to-end in structured waves.
-- Decide which spec tasks run in parallel vs sequentially.
-- Update spec checkboxes and implementation notes after each wave.
-- Commit code changes together with spec progress at sensible review boundaries.
-- Finish execution by running `post-implementation-review`, setting spec status, and adding a review section.
-
 ## The Execution Loop
 
 ```
-READ SPEC
-    ↓
+PREFLIGHT SPEC
+    |
+    v
+READ ACTIVE PATH
+    |
+    v
 PLAN WAVES (which tasks are parallel vs sequential?)
-    ↓
-┌─── WAVE N ──────────────────────────────────────┐
-│  1. Execute tasks (sub-agents for ALL tasks)     │
-│  2. Verify (type-check, tests if applicable)     │
-│  3. Update spec (check off items, add notes)     │
-│  4. Commit or checkpoint, based on review shape  │
-└──────────────────────────────────────────────────┘
-    ↓
+    |
+    v
+WAVE N
+  1. Execute tasks (sub-agents when useful)
+  2. Verify (type-check, tests if applicable)
+  3. Update spec (check off items, add notes)
+  4. Commit or checkpoint, based on review shape
+    |
+    v
 REPEAT until spec is complete
-    ↓
-FINAL REVIEW (run post-implementation-review, update spec status, add review section)
+    |
+    v
+FINAL REVIEW (post-implementation-review, harvest decisions to docs/adr/, delete spent spec)
 ```
+
+Default to continuing. After a wave passes verification, move to the next
+unchecked item until the spec is complete. Ask the user only when continuing
+requires a product decision, destructive action, broad reshape, or resolving a
+conflict with current code.
+
+## Phase 0: Preflight the Spec
+
+Before planning waves, make sure the spec has a current execution path.
+
+Check:
+
+- Status: Draft or In Progress. A spec is in-flight; "done" is deletion, not a terminal status (see `specs/README.md`).
+- Supersession: whether the top of the spec points to a newer spec.
+- One Sentence: what the spec is actually about.
+- Current State and Target Shape: enough concrete code, routes, types, or file paths to start.
+- Implementation Plan: actionable tasks or waves.
+- Verification: commands, smoke tests, or grep checks that prove the work.
+- Open Questions: anything that blocks implementation.
+
+Large specs are fine. Do not split or reject a spec because it is long. Only stop to refresh the spec when the active path is unclear, stale, or mixed with unrelated reader jobs.
+
+If a spec is long but usable, write a short wave plan and proceed. If it is long and confusing, first add or update a "How to read this spec" or "Active execution path" section. That update is part of the work.
 
 ## Phase 1: Read and Understand
 
 Before touching any code:
 
-1. **Read the entire spec**: understand the full scope before planning
+1. **Read the active path first**: understand what is current before reading appendices, prompts, or historical notes
 2. **Identify the implementation phases** from the spec's Implementation Plan section
 3. **Map dependencies**: which tasks block others? Which are independent?
 4. **Check the spec's Open Questions**: resolve what you can, flag what needs human input
+5. **Scan the rest of the spec for constraints**: read decisions, rejected alternatives, and edge cases that could affect the implementation
 
 If the spec has unresolved Open Questions that block implementation, surface them immediately. Don't guess on architectural decisions.
 
@@ -60,7 +80,7 @@ Breaking API changes are allowed inside a wave. The boundary matters: by the end
 
 ### Deciding Parallel vs Sequential
 
-Every task runs in a sub-agent regardless. The question is only whether sub-agents run concurrently or one-at-a-time.
+Use sub-agents whenever the runtime permits and the task has a clean ownership boundary. The question is whether each task is small, bounded, and non-overlapping enough to delegate safely, and whether delegated tasks should run concurrently or sequentially.
 
 | Condition | Ordering |
 | --- | --- |
@@ -94,7 +114,7 @@ Wave 3: [Integration, consumers of Wave 2]
   - Commit: combine with Wave 2 if the API and consumers should be reviewed together
 ```
 
-Present this plan to the user before executing. Get a thumbs up.
+Proceed after planning. Ask first only for product choices, destructive actions, broad reshape risk, or conflicts with current code.
 
 ## Phase 3: Execute Waves
 
@@ -102,18 +122,19 @@ For each wave:
 
 ### 1. Execute Tasks
 
-**Every task gets its own sub-agent.** This is non-negotiable. Sub-agents exist to scope context. Each one sees only what it needs for its task, which produces better results than a single agent juggling everything. Parallelism is a bonus, not the reason for sub-agents.
+Use sub-agents for owned implementation work when they are available. They are strongest when each agent owns a bounded task, a clear file set, and a non-overlapping write surface. The primary agent still owns orchestration, integration, verification, spec updates, and final review.
 
-- **Independent tasks**: Launch sub-agents in parallel. Each gets a focused prompt with only the context it needs: the relevant spec section, the files to modify, and the patterns to follow.
-- **Dependent tasks**: Launch sub-agents sequentially. Wait for one to complete before launching the next. The second agent gets the output/context from the first.
-- **Keep changes minimal**: Each task should do exactly what the spec says. No bonus refactors, no "while I'm here" improvements.
+- **Independent tasks**: Launch sub-agents in parallel when write sets do not overlap. Each gets a focused prompt with only the context it needs: the relevant spec section, the files it owns, and the patterns to follow.
+- **Dependent tasks**: Launch sub-agents sequentially when one task imports from another task's output or modifies the same files. Wait for one to complete before launching the next. The second agent gets the output/context from the first.
+- **Local tasks**: Keep work local when the task is tightly coupled, urgent, too ambiguous to delegate, or likely to block the next orchestration step.
+- **Keep changes coherent**: Treat the spec as the execution spine, not a file whitelist. Implement the spec first; fix grounded correctness, verification, API, and serious clarity issues you uncover; record meaningful deviations.
 
 ### 2. Verify the Wave
 
 After all tasks in a wave complete:
 
 ```bash
-bun run tsc --noEmit          # type-check
+bun typecheck                 # repo-standard type-check
 bun test                       # if tests exist for changed code
 ```
 
@@ -143,16 +164,9 @@ If you discovered something during implementation, add it to the spec's Research
 
 Each committed unit should include BOTH the code changes AND the spec updates that describe those changes. This keeps history honest: each commit shows what was planned, what changed, and what was actually built.
 
-You do not have to create one commit per wave. Use the commit shape that best fits the review:
+You do not have to create one commit per wave; use the commit shape that best fits the review, as described at the top of this skill. If the user wants one large commit, keep intermediate working checkpoints and create one final commit at the end.
 
-| Situation | Commit Shape |
-| --- | --- |
-| Wave is a self-contained foundation or behavior change | Commit the wave |
-| Several waves are tightly coupled and make sense only together | Combine them into one larger commit |
-| One wave contains multiple independently reviewable changes | Split it into logical commits |
-| The user wants one large commit | Keep intermediate working checkpoints, then create one final commit |
-
-Follow `git` and `incremental-commits` skill conventions:
+Follow `git` and `standalone-commits` skill conventions:
 
 ```
 feat(scope): wave description, what this wave accomplishes
@@ -170,41 +184,43 @@ After all waves complete:
 1. **Run `post-implementation-review`** against the files touched by the spec.
    Use the findings to clean up stale abstractions, dead paths, invariant drift,
    naming issues, and missing verification before handoff.
-2. **Update spec status** from "In Progress" to "Implemented"
-3. **Add a Review section** at the bottom of the spec:
+2. **Harvest durable decisions into `docs/adr/`.** A spec is scaffolding, not the
+   durable record (see `specs/README.md` and the AGENTS.md routing). For each
+   load-bearing decision the work settled (an architecture or ownership choice, an
+   API shape, a rejected alternative worth not re-litigating), record it in
+   `docs/adr/`:
+   - If the spec already pointed at a `Proposed` ADR, flip it to `Accepted`.
+   - Otherwise write a new ADR using `docs/adr/README.md`. Keep it to the one
+     decision and its consequences; the spec held the exploration, the ADR holds
+     the outcome.
+   - A spec with no durable decision (a pure refactor or mechanical plan) needs no
+     ADR. Not every spec earns one.
+3. **Delete the spent spec.** Once its decisions are in ADRs and the work has
+   landed, `git rm` the spec. Git keeps the body and `docs/spec-history.md` indexes
+   it by date, so nothing is lost. Do not leave a finished spec in the tree as a
+   knowledge base; that is the pollution this workflow exists to prevent.
+4. **Verify hygiene.** Run `bun scripts/check-doc-hygiene.ts`. It must pass: no
+   spec left in the tree declaring a terminal status, no `Proposed` ADR orphaned by
+   a deleted spec. A failure means the harvest is incomplete; fix it (flip the ADR,
+   delete the spec) rather than committing the smell.
+5. **Final commit or final amend/squash** that includes the new or updated ADR and
+   the spec deletion, matching the commit strategy chosen earlier.
 
-```markdown
-## Review
-
-**Completed**: [Date]
-**Branch**: [branch-name]
-
-### Summary
-
-[2-3 sentences on what was built and how it differs from the original plan]
-
-### Deviations from Spec
-
-- [What changed and why]
-
-### Follow-up Work
-
-- [Anything discovered during implementation that should be a future spec]
-```
-
-4. **Final commit or final amend/squash** with the review section included, matching the commit strategy chosen earlier
+The durable "why" now lives in the ADR; the "what landed" narrative belongs in the
+pull request body. When writing the PR, load `git` and follow the PR narrative
+guidance there. Nothing durable stays behind in the spec.
 
 ## Sub-Agent Prompts
 
-Every task, parallel or sequential, runs in a sub-agent. The primary agent orchestrates: it plans waves, launches sub-agents, verifies results, updates the spec, and commits. It does not implement code directly.
+The primary agent orchestrates: it plans waves, launches sub-agents when useful, verifies results, updates the spec, and commits. It may implement tightly coupled or blocking work directly when delegation would add coordination cost or risk.
 
 When spinning up sub-agents, each agent needs:
 
 - **The specific spec section** it's implementing (not the whole spec)
 - **The files it should read** before making changes
-- **The files it should modify** (and only those files)
+- **The primary files it owns**
 - **The patterns to follow** (reference relevant skills)
-- **What NOT to do**: stay in lane, don't touch other files
+- **Questions that need the user**: product decisions, destructive actions, broad reshaping, or current-code conflicts
 
 Keep sub-agent prompts focused. A sub-agent that knows too much will try to do too much.
 
@@ -213,7 +229,7 @@ Keep sub-agent prompts focused. A sub-agent that knows too much will try to do t
 | Situation | Response |
 | --- | --- |
 | Type-check fails after a wave | Fix before moving on. Don't carry broken state. |
-| Sub-agent made changes outside its scope | Revert the out-of-scope changes. Keep only what was asked for. |
+| Sub-agent changed files outside its owned lane | Inspect them. Revert speculative or unrelated edits. Keep grounded correctness or verification fixes, then record the deviation in the spec. |
 | Spec item is ambiguous mid-implementation | Stop. Ask the user. Add clarification to the spec. |
 | Discovery invalidates a later spec phase | Update the spec's plan. Inform the user. Re-plan remaining waves. |
 | Tests fail | Fix the tests or the code. Update spec if the test failure reveals a spec gap. |
@@ -226,7 +242,7 @@ Keep sub-agent prompts focused. A sub-agent that knows too much will try to do t
 "Let me just start implementing..."
 ```
 
-No. Read the spec. Plan waves. Get approval. Then execute.
+No. Read the spec, plan waves, then execute. Planning should start the work, not become a reason to stop.
 
 ### Giant Wave
 
@@ -251,26 +267,3 @@ Wave 1: 12 sub-agents all running at once
 ```
 
 More than 3-4 parallel sub-agents gets chaotic. Group related tasks and keep parallelism manageable.
-
-## Quick Reference
-
-Before starting:
-
-- [ ] Read entire spec
-- [ ] Identify phases and dependencies
-- [ ] Plan waves (parallel vs sequential)
-- [ ] Present plan to user
-
-For each wave:
-
-- [ ] Execute tasks (every task in a sub-agent)
-- [ ] Verify (type-check, tests)
-- [ ] Update spec (check items, add notes)
-- [ ] Commit if this wave is a logical review unit, or checkpoint and continue
-
-After all waves:
-
-- [ ] Run `post-implementation-review` on touched files
-- [ ] Update spec status to Implemented
-- [ ] Add Review section
-- [ ] Finalize commits using the chosen strategy

@@ -1,5 +1,7 @@
 # AI-Generated Local-First Applications
 
+> **Path note (2026-05-22):** This historical design spec contains stale top-level `~/.epicenter/` workspace guidance. Do not copy global workspace or server-storage paths from it. Project-local `<projectDir>/.epicenter/` examples remain acceptable when they describe generated project data.
+
 **Status**: Vision / Early Exploration  
 **Date**: 2026-01-15  
 **Author**: Braden Wong + Claude

@@ -3,7 +3,6 @@
 	"compilerOptions": {
 		"types": ["bun"],
 		"noUnusedLocals": true,
-		"noUnusedParameters": true,
-		"noPropertyAccessFromIndexSignature": false
+		"noUnusedParameters": true
 	}
 }

@@ -1,5 +1,7 @@
 # VAD Recorder: Replace invalidateQueries with createSubscriber
 
+> Historical note: this spec predates the current Wellcrafted query API. If a component still consumes a shared query definition, use `createQuery(() => rpc.thing.options)`.
+
 ## Context
 
 The VAD recorder currently uses TanStack Query's `invalidateQueries` pattern to notify UI components of state changes. This works but is suboptimal because:
@@ -175,7 +177,7 @@ Option 1: Remove `getVadState` query entirely, access service directly:
 // Components would use:
 // services.vad.vadState (reactive getter)
 // instead of:
-// createQuery(rpc.vadRecorder.getVadState.options)
+// createQuery(() => rpc.vadRecorder.getVadState.options)
 ```
 
 Option 2: Thin wrapper for API consistency:
@@ -209,7 +211,7 @@ export const vadRecorder = {
 
 Before:
 ```svelte
-const getVadStateQuery = createQuery(rpc.vadRecorder.getVadState.options);
+const getVadStateQuery = createQuery(() => rpc.vadRecorder.getVadState.options);
 
 $effect(() => {
   if (getVadStateQuery.data === 'LISTENING') {
@@ -287,7 +289,7 @@ The final implementation went simpler than originally proposed. Instead of using
 **Before:**
 - Service layer: `$lib/services/vad-recorder.ts` (creates `VadServiceLive`)
 - Query layer: `$lib/query/vad-recorder.ts` (wraps service with `defineQuery`/`defineMutation`)
-- Components: Use `createQuery(rpc.vadRecorder.getVadState.options)`
+- Components: Use `createQuery(() => rpc.vadRecorder.getVadState.options)`
 
 **After:**
 - Single module: `$lib/query/vad.svelte.ts` with `$state` reactivity

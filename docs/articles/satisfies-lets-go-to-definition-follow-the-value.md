@@ -165,6 +165,71 @@ function createSatisfiedWorkspace() {
 
 Second, explicit return types still have a place at package boundaries. If declaration output needs to expose a named type, or if you intentionally want to hide the concrete return shape from consumers, an annotation can be the right move.
 
+One more caveat: do not turn every `satisfies` check into a `defineX()` helper. A constrained identity helper earns its keep when it saves the caller from spelling generics that TypeScript already knows.
+
+Helper earns it:
+
+```typescript
+return defineWorkspace({
+  ...workspace,
+  ...runtime,
+});
+```
+
+Here the helper hides the generic proof:
+
+```typescript
+TWorkspace extends Workspace<TTables, TKv, TActions>
+```
+
+Writing that at every call site would make the implementation harder to read. The helper exists to keep the object literal readable while preserving the exact inferred return type.
+
+A concrete Epicenter example is a mount: the small object `epicenter.config.ts` gives the daemon. Every mount receives one `MountContext` with a nullable `session`:
+
+```typescript
+type Mount = {
+  name: string;
+  open(ctx: MountContext): MaybePromise<DaemonRuntime | MountInactive>;
+};
+
+type MountContext = {
+  epicenterRoot: EpicenterRoot;
+  mount: string;
+  session: MountSession | null;
+};
+```
+
+Notice what the helper earns. Most mounts need a signed-in session, so they declare with `defineSessionMount`: it does the `session === null` check once, hands the body a `SessionMountContext` whose `session` is non-null, and returns `inactive(...)` automatically when signed out. The caller never spells the narrowing.
+
+Helper earns it:
+
+```typescript
+return defineSessionMount({
+  name: 'fuji',
+  open(ctx) {
+    // ctx.session is non-null here, no guard needed
+    return openFujiRuntime(ctx);
+  },
+});
+```
+
+For a mount that can run signed out, the branch is explicit and a raw object `satisfies Mount` is enough:
+
+```typescript
+return {
+  name: 'mirror',
+  open(ctx) {
+    return ctx.session
+      ? openSyncedRuntime(ctx)
+      : inactive('sign in to enable mirror');
+  },
+} satisfies Mount;
+```
+
+`satisfies Mount` gives the `open(ctx)` parameter its contextual type, checks the daemon contract, and keeps the returned object as the source of truth. The helper is valuable when it removes the null-narrowing noise; it is not valuable just because a type exists.
+
+The rule is not "avoid helpers when a type has generics." The rule is sharper: avoid helpers when the generics are already hidden by useful defaults, or when the contract is simple enough to read inline. Reach for the helper when the caller would otherwise have to write the type machinery by hand.
+
 But inside the source tree, especially on factories, this is a real ergonomic win. `satisfies` gives you the contract check without cutting the editor's path back to the object that was actually returned.
 
 For the factory-return version of this pattern, see [Let Factory Return Types Point Back to the Factory](./factory-return-types-should-point-back-to-the-factory.md). For the broader rule, see [Types Should Be Computed, Not Declared](./types-should-be-computed-not-declared.md).

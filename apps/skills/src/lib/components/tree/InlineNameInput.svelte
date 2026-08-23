@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+
 	let {
 		defaultValue = '',
 		onConfirm,
@@ -9,7 +11,7 @@
 		onCancel: () => void;
 	} = $props();
 
-	let value = $state(defaultValue);
+	let value = $state(untrack(() => defaultValue));
 	let inputEl = $state<HTMLInputElement | null>(null);
 
 	/**
@@ -29,7 +31,7 @@
 	});
 
 	/**
-	 * Idempotency guard—prevents double-fire when Enter keydown and
+	 * Idempotency guard. Prevents double-fire when Enter keydown and
 	 * blur both call confirm().
 	 */
 	let confirmed = false;
@@ -61,6 +63,12 @@
 			e.stopPropagation();
 		}}
 		onblur={() => {
+			// requestAnimationFrame does not run while the document is hidden.
+			// Start the async rename immediately so the runtime can admit it.
+			if (document.visibilityState === 'hidden') {
+				confirm();
+				return;
+			}
 			requestAnimationFrame(() => {
 				if (inputEl && document.activeElement !== inputEl) {
 					confirm();

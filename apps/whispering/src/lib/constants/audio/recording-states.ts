@@ -1,27 +1,19 @@
 /**
- * Recording state constants and schemas
+ * Recording state types. These are plain unions: the states are never validated
+ * at runtime, only used as compile-time types.
  */
-import { type } from 'arktype';
 
-export const WhisperingRecordingState = type("'IDLE' | 'RECORDING'");
+/**
+ * Manual recording state as the UI tracks it. Owned here rather than by the
+ * recorder contract: the recorder has no state to report, because holding a
+ * `Recording` is what "recording" means. `manual-recorder.svelte.ts` derives
+ * this from whether it holds one, and the UI reads that.
+ */
+export type WhisperingRecordingState = 'IDLE' | 'RECORDING';
 
-export type WhisperingRecordingState = typeof WhisperingRecordingState.infer;
-
-export type CancelRecordingResult =
-	| { status: 'cancelled' }
-	| { status: 'no-recording' };
-
-export const RECORDER_STATE_TO_ICON = {
-	IDLE: '🎙️',
-	RECORDING: '⏹️',
-} as const satisfies Record<WhisperingRecordingState, string>;
-
-export const VadState = type("'IDLE' | 'LISTENING' | 'SPEECH_DETECTED'");
-
-export type VadState = typeof VadState.infer;
-
-export const VAD_STATE_TO_ICON = {
-	IDLE: '🎤',
-	LISTENING: '💬',
-	SPEECH_DETECTED: '👂',
-} as const satisfies Record<VadState, string>;
+/**
+ * VAD session state as the UI tracks it: closed, armed and waiting for speech,
+ * or mid-utterance. Mirrored from the package's speech callbacks by
+ * `vad-recorder.svelte.ts`.
+ */
+export type VadState = 'IDLE' | 'LISTENING' | 'SPEECH_DETECTED';

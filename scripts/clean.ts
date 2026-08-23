@@ -12,7 +12,7 @@
 
 import { rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { workspaces } from '../package.json';
 
 const isNuke = process.argv.includes('--nuke');
@@ -48,12 +48,11 @@ async function main() {
 	);
 
 	// Discover all monorepo package roots from workspace config
-	const packageRoots = workspaces.packages.flatMap((pattern) => [
-		...new Bun.Glob(pattern).scanSync({ onlyFiles: false }),
-	]);
+	const packageRoots = workspaces.packages.flatMap((pattern) =>
+		[...new Bun.Glob(join(pattern, 'package.json')).scanSync()].map(dirname),
+	);
 
 	const dirsToRemove = [
-		'.turbo',
 		'node_modules',
 		...packageRoots.flatMap((root) =>
 			subDirs.map((subDir) => join(root, subDir)),

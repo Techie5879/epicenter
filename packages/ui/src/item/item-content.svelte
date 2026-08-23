@@ -14,9 +14,7 @@
 	bind:this={ref}
 	data-slot="item-content"
 	class={cn(
-		'flex flex-1 flex-col gap-1 [&+[data-slot=item-content]]:flex-none',
-		// Custom override: enables text truncation inside flex containers
-		'min-w-0',
+		'cn-item-content flex flex-1 flex-col [&+[data-slot=item-content]]:flex-none',
 		className,
 	)}
 	{...restProps}

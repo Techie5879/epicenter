@@ -1,39 +1,49 @@
 {
 	"name": "@epicenter/svelte",
-	"version": "0.1.0",
+	"version": "0.3.0",
 	"private": true,
 	"type": "module",
-	"description": "Svelte 5 utilities for Epicenter workspaces. Reactive state bindings, persisted state, and TanStack Query integration.",
+	"description": "Svelte 5 bindings for Epicenter: reactive workspace state, persisted state, and the auth/session adapter.",
 	"keywords": [
 		"svelte",
 		"local-first",
 		"CRDT",
 		"epicenter",
 		"workspace",
-		"TanStack Query",
 		"reactive state"
 	],
 	"exports": {
 		".": "./src/index.ts",
-		"./account-popover": "./src/account-popover/index.ts",
-		"./workspace-gate": "./src/workspace-gate/index.ts"
+		"./auth": "./src/auth.svelte.ts",
+		"./auth/tauri": "./src/auth-tauri.svelte.ts"
 	},
 	"dependencies": {
+		"@epicenter/agent": "workspace:*",
 		"@epicenter/auth": "workspace:*",
-		"@epicenter/auth-svelte": "workspace:*",
-		"@epicenter/constants": "workspace:*",
-		"@epicenter/api": "workspace:*",
-		"@epicenter/ui": "workspace:*",
-		"@epicenter/workspace": "workspace:*",
-		"@lucide/svelte": "catalog:",
-		"@tanstack/svelte-query": "catalog:",
 		"arktype": "catalog:",
-		"better-auth": "catalog:",
-		"idb": "^8.0.3",
 		"wellcrafted": "catalog:"
+	},
+	"peerDependencies": {
+		"@tauri-apps/api": "^2",
+		"@tauri-apps/plugin-deep-link": "^2",
+		"@tauri-apps/plugin-opener": "^2"
+	},
+	"peerDependenciesMeta": {
+		"@tauri-apps/api": {
+			"optional": true
+		},
+		"@tauri-apps/plugin-deep-link": {
+			"optional": true
+		},
+		"@tauri-apps/plugin-opener": {
+			"optional": true
+		}
 	},
 	"devDependencies": {
 		"@standard-schema/spec": "catalog:",
+		"@tauri-apps/api": "catalog:",
+		"@tauri-apps/plugin-deep-link": "catalog:",
+		"@tauri-apps/plugin-opener": "catalog:",
 		"@types/bun": "catalog:",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
@@ -43,5 +53,5 @@
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
 		"test": "bun test"
 	},
-	"license": "MIT"
+	"license": "AGPL-3.0-or-later"
 }

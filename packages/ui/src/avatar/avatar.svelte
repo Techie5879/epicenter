@@ -15,7 +15,7 @@
 	bind:loadingStatus
 	data-slot="avatar"
 	class={cn(
-		'relative flex size-8 shrink-0 overflow-hidden rounded-full',
+		'cn-avatar after:border-border group/avatar relative flex shrink-0 select-none after:absolute after:inset-0 after:border after:mix-blend-darken dark:after:mix-blend-lighten',
 		className,
 	)}
 	{...restProps}

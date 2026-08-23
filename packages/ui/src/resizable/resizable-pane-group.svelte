@@ -16,9 +16,7 @@
 	bind:this={paneGroup}
 	data-slot="resizable-pane-group"
 	class={cn(
-		'flex h-full w-full data-[direction=vertical]:flex-col',
-		// Custom: Add spacing between resizable panes for visual separation
-		'gap-2',
+		'cn-resizable-panel-group flex h-full w-full data-[direction=vertical]:flex-col',
 		className,
 	)}
 	{...restProps}

@@ -1,46 +1,23 @@
 import { on } from 'svelte/events';
 import type { Brand } from 'wellcrafted/brand';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
 import type { ShortcutEventState } from '$lib/commands';
 import {
-	isSupportedKey,
-	type KeyboardEventPossibleKey,
-	type KeyboardEventSupportedKey,
-	normalizeOptionKeyCharacter,
-} from '$lib/constants/keyboard';
-import { IS_MACOS } from '$lib/constants/platform';
-
-const LocalShortcutError = defineErrors({
-	RegisterFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to register local shortcut: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	UnregisterFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to unregister local shortcut: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	UnregisterAllFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to unregister all local shortcuts: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-type LocalShortcutError = InferErrors<typeof LocalShortcutError>;
+	bindingsEqual,
+	domCodeToKey,
+	eventModifiers,
+	type Key,
+	type KeyBinding,
+} from '$lib/utils/key-binding';
 
 export type CommandId = string & Brand<'CommandId'>;
 
-const shortcuts = new Map<
-	CommandId,
-	{
-		on: ShortcutEventState[];
-		keyCombination: KeyboardEventSupportedKey[];
-		callback: (state: ShortcutEventState) => void;
-	}
->();
+/**
+ * Registered bindings by command id. The manager only matches physical keys and
+ * tracks press/release edges; it does not own which edges a command cares about
+ * (the `on` filter) or what the command does (the callback). Both live in the
+ * command layer, reached through the `onTrigger` sink passed to `listen`.
+ */
+const shortcuts = new Map<CommandId, KeyBinding>();
 
 /**
  * Type representing the local shortcut manager instance.
@@ -52,7 +29,6 @@ const shortcuts = new Map<
  * The manager handles the complexity of tracking pressed keys, matching
  * key combinations, and managing shortcut lifecycles.
  */
-export type LocalShortcutManager = typeof LocalShortcutManagerLive;
 
 export const LocalShortcutManagerLive = {
 	/**
@@ -64,15 +40,20 @@ export const LocalShortcutManagerLive = {
 	 * - Provides special handling for modifier keys to prevent stuck keys
 	 * - Automatically cleans up state when window loses focus or visibility
 	 *
+	 * @param onTrigger - sink for matched edges; the command layer applies the
+	 *   `on` filter and runs the callback. Called with `'Pressed'` when a combo
+	 *   becomes fully held and `'Released'` when it stops being held.
 	 * @returns Cleanup function that removes all event listeners when called
 	 */
-	listen() {
+	listen(onTrigger: (id: CommandId, state: ShortcutEventState) => void) {
 		/**
-		 * Array tracking currently pressed keys in lowercase format.
-		 * Maintains real-time state of which keys are physically held down.
-		 * Updated on every keydown (adds key) and keyup (removes key) event.
+		 * Physical (non-modifier) keys currently held, by our `Key` space (from
+		 * `e.code` via {@link domCodeToKey}). Modifier codes map to `null` and never
+		 * land here; the modifier set is read live from the event flags instead, so
+		 * a swallowed modifier-keyup can never strand state. Combined with the live
+		 * modifiers into a `KeyBinding` and matched by set-equality.
 		 */
-		let pressedKeys: KeyboardEventSupportedKey[] = [];
+		const pressedKeys = new Set<Key>();
 		/**
 		 * Set tracking which shortcuts have already been triggered and are currently active.
 		 * This prevents key repeat spam when holding down keys - without this, holding
@@ -88,6 +69,12 @@ export const LocalShortcutManagerLive = {
 		 */
 		const activeShortcuts = new Set<CommandId>();
 
+		/** The gesture currently held: live modifier flags plus the pressed keys. */
+		const heldBinding = (e: KeyboardEvent): KeyBinding => ({
+			modifiers: eventModifiers(e),
+			keys: [...pressedKeys],
+		});
+
 		/**
 		 * Handle keydown events - adds keys to pressed state and triggers 'Pressed' shortcuts.
 		 * Fires repeatedly while a key is held down (due to OS key repeat), but activeShortcuts
@@ -97,43 +84,35 @@ export const LocalShortcutManagerLive = {
 			// Skip shortcut processing if user is typing in an input field
 			if (isTypingInInput()) return;
 
-			let key = e.key.toLowerCase() as KeyboardEventPossibleKey;
+			// Skip keydowns that belong to an in-progress IME composition (CJK, accent
+			// dead keys): the mid-composition `.code` is not the user's intended key,
+			// so matching on it would misfire.
+			if (e.isComposing) return;
 
-			// macOS Option key normalization:
-			// On macOS, the Option key (Alt) triggers special character insertion.
-			// For example, Option+A produces "å" instead of registering as "alt+a".
-			// This breaks keyboard shortcut detection because we get the special
-			// character instead of the actual key that was pressed.
-			//
-			// To fix this, when Option is held on macOS, we normalize these special
-			// characters back to their base keys (e.g., "å" → "a", "ç" → "c").
-			// This ensures keyboard shortcuts work consistently across platforms.
-			if (IS_MACOS && pressedKeys.includes('alt')) {
-				key = normalizeOptionKeyCharacter(key);
-			}
+			// Physical key from `e.code` (layout-stable, no Option-character quirk).
+			// Modifier codes and keys off the bindable alphabet map to null and are
+			// not tracked here; modifiers come from the event flags via heldBinding.
+			const key = domCodeToKey(e.code);
+			if (key) pressedKeys.add(key);
 
-			// Ignore keys that are not supported
-			if (!isSupportedKey(key)) return;
+			const held = heldBinding(e);
 
-			// Add key to pressed state if not already present
-			if (!pressedKeys.includes(key)) pressedKeys.push(key);
-
-			// Check all registered shortcuts for matches
-			for (const [
-				id,
-				{ callback, keyCombination, on },
-			] of shortcuts.entries()) {
-				if (!arraysMatch(pressedKeys, keyCombination)) continue;
+			// Check all registered shortcuts for an exact set match.
+			for (const [id, binding] of shortcuts.entries()) {
+				if (!bindingsEqual(binding, held)) continue;
 
 				// Always prevent default for matching shortcuts
 				e.preventDefault();
 
-				// Only trigger callback if shortcut not already active
-				// This is the key anti-spam mechanism: if the shortcut ID is already
-				// in activeShortcuts, we know it's been triggered and should not fire again
-				if (!activeShortcuts.has(id) && on.includes('Pressed')) {
-					activeShortcuts.add(id); // Mark as active BEFORE calling callback
-					callback('Pressed');
+				// Arm on the first full match and emit 'Pressed'. activeShortcuts is
+				// the anti-spam latch: while a combo stays held, OS key repeat fires
+				// keydown many times a second, but it emits 'Pressed' exactly once.
+				// Arm regardless of which edges the command wants; the dispatcher
+				// drops a 'Pressed' the command did not subscribe to, and arming is
+				// what lets a release-only command still emit 'Released' on keyup.
+				if (!activeShortcuts.has(id)) {
+					activeShortcuts.add(id);
+					onTrigger(id, 'Pressed');
 				}
 			}
 		});
@@ -147,65 +126,52 @@ export const LocalShortcutManagerLive = {
 			// Skip shortcut processing if user is typing in an input field
 			if (isTypingInInput()) return;
 
-			const key = e.key.toLowerCase() as KeyboardEventPossibleKey;
+			// Drop the released key, then recompute the held gesture. Modifiers read
+			// live from the event flags, so releasing a modifier shows up in `held`
+			// without tracking modifier keyups (no stuck-modifier class of bug).
+			const key = domCodeToKey(e.code);
+			if (key) pressedKeys.delete(key);
+			const held = heldBinding(e);
 
-			// Ignore keys that are not supported
-			if (!isSupportedKey(key)) return;
-
-			/** Modifier keys that require special handling */
-			const modifierKeys = ['meta', 'control', 'alt', 'shift'];
-
-			if (modifierKeys.includes(key)) {
-				// Special handling for modifier keys (meta, control, alt, shift)
-				// This addresses issues with OS/browser intercepting certain key combinations
-				// where non-modifier keyup events might not fire properly
-				// When a modifier key is released, clear all non-modifier keys
-				// but keep other modifier keys that might still be pressed
-				// This prevents keys from getting "stuck" in the pressedKeys state
-				pressedKeys = pressedKeys.filter((k) => modifierKeys.includes(k));
-				activeShortcuts.clear();
-			}
-
-			// Check all registered shortcuts for matches on release BEFORE removing the key
-			for (const [
-				id,
-				{ callback, keyCombination, on },
-			] of shortcuts.entries()) {
-				if (!arraysMatch(pressedKeys, keyCombination)) continue;
-				if (activeShortcuts.has(id) && on.includes('Released')) {
-					e.preventDefault();
-					callback('Released');
-					activeShortcuts.delete(id);
-				}
-			}
-
-			// Regular key removal from pressed state
-			pressedKeys = pressedKeys.filter((k) => k !== key);
-
-			// Clear active shortcuts when no keys are pressed
-			if (pressedKeys.length === 0) {
-				activeShortcuts.clear();
+			// Any armed shortcut that no longer matches has been released. Iterating
+			// activeShortcuts (not all shortcuts) means only what actually fired can
+			// fire a 'Released'; deleting the current element mid-iteration is safe
+			// for a Set.
+			for (const id of activeShortcuts) {
+				const binding = shortcuts.get(id);
+				if (binding && bindingsEqual(binding, held)) continue;
+				e.preventDefault();
+				onTrigger(id, 'Released');
+				activeShortcuts.delete(id);
 			}
 		});
 
 		/**
-		 * Handle window blur events (switching applications, clicking outside browser)
-		 * Reset all keys when user shifts focus away from the window
+		 * Focus left the window (app switch, click outside) or the tab was hidden,
+		 * possibly while a shortcut was still held. The matching keyup will never
+		 * arrive, so release every armed shortcut here instead of silently dropping
+		 * it: emit `'Released'` for each, which the dispatcher ignores for commands
+		 * that did not subscribe to that edge but runs as the stop edge for a hold
+		 * like push-to-talk, which would otherwise stay stuck on (recording with no
+		 * keyup to ever end it). Then clear the held state.
 		 */
-		const blur = on(window, 'blur', () => {
-			pressedKeys = [];
+		const releaseAllHeld = () => {
+			for (const id of activeShortcuts) onTrigger(id, 'Released');
 			activeShortcuts.clear();
-		});
+			pressedKeys.clear();
+		};
 
 		/**
-		 * Handle tab visibility changes (switching browser tabs)
-		 * This catches cases where the window doesn't lose focus but the tab is hidden
+		 * Handle window blur events (switching applications, clicking outside browser).
+		 */
+		const blur = on(window, 'blur', releaseAllHeld);
+
+		/**
+		 * Handle tab visibility changes (switching browser tabs). This catches cases
+		 * where the window does not lose focus but the tab is hidden.
 		 */
 		const visibilityChange = on(document, 'visibilitychange', () => {
-			if (document.visibilityState === 'hidden') {
-				pressedKeys = [];
-				activeShortcuts.clear();
-			}
+			if (document.visibilityState === 'hidden') releaseAllHeld();
 		});
 
 		/** Cleanup function that removes all event listeners */
@@ -216,59 +182,23 @@ export const LocalShortcutManagerLive = {
 			visibilityChange();
 		};
 	},
-	async register({
-		id,
-		keyCombination,
-		callback,
-		on,
-	}: {
-		id: CommandId;
-		keyCombination: KeyboardEventSupportedKey[];
-		callback: (state: ShortcutEventState) => void;
-		on: ShortcutEventState[];
-	}): Promise<Result<void, LocalShortcutError>> {
-		shortcuts.set(id, { keyCombination, callback, on });
-		return Ok(undefined);
+	/**
+	 * Register (or replace) a command's binding. In-memory `Map` set, so it cannot
+	 * fail: synchronous and `void`, unlike the desktop tier's genuinely fallible
+	 * IPC registration.
+	 */
+	register(id: CommandId, binding: KeyBinding): void {
+		shortcuts.set(id, binding);
 	},
 
 	/**
-	 * Unregisters a local shortcut by ID.
-	 * This function is idempotent - it can be safely called even if the shortcut
-	 * with the given ID doesn't exist or has already been unregistered.
+	 * Unregister a local shortcut by ID. Idempotent: safe even if the shortcut was
+	 * never registered.
 	 */
-	async unregister(id: CommandId): Promise<Result<void, LocalShortcutError>> {
+	unregister(id: CommandId): void {
 		shortcuts.delete(id);
-		return Ok(undefined);
-	},
-
-	/**
-	 * Unregisters all local shortcuts.
-	 * This function is idempotent - it can be safely called even if no shortcuts
-	 * are currently registered.
-	 */
-	async unregisterAll(): Promise<Result<void, LocalShortcutError>> {
-		shortcuts.clear();
-		return Ok(undefined);
 	},
 };
-
-/**
- * Checks if two arrays contain the same elements, regardless of order.
- * Used to match pressed key combinations against registered shortcuts.
- *
- * @param a - First array of keys to compare
- * @param b - Second array of keys to compare
- * @returns True if both arrays contain exactly the same elements (same length and all elements present in both)
- *
- * @example
- * ```typescript
- * arraysMatch(['ctrl', 'a'], ['a', 'ctrl']) // returns true
- * arraysMatch(['ctrl', 'a'], ['ctrl', 'a', 'shift']) // returns false
- * ```
- */
-function arraysMatch(a: string[], b: string[]) {
-	return a.length === b.length && a.every((key) => b.includes(key));
-}
 
 /**
  * Checks if the currently focused element should capture keyboard input.
@@ -309,26 +239,4 @@ function isTypingInInput(): boolean {
 	if (activeElement.getAttribute('role') === 'textbox') return true;
 
 	return false;
-}
-
-/**
- * Convert a shortcut string to an array of keys
- * @example "ctrl+shift+a" → ["ctrl", "shift", "a"]
- */
-export function shortcutStringToArray(
-	shortcut: string,
-): KeyboardEventSupportedKey[] {
-	return shortcut
-		.split('+')
-		.map((key) => key.toLowerCase() as KeyboardEventSupportedKey);
-}
-
-/**
- * Join an array of keys into a shortcut string
- * @example ["ctrl", "shift", "a"] → "ctrl+shift+a"
- */
-export function arrayToShortcutString(
-	keys: KeyboardEventSupportedKey[],
-): string {
-	return keys.map((key) => key.toLowerCase()).join('+');
 }

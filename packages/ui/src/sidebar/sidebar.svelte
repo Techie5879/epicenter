@@ -35,6 +35,7 @@
 	<div
 		bind:this={ref}
 		class="text-sidebar-foreground group peer block"
+		inert={collapsible === 'offcanvas' && sidebar.state === 'collapsed'}
 		data-state={sidebar.state}
 		data-collapsible={sidebar.state === 'collapsed' ? collapsible : ''}
 		data-variant={variant}
@@ -45,7 +46,7 @@
 		<div
 			data-slot="sidebar-gap"
 			class={cn(
-				'w-(--sidebar-width) relative bg-transparent transition-[width] duration-200 ease-linear',
+				'cn-sidebar-gap relative w-(--sidebar-width) bg-transparent',
 				'group-data-[collapsible=offcanvas]:w-0',
 				'group-data-[side=right]:rotate-180',
 				variant === 'floating' || variant === 'inset'
@@ -71,7 +72,7 @@
 			<div
 				data-sidebar="sidebar"
 				data-slot="sidebar-inner"
-				class="bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm"
+				class="cn-sidebar-inner flex size-full flex-col"
 			>
 				{@render children?.()}
 			</div>

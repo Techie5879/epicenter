@@ -1,462 +1,144 @@
 # Services Layer
 
-The services layer provides pure, isolated business logic with no UI dependencies. Services handle platform differences (Desktop/Web) transparently and return consistent `Result<T, E>` types for error handling.
+Whispering services expose UI-free capabilities. They may perform platform IO
+or own service-local runtime state, but service implementations do not read
+Svelte state, app settings, device configuration, or reporting APIs at runtime.
 
-## How Services Are Consumed
+The transcription directory also contains provider registry data and the
+UI-facing `provider-ui.ts` join. Those colocated metadata modules are not
+service implementations.
 
-Services are consumed through the query layer, which wraps them with caching, reactivity, and state management. Here's a real example showing how isolated, testable services are used:
+## Ownership
 
-```typescript
-// From: /lib/query/transcription.ts
-async function transcribeBlob(
-	blob: Blob,
-): Promise<Result<string, WhisperingError>> {
-	const selectedService =
-		settings.value['transcription.selectedTranscriptionService'];
+```txt
+component / route   presentation and observed lifecycle
+query               shared query identity and TanStack lifecycle
+operation           app settings, provider choice, multi-step workflow
+service             one UI-free capability and its domain failures
+platform mapping    browser versus Tauri implementation
+```
 
-	switch (selectedService) {
-		case 'OpenAI':
-			// Pure service call with explicit parameters
-			return services.transcriptions.openai.transcribe(blob, {
-				outputLanguage: settings.value['transcription.outputLanguage'],
-				prompt: settings.value['transcription.prompt'],
-				temperature: settings.value['transcription.temperature'],
-				apiKey: settings.value['apiKeys.openai'],
-				modelName: settings.value['transcription.openai.model'],
-			});
-		case 'Groq':
-			// Same interface, different implementation
-			return services.transcriptions.groq.transcribe(blob, {
-				outputLanguage: settings.value['transcription.outputLanguage'],
-				prompt: settings.value['transcription.prompt'],
-				temperature: settings.value['transcription.temperature'],
-				apiKey: settings.value['apiKeys.groq'],
-				modelName: settings.value['transcription.groq.model'],
-			});
-	}
+The consuming operation usually reads settings and passes explicit values such
+as credentials, endpoints, models, paths, and user choices into services.
+
+Fallible public operations return `Result<T, E>`. Infallible in-memory actions
+and cleanup stay plain: `LocalShortcutManagerLive.register` and `unregister`
+return `void`, while `listen` returns its cleanup function.
+
+## Current Shape
+
+```txt
+services/
+|-- analytics/
+|   |-- types.ts
+|   |-- index.browser.ts
+|   `-- index.tauri.ts
+|-- blobs/
+|-- download/
+|-- http/
+|-- recorder/
+|-- text/
+|-- transcription/
+|-- local-shortcut-manager.ts
+|-- sound/
+`-- index.ts
+```
+
+Check the directory and `apps/whispering/package.json#imports` for the current
+set. This tree explains the ownership shape, not a permanent inventory.
+
+## Direct Objects And Factories
+
+Most stateless implementations export a direct object checked against a shared
+contract. `services/download/index.browser.ts` is the smallest complete current
+example: `DownloadServiceLive` adapts the browser download exception boundary
+and `satisfies DownloadService` without a construction-only factory.
+
+Use a factory only when construction inputs, isolated mutable state, resource
+lifetime, or teardown earn one. Browser and CPAL recorder factories qualify
+because they create recording sessions that own stop, cancel, subscription, and
+teardown state.
+
+## Build-Time Platform Injection
+
+Capabilities with both browser and Tauri implementations use Node subpath
+imports:
+
+```jsonc
+"#platform/text": {
+  "tauri": "./src/lib/services/text/index.tauri.ts",
+  "default": "./src/lib/services/text/index.browser.ts"
 }
 ```
 
-**Notice how services are:**
-
-- **Pure**: Accept explicit parameters, no hidden dependencies
-- **Isolated**: No knowledge of UI state, settings, or reactive state
-- **Testable**: Easy to unit test with mock parameters
-- **Consistent**: All return `Result<T, E>` types for uniform error handling
-- **Platform-agnostic**: Same interface works on desktop and web
-
-The query layer injects configuration (like `settings.value`) and handles caching/reactivity, while services focus purely on business logic.
-
-### Build-Time Platform Injection
-
-Services also handle **build-time dependency injection** for platform differences. The application detects whether it's running on desktop (Tauri) or web at build time and injects the appropriate service implementations:
+Shared code imports one stable name:
 
 ```typescript
-// Platform detection happens at build time
-export const ClipboardServiceLive = window.__TAURI_INTERNALS__
-	? createClipboardServiceDesktop() // Tauri APIs
-	: createClipboardServiceWeb(); // Browser APIs
+import { TextServiceLive } from '#platform/text';
 ```
 
-This platform abstraction enables **97% code sharing** between Whispering's desktop and web versions. The vast majority of application logic is platform-agnostic, with only the thin service implementation layer varying between platforms. Instead of maintaining separate codebases, we write business logic once and let services handle platform differences automatically.
+The web build resolves `default`. The Epicenter/Tauri build activates the
+`tauri` condition. The off-target file is not part of that module graph. Do not
+add runtime `window.__TAURI_INTERNALS__` checks or parallel service registries.
 
-#### Measuring Code Sharing
+Each branch exports the same public name and conforms to the same contract.
 
-The 97% figure comes from analyzing the codebase:
+## Tauri-Only Capabilities
 
-- **Total application code**: 22,824 lines
-- **Platform-specific services**: 685 lines (3%)
-- **Shared code**: 22,139 lines (97%)
-
-Platform-specific implementations are minimal - just 6 services with ~57 lines per platform on average. This demonstrates how the architecture maximizes code reuse while maintaining native performance.
-
-> **💡 Dependency Injection Strategy**
->
-> Services only use dependency injection for **build-time platform differences** (desktop vs web). When we need to switch implementations based on **reactive variables** like user settings, that logic lives in the query layer instead.
->
-> - **Services**: Static platform detection (`ClipboardServiceLive` chooses Tauri vs Browser APIs)
-> - **Query Layer**: Dynamic implementation switching based on `settings.value['transcription.selectedTranscriptionService']`
-
-## Core Concepts
-
-### What Are Services?
-
-Services are collections of pure functions that:
-
-- Accept explicit parameters (no hidden dependencies)
-- Return `Result<T, E>` types for consistent error handling
-- Have no knowledge of UI state, settings, or reactive state
-- Provide identical APIs across platforms (Desktop via Tauri, Web via browser APIs)
-
-### Platform Detection
-
-Services automatically choose the right implementation based off platform at build time:
+Capabilities with no browser implementation use `#platform/tauri`. It resolves
+to the Tauri namespace on desktop and `null` on web:
 
 ```typescript
-// Automatically selects desktop or web implementation
-export const ClipboardServiceLive = window.__TAURI_INTERNALS__
-	? createClipboardServiceDesktop() // Tauri APIs
-	: createClipboardServiceWeb(); // Browser APIs
-```
+import { tauri } from '#platform/tauri';
 
-### Result Types
-
-All services use `Result<T, E>` for error handling:
-
-```typescript
-import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { tryAsync, type Result } from 'wellcrafted/result';
-
-const TranscriptionError = defineErrors({
-	ApiFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to transcribe audio: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-
-// Services return Results, not thrown errors
-async function transcribe(
-	blob: Blob,
-): Promise<Result<string, TranscriptionError>> {
-	return tryAsync({
-		try: () => apiCall(blob),
-		catch: (error) =>
-			TranscriptionError.ApiFailed({ cause: error }),
-	});
+if (tauri) {
+	await tauri.mainWindow.focus();
 }
 ```
 
-## Service-Specific Error Types
+Code already isolated in a `.tauri.ts` file imports `tauriOnly` directly from
+`$lib/tauri.tauri`.
 
-Each service defines its own errors using `defineErrors` from wellcrafted. Error types are part of the service's public API and contain all the context needed to understand what went wrong:
+## Runtime Provider Selection
 
-```typescript
-import { defineErrors, type InferErrors, extractErrorMessage } from 'wellcrafted/error';
+User-selected providers are runtime policy, not a platform implementation.
+`$lib/operations/transcribe.ts` reads `settings`, selects on-device versus
+upload behavior, and dispatches through the provider table. Provider services
+receive explicit credentials, model names, endpoints, language, and prompt
+inputs.
 
-const DeviceStreamError = defineErrors({
-  PermissionDenied: ({ cause }: { cause: unknown }) => ({
-    message: `Microphone permission denied: ${extractErrorMessage(cause)}`,
-    cause,
-  }),
-  DeviceConnectionFailed: ({ deviceId, cause }: { deviceId: string; cause: unknown }) => ({
-    message: `Failed to connect to device '${deviceId}': ${extractErrorMessage(cause)}`,
-    deviceId,
-    cause,
-  }),
-});
-type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
-```
+The query layer observes that operation through
+`queries.transcription.transcribeRecording`; it does not choose the provider
+again.
 
-### Error Handling Architecture
+## Service Barrel
 
-The error handling follows a clear pattern across three layers:
-
-1. **Service Layer**: Returns domain-specific errors via `defineErrors`
-2. **Query Layer**: Wraps service errors into `WhisperingError` objects
-3. **UI Layer**: Displays `WhisperingError` objects in toasts without re-wrapping
-
-This pattern ensures consistent error handling and avoids double-wrapping errors.
-
-### Error Type Best Practices
-
-1. **Use `defineErrors` namespaces**: Group related errors under a single namespace
-
-   ```typescript
-   const RecorderError = defineErrors({
-     AlreadyRecording: () => ({
-       message: 'A recording is already in progress. Please stop the current recording.',
-     }),
-     InitFailed: ({ cause }: { cause: unknown }) => ({
-       message: `Failed to initialize recorder: ${extractErrorMessage(cause)}`,
-       cause,
-     }),
-   });
-   type RecorderError = InferErrors<typeof RecorderError>;
-   ```
-
-2. **Accept `cause: unknown`, extract inside constructor**: Error constructors accept the raw caught error and call `extractErrorMessage(cause)` inside the message template. Call sites stay clean with `{ cause: error }`.
-
-   ```typescript
-   // ✅ GOOD: cause: error at call site, extractErrorMessage in constructor
-   catch: (error) => RecorderError.InitFailed({ cause: error })
-
-   // ❌ BAD: extractErrorMessage at call site, string passed to constructor
-   catch: (error) => RecorderError.InitFailed({ underlyingError: extractErrorMessage(error) })
-   ```
-
-3. **Map Platform Errors**: Transform platform-specific errors
-   ```typescript
-   return tryAsync({
-   	try: () => navigator.mediaDevices.getUserMedia(constraints),
-   	catch: (error) =>
-   		DeviceStreamError.PermissionDenied({ cause: error }),
-   });
-   ```
-
-### Important: Services Don't Know About UI
-
-Services should **never** import or use `WhisperingError`. That transformation happens in the query layer:
+`services/index.ts` collects stable cross-platform capabilities after their
+platform imports resolve:
 
 ```typescript
-// ❌ WRONG - Service shouldn't know about WhisperingError
-import { WhisperingError } from '$lib/result';
-
-// ✅ CORRECT - Service uses its own error type
-const MyError = defineErrors({
-	Failed: ({ cause }: { cause: unknown }) => ({
-		message: `Operation failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-type MyError = InferErrors<typeof MyError>;
+export const services = {
+	analytics: AnalyticsServiceLive,
+	text: TextServiceLive,
+	blobs: BlobsLive,
+	blobSources: BlobSourcesLive,
+	download: DownloadServiceLive,
+	localShortcutManager: LocalShortcutManagerLive,
+	sound: PlaySoundServiceLive,
+} as const;
 ```
 
-The query layer is responsible for transforming service errors into `WhisperingError` for toast notifications. This separation ensures:
+Runtime-selected provider services do not need to live in this barrel. The
+operation that owns dispatch may import them directly.
 
-- Services remain pure and testable
-- Error types can evolve independently
-- UI concerns don't leak into business logic
+## Error Flow
 
-### Real-World Example: Recording Service Errors
+- Adapt throwing platform and library calls at the service boundary.
+- Define a service error only for a failure the service understands.
+- Pass lower-layer tagged errors through when composing services.
+- Keep user presentation in operations, routes, or components through
+  `$lib/report`.
+- Do not manufacture a Result for an infallible method.
 
-```typescript
-const RecorderError = defineErrors({
-	AlreadyRecording: () => ({
-		message: 'A recording is already in progress. Please stop the current recording.',
-	}),
-	StreamAcquisition: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	InitFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to initialize recorder: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-type RecorderError = InferErrors<typeof RecorderError>;
-
-export function createManualRecorderService() {
-	return {
-		startRecording: async (
-			recordingSettings,
-			{ sendStatus },
-		): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
-			if (activeRecording) {
-				return RecorderError.AlreadyRecording();
-			}
-
-			const { data: streamResult, error: acquireStreamError } =
-				await getRecordingStream(selectedDeviceId, sendStatus);
-
-			if (acquireStreamError) {
-				return RecorderError.StreamAcquisition({
-					cause: acquireStreamError,
-				});
-			}
-
-			// Continue with recording logic...
-		},
-	};
-}
-```
-
-This example shows:
-
-- `defineErrors` namespace with structured variants
-- `cause: unknown` accepted in constructors, `extractErrorMessage` called inside
-- Clean call sites passing raw errors as `{ cause: error }`
-- Error mapping when consuming other services
-
-### Anti-Pattern: Double Wrapping
-
-Never wrap an already-wrapped error. The query layer handles the single transformation from service error to `WhisperingError`:
-
-```typescript
-// ❌ BAD: Service returns tagged error, query wraps it, then UI wraps again
-if (error) {
-	const whisperingError = WhisperingError({
-		/* ... */
-	});
-	notify.error.execute({ ...whisperingError.error }); // Double wrapping!
-}
-
-// ✅ GOOD: Service returns tagged error, query wraps it, UI uses directly
-if (error) {
-	notify.error.execute(error); // Already a WhisperingError from query layer
-}
-```
-
-## Service Patterns
-
-### Pattern 1: Single Implementation
-
-Services that work identically across platforms:
-
-```typescript
-// vad.ts - Same implementation for desktop and web
-export function createVadService() {
-	return {
-		getVadState(): VadState {
-			/* ... */
-		},
-		async startListening() {
-			/* ... */
-		},
-		async stopListening() {
-			/* ... */
-		},
-	};
-}
-
-export type VadService = ReturnType<typeof createVadService>;
-
-export const VadServiceLive = createVadService();
-```
-
-### Pattern 2: Platform-Specific Implementation
-
-Services that need different implementations for desktop vs web:
-
-```typescript
-// types.ts - Shared interface
-export type ClipboardService = {
-	setClipboardText(text: string): Promise<Result<void, ClipboardError>>;
-	writeTextToCursor(text: string): Promise<Result<void, ClipboardError>>;
-};
-
-// desktop.ts - Tauri implementation
-export function createClipboardServiceDesktop(): ClipboardService {
-	return {
-		setClipboardText(text) {
-			/* Tauri clipboard API */
-		},
-		writeTextToCursor(text) {
-			/* Desktop-specific implementation */
-		},
-	};
-}
-
-// web.ts - Browser implementation
-export function createClipboardServiceWeb(): ClipboardService {
-	return {
-		setClipboardText(text) {
-			/* Browser clipboard API */
-		},
-		writeTextToCursor(text) {
-			/* Web-specific implementation */
-		},
-	};
-}
-
-// index.ts - Platform detection (Live suffix = production instance)
-export const ClipboardServiceLive = window.__TAURI_INTERNALS__
-	? createClipboardServiceDesktop()
-	: createClipboardServiceWeb();
-```
-
-**When to use platform-specific pattern:**
-
-- Identical API across platforms
-- Different underlying implementations
-- Exactly one implementation runs at runtime
-
-**When to use single implementation:**
-
-- Same code works on all platforms
-- No platform-specific APIs needed
-
-## Configuration Injection
-
-Services are pure and accept configuration as parameters. We never import/use global variables like `settings.value`—that's for the query layer.
-
-```typescript
-// ✅ CORRECT - Pure service
-export function createCompletionService() {
-	return {
-		async complete({ apiKey, prompt }) {
-			const client = new OpenAI({ apiKey }); // Injected from query layer
-			// ...
-		},
-	};
-}
-
-// Query layer injects settings
-const result = await services.completion.openai.complete({
-	apiKey: settings.value['apiKeys.openai'], // Query layer responsibility
-	prompt,
-});
-```
-
-## Available Services
-
-### Single Implementation Services
-
-- `vad.ts` - Voice Activity Detection
-- `manual-recorder.ts` - Recording state management
-- `cpal-recorder.ts` - CPAL audio recording (desktop only)
-- `global-shortcut-manager.ts` - Global keyboard shortcuts
-- `local-shortcut-manager.ts` - Local keyboard shortcuts
-- `tray.ts` - System tray management
-
-### Platform-Specific Services
-
-- `clipboard/` - Clipboard operations (Tauri vs Browser API)
-- `notifications/` - OS-level system notifications (native desktop vs browser Notification API)
-- `toast` - In-app toast notifications using Sonner (unified across platforms)
-- `download/` - File downloads (filesystem vs browser)
-- `http/` - HTTP client (Tauri vs fetch)
-- `os/` - Operating system info
-- `sound/` - Audio playback
-
-### Multi-Provider Services
-
-- `transcription/` - Speech-to-text (OpenAI, Groq, ElevenLabs, Speaches)
-- `completion/` - LLM completions (OpenAI, Anthropic, Google, Groq)
-
-### Database Service
-
-- `db/` - Database operations (Dexie/IndexedDB)
-
-## Quick Start
-
-Add a new platform-specific service:
-
-```typescript
-// 1. Define interface in types.ts
-export type MyService = {
-	doSomething(input: string): Promise<Result<Output, MyError>>;
-};
-
-// 2. Implement for each platform
-// desktop.ts
-export function createMyServiceDesktop(): MyService {
-	/* ... */
-}
-
-// web.ts
-export function createMyServiceWeb(): MyService {
-	/* ... */
-}
-
-// 3. Export with platform detection
-// index.ts
-export const MyServiceLive = window.__TAURI_INTERNALS__
-	? createMyServiceDesktop()
-	: createMyServiceWeb();
-
-// 4. Add to main export
-// services/index.ts
-export { MyServiceLive as myService } from './my-service';
-```
-
-## Services vs Query Layer
-
-| Aspect             | Services              | Query Layer            |
-| ------------------ | --------------------- | ---------------------- |
-| **State**          | Stateless             | Stateful (cache)       |
-| **Dependencies**   | Explicit parameters   | Settings, state        |
-| **Error Handling** | Result types          | Result + UI toasts     |
-| **Usage**          | Direct function calls | TanStack Query         |
-| **Reactivity**     | None                  | Reactive subscriptions |
-
-Services provide pure business logic. The query layer adds caching, reactivity, and UI integration.
+See the `services-layer`, `error-handling`, `define-errors`, and `query-layer`
+skills for agent-facing maintenance guidance.

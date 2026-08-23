@@ -1,0 +1,49 @@
+{
+	"name": "@epicenter/local-mail",
+	"description": "Headless Gmail mirror: syncs a Gmail account into local SQLite via full pull and incremental history.list polling, with CLI and MCP access.",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"keywords": [
+		"local-first",
+		"gmail",
+		"sqlite",
+		"cdc",
+		"email"
+	],
+	"exports": {
+		"./http/api": "./src/http/api.ts",
+		"./presence": "./src/presence.ts"
+	},
+	"scripts": {
+		"connect": "bun run src/bin.ts connect",
+		"reconcile": "bun run src/bin.ts reconcile",
+		"status": "bun run src/bin.ts status",
+		"app": "bun run src/bin.ts app",
+		"app:desktop": "tauri dev",
+		"build:sidecar": "bun run scripts/build-sidecar.ts",
+		"build:desktop": "bun run --cwd ui build && bun run build:sidecar",
+		"desktop:build": "tauri build",
+		"tauri": "tauri",
+		"check:gmail-drift": "bun run test-support/check-gmail-discovery.ts",
+		"test": "bun test",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p test-support/tsconfig.json"
+	},
+	"dependencies": {
+		"@epicenter/constants": "workspace:*",
+		"@epicenter/sqlite": "workspace:*",
+		"@hono/standard-validator": "catalog:",
+		"@modelcontextprotocol/sdk": "catalog:",
+		"arktype": "catalog:",
+		"hono": "catalog:",
+		"oauth4webapi": "catalog:",
+		"typebox": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@tauri-apps/cli": "catalog:",
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	},
+	"license": "AGPL-3.0-or-later"
+}

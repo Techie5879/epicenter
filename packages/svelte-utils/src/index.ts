@@ -1,7 +1,14 @@
-export { createAiChatFetch } from './create-ai-chat-fetch.js';
+export {
+	type BoundAgentConversation,
+	bindAgentConversation,
+} from './agent-conversation.svelte.js';
+export { default as FlushEditsOnHide } from './flush-edits-on-hide.svelte';
+export {
+	fromDatabase,
+	type ReactiveDatabase,
+	type ReactiveTable,
+} from './from-database.svelte.js';
 export { fromDisposableCache } from './from-disposable-cache.svelte.js';
-export { fromKv } from './from-kv.svelte.js';
-export { fromTable, type ReactiveTableMap } from './from-table.svelte.js';
 export {
 	createPersistedMap,
 	defineEntry,
@@ -11,4 +18,3 @@ export {
 	createPersistedState,
 	PersistedError,
 } from './persisted-state.svelte.js';
-export { createSession } from './session.svelte.js';

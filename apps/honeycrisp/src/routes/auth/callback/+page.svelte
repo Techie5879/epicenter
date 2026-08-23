@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Loading } from '@epicenter/ui/loading';
+	import { auth } from '#platform/auth';
 	import { goto } from '$app/navigation';
-	import { auth } from '$platform/auth';
 
 	let errorMessage = $state<string | null>(null);
 

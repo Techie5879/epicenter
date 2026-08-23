@@ -21,7 +21,7 @@ and find a different way to pay the regression-coverage bill: integration
 tests through the real boundary, type-level invariants, or deletion of a
 test that was insuring trivial branch logic at high seam cost.
 
-Related skills: [cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md)
+Related skills: [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md)
 owns the decision once you find a candidate; [refactoring](../refactoring/SKILL.md)
 for caller counting and inlining mechanics; [radical-options](../radical-options/SKILL.md)
 when the helper is honoring a bad shape; [testing](../testing/SKILL.md)
@@ -36,31 +36,6 @@ Load on demand based on the task:
 - For **running a systematic audit across the codebase** (audit greps,
   triage buckets, commit hygiene, anti-patterns, walking away), read
   [references/sweep-procedure.md](references/sweep-procedure.md).
-
-## When to Apply
-
-Trigger when any of these hold:
-
-- A function is exported from a module but only one in-package caller
-  invokes it, and that caller is the obvious "outer" (a handler, a
-  component, a wrapper). The other caller is a test file in the same
-  directory.
-- A function accepts an optional `deps` / `overrides` / `injected`
-  parameter whose only non-default value appears in a test file.
-- A helper takes a paired getter and setter (`getX` + `setX`) over the
-  same value. The pair describes one slot, not a boundary.
-- A `.test.ts` file is comparable to or larger than the SUT in LOC, and
-  every assertion reads through a parameter that exists only for the
-  test.
-- Reading the SUT, you can't write the one-sentence test for the inner
-  function without naming the outer ("returns rows for the `ps`
-  command", "reconciles state for `createSession`"). The inner has no
-  product sentence; it's a slice of one.
-
-User phrases that trigger this skill: "is this earning its keep", "why
-is this exported", "trace the callers", "is this split for the test",
-"the test is shaping the API", "could this be one function", "is there
-a better way to structure this", "we extracted this for tests".
 
 ## The Signal vs The Reason
 
@@ -158,7 +133,7 @@ to zero. The four invariants the test was asserting are now visible in
 ~6 lines of branch logic, type-enforced by `T extends Disposable`, and
 exercised on every app boot.
 
-Article: [Don't Split for the Test](../../docs/articles/20260513T120000-dont-split-for-the-test.md).
+Article: [Don't Split for the Test](../../../docs/articles/20260513T120000-dont-split-for-the-test.md).
 
 ## Common Forms of the Smell
 

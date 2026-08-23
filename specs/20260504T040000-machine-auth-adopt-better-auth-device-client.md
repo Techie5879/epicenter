@@ -33,7 +33,7 @@ The shipped spec's thesis was *"stateless orchestration is free functions, and e
 
 > *"Machine auth's HTTP layer is Better Auth's device-authorization client plus `getSession`; Epicenter owns only the polling reaction to OAuth error codes and the projection of session responses into `BearerSession`."*
 
-Different code surface (transport vs coordinator), different motivating evidence (delegation vs decomposition), different consumers (none externally; tests internally). Per the `cohesive-clean-breaks` skill, distinct sentences earn distinct specs.
+Different code surface (transport vs coordinator), different motivating evidence (delegation vs decomposition), different consumers (none externally; tests internally). Per the `greenfield-clean-breaks` skill, distinct sentences earn distinct specs.
 
 This spec is also the **CLI-side parallel** to `specs/20260504T010000-drop-authclient-redirect-sign-in.md`, which adopts OAuth 2.1 PKCE for web environments via the existing `oauthProvider()` plugin. Both specs land Better Auth primitives end-to-end for their respective environments. They are siblings, not predecessor/successor: each ships independently. See "Relationship to broader auth architecture" below for the cross-spec map.
 
@@ -650,6 +650,6 @@ The error decomposition (`MachineAuthRequestError`, `DeviceTokenError`) is what 
 - `packages/auth/src/contracts/auth-session.ts` (`normalizeBearerSession`, `bearerSessionFromBetterAuthSessionResponse`)
 - `specs/20260504T030000-machine-auth-collapse-to-free-functions.md` (shipped predecessor)
 - `specs/20260504T010000-drop-authclient-redirect-sign-in.md` (parallel sibling: web environments adopt OAuth 2.1 PKCE via the same Better-Auth-primitives-end-to-end thesis)
-- `specs/20260503T230000-auth-unified-client-two-factories.md` (split factories spec; sets the cohesive-clean-breaks precedent)
+- `specs/20260503T230000-auth-unified-client-two-factories.md` (split factories spec; sets the greenfield-clean-breaks precedent)
 - Better Auth docs: device authorization (`https://better-auth.com/docs/plugins/device-authorization`), bearer plugin (`https://better-auth.com/docs/plugins/bearer`)
-- Skills: `cohesive-clean-breaks`, `one-sentence-test`, `auth`, `better-auth-best-practices`, `error-handling`, `factory-function-composition`, `logging`
+- Skills: `greenfield-clean-breaks`, `one-sentence-test`, `auth`, `better-auth-best-practices`, `error-handling`, `factory-function-composition`, `logging`

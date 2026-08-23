@@ -27,17 +27,15 @@ Name every database-touching script with an explicit `:local` or `:remote` suffi
     "db:generate": "drizzle-kit generate",
     "db:drop": "drizzle-kit drop",
     "db:push:local": "drizzle-kit push",
-    "db:push:remote": "infisical run --path=/api -- drizzle-kit push",
-    "db:migrate:local": "drizzle-kit migrate",
-    "db:migrate:remote": "infisical run --path=/api -- drizzle-kit migrate",
+    "db:migrate:remote": "infisical run --env=prod --path=/ops -- drizzle-kit migrate",
     "db:studio:local": "drizzle-kit studio",
-    "db:studio:remote": "infisical run --path=/api -- drizzle-kit studio"
+    "db:studio:remote": "infisical run --env=prod --path=/ops -- drizzle-kit studio"
 }
 ```
 
 `db:generate` and `db:drop` have no suffix because they never touch a database. `db:generate` diffs your schema files and produces SQL. `db:drop` deletes a local migration file. Both are pure filesystem operations. Suffixing them would be noise.
 
-Everything else gets a suffix. No exceptions.
+Everything that connects to a database gets a suffix. Not every command needs both halves: `db:push:local` exists for fast iteration, but the corresponding `:remote` push is intentionally absent because schema changes against production go through versioned migrations (`db:migrate:remote`), not ad-hoc pushes.
 
 ## The Implementation
 
@@ -57,26 +55,29 @@ dbCredentials: {
 postgres://postgres:postgres@localhost:5432/epicenter
 ```
 
-If `DATABASE_URL` isn't set in the environment, drizzle-kit falls through to the local Postgres. `:local` scripts rely on that fallback being the only thing available — no secrets injected, no env vars set.
+If `DATABASE_URL` isn't set in the environment, drizzle-kit falls through to the local Postgres. `:local` scripts rely on that fallback being the only thing available, no secrets injected, no env vars set.
 
 ### `:remote` scripts
 
-`:remote` scripts are prefixed with `infisical run --path=/api --`:
+`:remote` scripts are prefixed with `infisical run --env=prod --path=/ops --`:
 
 ```
-infisical run --path=/api -- drizzle-kit push
+infisical run --env=prod --path=/ops -- drizzle-kit migrate
 ```
 
-Infisical injects `DATABASE_URL` before the command runs. That URL points to the dev-branch or production Postgres, depending on your Infisical environment. drizzle-kit picks it up because it takes priority over the `LOCAL_DATABASE_URL` fallback.
+Infisical injects `DATABASE_URL` (and any other secrets) before the command runs. That URL points to the production Postgres. drizzle-kit picks it up because `process.env.DATABASE_URL` takes priority over the `LOCAL_DATABASE_URL` fallback.
 
-The same pattern applies to `dev`:
+### Why there is no `dev:remote`
+
+You might expect a parallel `dev:remote` that wraps `wrangler dev` with `infisical run`. There isn't one, by design. A development server pointing at production data is a category error: there's no use case for it that isn't better served by either (a) running real migrations against prod via `db:migrate:remote`, or (b) deploying.
+
+The bare `dev` script is the single sensible local workflow. It still requires Infisical login because the API needs dev bindings like API keys, auth secrets, and the Google OAuth client id, but it never touches production data at runtime: Wrangler's Hyperdrive binding (`localConnectionString` from `wrangler.jsonc`) routes the connection to local Postgres. Required secrets come from the Infisical-spawned `process.env`, and the local public origin is passed with `wrangler dev --var API_PUBLIC_ORIGIN:http://localhost:8787`; no `.dev.vars` file is produced.
 
 ```json
-"dev:local": "wrangler dev",
-"dev:remote": "infisical run --watch --path=/api -- wrangler dev",
+"dev": "bun scripts/dev.ts"
 ```
 
-`dev:remote` adds `--watch` so Infisical refreshes secrets if they rotate during a long session.
+Inside that script: `infisical run --silent --env=dev --path=/api -- wrangler dev --var API_PUBLIC_ORIGIN:http://localhost:8787`. One command, one workflow, no `:remote` variant.
 
 ## The Three-Layer Strategy
 
@@ -90,21 +91,25 @@ The same pattern applies to `dev`:
 └──────────────┴────────────────────────────────────┴──────────────────────────────────┘
 ```
 
-The production worker never uses `DATABASE_URL` directly. It uses `env.HYPERDRIVE` — the Cloudflare binding — which handles connection pooling and routing through Hyperdrive's edge network. So there's no single URL that can target production directly from drizzle-kit. That's intentional.
+The production worker never uses `DATABASE_URL` directly. It uses `env.HYPERDRIVE`: the Cloudflare binding, which handles connection pooling and routing through Hyperdrive's edge network. So there's no single URL that can target production directly from drizzle-kit. That's intentional.
 
-## Remote Doesn't Mean Production
+## Who `:remote` Is For
 
-This is important: `:remote` targets a **development branch** of your database, not production. If you use a database provider with branching — PlanetScale, Supabase, Neon — your Infisical `DATABASE_URL` should point to the dev branch. That's the whole point. You get a real Postgres environment with the same engine and extensions as production, but it's isolated. Schema changes on the dev branch don't touch production data.
+`:remote` is not "development on a remote branch." It is production administration. The `infisical run --env=prod --path=/ops --` prefix injects the live `DATABASE_URL`, and the script runs against the same Postgres that real users hit. Treat every `:remote` command as a deploy-class action.
+
+That means `:remote` is for team members with Infisical prod access only. Outside contributors run `:local` scripts against their own Postgres, write migrations, open PRs. A maintainer with prod access applies the migration via `db:migrate:remote`.
 
 The flow looks like this:
 
 ```
-:local   → localhost Postgres       → your machine only
-:remote  → dev branch Postgres      → shared dev environment
-deploy   → Hyperdrive → production  → real users
+:local   → localhost Postgres                       → your machine only
+:remote  → production Postgres (Infisical prod env) → team members only
+deploy   → Hyperdrive → production runtime          → real users
 ```
 
-Three environments, three levels of blast radius. `:local` can't break anything beyond your machine. `:remote` can break the shared dev branch but not production. And production is only reachable through Hyperdrive at runtime — no URL you can accidentally paste into a drizzle-kit command.
+Three environments, three levels of blast radius. `:local` can't break anything beyond your machine. `:remote` reaches prod data and is admin-only. And the production worker itself only reaches prod through Hyperdrive at runtime: no URL you can accidentally paste into a drizzle-kit command from the running app.
+
+If you want a shared dev branch (PlanetScale, Supabase, Neon), add a third environment in Infisical and a separate suffix (`db:migrate:dev`, for example). Don't blur it into `:remote`. The suffix names the blast radius; making `:remote` mean two different things defeats the whole point.
 
 ## The Contributor Experience
 
@@ -117,13 +122,13 @@ docker run -d -p 5432:5432 -e POSTGRES_DB=epicenter postgres
 # Push the schema locally
 bun run db:push:local
 
-# Start the dev server
-bun run dev:local
+# Open Drizzle Studio against the local DB
+bun run db:studio:local
 ```
 
-Zero secrets. Zero environment setup. The `:local` scripts work because the fallback is hardcoded in `drizzle.config.ts`. They can develop locally, write migrations, and open PRs without ever touching Infisical.
+Zero secrets. Zero environment setup. The `:local` scripts work because the fallback is hardcoded in `drizzle.config.ts`. They can write migrations and inspect schema locally without ever touching Infisical.
 
-When they need to test against the real dev database, they get Infisical access and switch to `:remote`. The workflow is the same, the scripts just have different names.
+Running the full API server (`bun run dev`) still requires Infisical access because the app needs real API keys and the auth secret. But schema work, migration authoring, and Drizzle Studio against a clean local DB are all available before the contributor is added to Infisical. When they're ready to write a real migration against production, they get Infisical prod access and use `db:migrate:remote`.
 
 ## The Pattern This Replaces
 
@@ -144,10 +149,10 @@ Or worse, there's just one script and the URL is controlled entirely by which `.
 
 ```json
 "db:push:local": "drizzle-kit push",
-"db:push:remote": "infisical run --path=/api -- drizzle-kit push",
+"db:migrate:remote": "infisical run --env=prod --path=/ops -- drizzle-kit migrate",
 ```
 
-Now the command is self-documenting. `db:push:local` cannot accidentally hit the remote database — drizzle-kit will only see `LOCAL_DATABASE_URL`. `db:push:remote` cannot accidentally hit local — Infisical injects the real URL and that takes priority.
+Now the command is self-documenting. `db:push:local` cannot accidentally hit the remote database: drizzle-kit will only see `LOCAL_DATABASE_URL`. `db:migrate:remote` cannot accidentally hit local: Infisical injects the real URL and that takes priority. The asymmetry between `push:local` and `migrate:remote` is intentional: fast ad-hoc pushes are fine for the schema you can nuke, but production gets versioned migrations.
 
 The suffix is not just a label. It enforces the behavior.
 
@@ -164,8 +169,8 @@ The one downside: you type more characters. `db:push:local` is longer than `db:p
 
 **If a script connects to a database, the script name should tell you which one.**
 
-Unsuffixed database commands are a footgun. You will forget which environment is active. The suffix isn't documentation — it's enforcement. `:local` scripts are wired to local Postgres. `:remote` scripts require secrets to run. The naming convention makes the blast radius visible before you hit enter.
+Unsuffixed database commands are a footgun. You will forget which environment is active. The suffix isn't documentation. It's enforcement. `:local` scripts are wired to local Postgres. `:remote` scripts require secrets to run. The naming convention makes the blast radius visible before you hit enter.
 
 ---
 
-_See also: [The Three Tiers of Database Latency](./database-latency-tiers.md) — where Hyperdrive fits in the latency picture_
+_See also: [The Three Tiers of Database Latency](./database-latency-tiers.md): where Hyperdrive fits in the latency picture_

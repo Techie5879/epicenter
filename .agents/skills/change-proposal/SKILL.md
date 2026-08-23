@@ -1,25 +1,14 @@
 ---
 name: change-proposal
-description: Present proposed code changes visually before implementing. Use when: "show me options", "compare approaches", "what should we do", or when changes need before/after comparison.
+description: 'Present proposed code changes visually before implementing: before/after diffs, ASCII diagrams, comparison tables. Use when: "show me options for this change", "compare approaches", or a multi-file change needs a before/after comparison before editing. Not for planning questions with no concrete code change on the table.'
 ---
 
 # Change Proposal
 
-When proposing non-trivial changes, make your reasoning visible before acting. The user should see what will change, why, and what alternatives were considered—before a single file is edited.
+When proposing non-trivial changes, make your reasoning visible before acting. The user should see what will change, why, and what alternatives were considered, before a single file is edited.
 
 Follow [writing-voice](../writing-voice/SKILL.md) for prose sections.
 
-## When to Use This
-
-- Multiple valid approaches exist (show competing options)
-- Changes span 3+ files (show the dependency graph)
-- Architecture or ownership shifts (show before/after diagrams)
-- Lifecycle or data flow changes (show the flow)
-- The user asks "what do you think?" or "how should we do this?"
-
-For trivial changes (typo fix, single-line edit, obvious bug), skip this and just do it.
-
-If the change reshapes a product surface (new command, new route, new primary API), state the post-change one-sentence meaning using [one-sentence-test](../one-sentence-test/SKILL.md) alongside the diagrams and diffs. It anchors the proposal to what the product *is*, not just what changed.
 
 ## The Three Tools
 
@@ -47,13 +36,13 @@ Show what specific code will change. Use fenced diff blocks with file paths.
 
 Rules:
 - Show the smallest meaningful diff, not the whole file
-- Include enough context lines (3–5) to understand placement
+- Include enough context lines (3-5) to understand placement
 - Group related changes together, separate unrelated ones
 - Label each diff with the file path and function/scope
 
 ### 2. ASCII Architecture Diagrams
 
-Show how components relate before and after the change. Use the characters from [progress-summary](../progress-summary/SKILL.md): `┌ ┐ └ ┘ ─ │ ├ ┤ ┬ ┴ ┼ ▼ ▲ ──→ ←──`
+Show how components relate before and after the change. Use these characters: `┌ ┐ └ ┘ ─ │ ├ ┤ ┬ ┴ ┼ ▼ ▲ ──→ ←──`
 
 **Before:**
 ```
@@ -72,11 +61,7 @@ auth ──signOut()──→ workspace.current.dispose()
           workspace is a reactive slot ← auth owns lifecycle
 ```
 
-When to use which diagram type:
-- **Ownership diagrams**: Who controls what (arrows show control flow)
-- **Layer diagrams**: Stacked boxes for architectural layers
-- **Flow diagrams**: Data or control moving between components
-- **Journey diagrams**: Evolution from attempt A → B → C
+Default to an ownership diagram: who controls what, with arrows showing control flow. Reach for stacked layers, a data-flow shape, or an attempt A → B → C journey only when ownership is not the question being decided.
 
 ### 3. Comparison Tables
 
@@ -112,8 +97,8 @@ For non-trivial changes, present in this order:
 | Change scope | What to show |
 | --- | --- |
 | 1 file | Just the diff, no diagram |
-| 2–5 files | Diff of the hardest file + one diagram showing relationships |
-| 5+ files | Full proposal: comparison table, diagrams, diffs for hardest 2–3 files |
+| 2-5 files | Diff of the hardest file + one diagram showing relationships |
+| 5+ files | Full proposal: comparison table, diagrams, diffs for hardest 2-3 files |
 | Architecture decision | Comparison table mandatory, even if only 2 options |
 | Competing approaches | All three tools: diagram per approach, diff per approach, comparison table |
 
@@ -150,6 +135,6 @@ The bad version describes changes in prose. The good version shows them.
 ## What to Avoid
 
 - **Prose-only proposals**: If you can draw it, draw it. If you can diff it, diff it.
-- **Showing every file**: Show the hardest 2–3. Mention the rest as "same pattern."
+- **Showing every file**: Show the hardest 2-3. Mention the rest as "same pattern."
 - **Burying the recommendation**: Lead with your pick, then show alternatives.
 - **Fake precision**: Don't show a diff for code you haven't read yet. Read first, then diff.

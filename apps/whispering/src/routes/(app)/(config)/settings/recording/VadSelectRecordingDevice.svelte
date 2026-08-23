@@ -1,10 +1,11 @@
 <script lang="ts">
 	import * as Field from '@epicenter/ui/field';
 	import * as Select from '@epicenter/ui/select';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { rpc } from '$lib/query';
-	import type { DeviceIdentifier } from '$lib/services/recorder/types';
-	import { asDeviceIdentifier } from '$lib/services/recorder/types';
+	import { report } from '$lib/report';
+	import type { DeviceIdentifier } from '@epicenter/recorder';
+	import { asDeviceIdentifier } from '@epicenter/recorder';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
 	let {
@@ -20,7 +21,7 @@
 
 	$effect(() => {
 		if (getDevicesQuery.isError) {
-			rpc.notify.warning(getDevicesQuery.error);
+			report.info({ cause: getDevicesQuery.error });
 		}
 	});
 
@@ -41,15 +42,15 @@
 		<Field.Label for="vad-recording-device">VAD Recording Device</Field.Label>
 		<Select.Root type="single" disabled>
 			<Select.Trigger id="vad-recording-device" class="w-full">
-				Loading devices...
+				<span class="flex items-center gap-2 text-muted-foreground">
+					<Spinner class="size-3.5" />
+					Loading devices
+				</span>
 			</Select.Trigger>
-			<Select.Content>
-				<Select.Item value="" label="Loading devices..." />
-			</Select.Content>
 		</Select.Root>
 	</Field.Field>
 {:else if getDevicesQuery.isError}
-	<p class="text-sm text-red-500">{getDevicesQuery.error.title}</p>
+	<p class="text-sm text-red-500">{getDevicesQuery.error.message}</p>
 {:else}
 	<Field.Field>
 		<Field.Label for="vad-recording-device">VAD Recording Device</Field.Label>

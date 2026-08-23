@@ -1,49 +1,29 @@
 ---
 name: radical-options
-description: "Use when a task seems trapped inside the current abstraction, an abstraction feels poorly designed, a fix keeps spreading across layers, or the user asks to think bigger, redesign from scratch, mentally inline, go up a level, or consider radical options. Forces a higher-level pass before coding: state the current path, invent the cleanest from-scratch option, inline suspicious layers, find asymmetric deletions, and choose the option that makes the system easiest to explain."
+description: "Use when a task seems trapped inside the current abstraction, an abstraction feels poorly designed, a proposed change looks like a band-aid, a fix keeps spreading across layers, or the user asks to think bigger, reconsider the whole unit, redesign from scratch, mentally inline, go up a level, or consider radical options. Forces a higher-level pass before editing: identify the largest relevant unit, state the current path, invent the cleanest from-scratch option, inline suspicious layers, find asymmetric deletions, and choose the option that makes the system easiest to explain."
 ---
 
 # Radical Options
 
-Use this skill when the local fix might be honoring a bad shape.
+The local fix might be honoring a bad shape.
 
 The move is simple: step out of the current abstraction before improving it.
 Sometimes the correct answer is not a cleaner wrapper, a narrower helper, or one
 more option. Sometimes the correct answer is to redesign the surface from the
-product sentence down and delete the compromise that made the code weird.
+product sentence down and delete the old constraint that made the code weird.
 
-Related skills: use [cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md)
+Related skills: use [greenfield-clean-breaks](../greenfield-clean-breaks/SKILL.md)
 when the radical option changes public contracts, package boundaries, or
 migration strategy. Use [one-sentence-test](../one-sentence-test/SKILL.md) to
 name the system before auditing it. Use
-[approachability-audit](../approachability-audit/SKILL.md) when the problem is
-mostly first-read clarity.
-
-## Trigger Phrases
-
-Use this skill when the user says or implies:
-
-- "think bigger"
-- "higher level"
-- "redesign from scratch"
-- "mental inlining"
-- "this abstraction feels wrong"
-- "radical options"
-- "what would we do if we were not preserving the old shape?"
-- "why are we fighting this so hard?"
-
-Also use it when implementation gives these signals:
-
-- a small fix touches unrelated layers
-- a helper needs a second helper to explain it
-- an option exists only to preserve an old mental model
-- code keeps checking an invariant after construction
-- the obvious call site is blocked by the current file tree
-- a type or wrapper is named like a concept but only hides plumbing
+[asymmetric-wins](../asymmetric-wins/SKILL.md) for the refuse-one-shape-to-
+delete-a-code-family decision. Use
+[post-implementation-review](../post-implementation-review/SKILL.md) "First-Read
+Pass" when the problem is mostly first-read clarity.
 
 ## The Ritual
 
-Do this before coding when the skill triggers.
+Do this before editing when the skill triggers.
 
 ```txt
 Current path:
@@ -62,12 +42,30 @@ User loss:
   Who loses what behavior, migration smoothness, or convenience?
 
 Decision:
-  Take the radical option / take a smaller clean break / keep the current shape
+  Take the radical option / keep the current shape
   because ...
 ```
 
-Write this out when discussing a design or spec. For tiny code edits, it can be
-a short internal pass, but still let the result steer the implementation.
+Write this out when discussing a design or spec. For narrow edits, it can be a
+short internal pass, but still let the result steer the implementation.
+
+## Find The Largest Relevant Unit
+
+Let the shape of the problem determine the frame. Start at the narrow symptom,
+then move outward until the surrounding unit explains what the change should
+be:
+
+```txt
+prose    sentence -> paragraph -> section -> document
+code     expression -> function -> module -> public surface -> workflow
+skills   rule -> section -> SKILL.md -> skill cluster
+```
+
+Read that unit end to end. Describe how it would look if the new context had
+always been known, then compare that ideal with the current shape. Choose a
+local edit only after this comparison shows that it is the coherent result. Do
+not choose it merely because it minimizes the diff. The pass may confirm a
+small change or reveal that the surrounding unit should be rewritten.
 
 ## Start From The Ideal Call Site
 
@@ -139,25 +137,15 @@ The goal is not a larger diff. The goal is a smaller explanation.
 
 ## Asymmetric Option Check
 
-Look for one refusal that deletes a whole code family.
+Look for one refusal that deletes a whole code family: an old shape, rare mode,
+fallback, alias, fast path, or provider-specific behavior whose removal collapses
+adapters, unions, flags, docs branches, tests, UI states, migration code, and
+defensive checks.
 
-```txt
-Can we refuse one old shape, rare mode, fallback, alias, fast path, or
-provider-specific behavior?
-
-If yes, what disappears?
-  adapters
-  unions
-  feature flags
-  docs branches
-  tests
-  UI states
-  migration code
-  defensive runtime checks
-```
-
-Default toward refusal when the product sentence survives and the deletion prize
-is large. Keep the behavior when the user loss is load-bearing.
+This is the asymmetric wins move. [asymmetric-wins](../asymmetric-wins/SKILL.md)
+owns the candidate list, procedure, and decision template. Default toward refusal
+when the product sentence survives and the deletion prize is large; keep the
+behavior when the user loss is load-bearing.
 
 ## Decision Rules
 
@@ -168,12 +156,6 @@ Choose the radical option when:
 - refusing the old shape leaves the product sentence intact
 - the new system is easier to explain in one sentence
 - migration cost is finite and can be done in one clean wave
-
-Choose a smaller clean break when:
-
-- the radical option is directionally right but too large for this task
-- a local ownership fix removes most of the friction
-- callers can move in one reviewable follow-up
 
 Keep the current shape when:
 

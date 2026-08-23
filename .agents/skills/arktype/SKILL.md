@@ -1,6 +1,6 @@
 ---
 name: arktype
-description: Arktype: runtime validation, discriminated unions with .merge()/.or(), spread keys. Use when mentioning arktype, type(), union types, command/event schemas.
+description: 'Arktype: runtime validation, discriminated unions with .merge()/.or(), spread keys. Use when mentioning arktype, type(), union types, command/event schemas.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -9,13 +9,6 @@ metadata:
 # Arktype Patterns
 
 Patterns for composing arktype schemas, naming runtime schema values alongside inferred types, and building discriminated unions with `.merge()` and `.or()`.
-
-## When to Apply This Skill
-
-- Defining a discriminated union schema (e.g., commands, events, actions)
-- Composing a base type with per-variant fields
-- Working with `defineTable()` schemas that use union types
-- Importing or exporting schema values that share a name with inferred types
 
 ## `base.merge(type.or(...))` Pattern (Recommended)
 
@@ -240,14 +233,14 @@ When an arktype schema exports both a runtime value and its inferred type with t
 
 ```typescript
 // Good: one import covers both namespaces
-import { EncryptionKeys } from '@epicenter/encryption';
+import { WorkspaceId } from './workspace-id';
 
 const Session = type({
-	encryptionKeys: EncryptionKeys,
+	workspaceId: WorkspaceId,
 });
 
 type SessionResponse = {
-	encryptionKeys: EncryptionKeys;
+	workspaceId: WorkspaceId;
 };
 ```
 
@@ -256,12 +249,12 @@ Avoid aliasing the runtime schema just to make room for the type import.
 ```typescript
 // Bad: duplicates the name with an artificial Schema suffix
 import {
-	EncryptionKeys as EncryptionKeysSchema,
-	type EncryptionKeys,
-} from '@epicenter/encryption';
+	WorkspaceId as WorkspaceIdSchema,
+	type WorkspaceId,
+} from './workspace-id';
 
 const Session = type({
-	encryptionKeys: EncryptionKeysSchema,
+	workspaceId: WorkspaceIdSchema,
 });
 ```
 
@@ -314,6 +307,28 @@ const transcriptionConfig = type.or(
 - **Auto-sync**: Adding a model to the array automatically updates the workspace schema
 - **No string drift**: Impossible for the schema to list models that don't exist in the app
 
+## Workspace Field Expressions
+
+A workspace is pure-JSON arktype expression strings, so two arktype affordances are
+unavailable inside one and the failures look unrelated to each other.
+
+**Fields are nullable, never optional.** The workspace parser refuses any field key ending in
+`?` (`packages/workspace/src/workspace.ts`), because an optionality marker lives in the key
+and a key marker is what stopped surviving the JSON round trip (ADR-0213).
+
+```typescript
+{ date: 'string|null = null' }  // Good
+{ 'date?': 'string' }           // Refused: "declare it nullable instead"
+```
+
+**An array cannot carry a default.** `'string[] = []'` throws at parse time
+(`Expected an expression before '[]'`), so express the empty case as null.
+
+```typescript
+{ tags: 'string[]|null = null' }  // Good
+{ tags: 'string[] = []' }         // Throws
+```
+
 ## Anti-Patterns
 
 ### JS object spread (loses Type composition)
@@ -361,7 +376,5 @@ commandBase.merge({ 'windowId?': 'string' });
 
 ## References
 
-- `apps/tab-manager/src/lib/workspace.ts`: Commands table using `commandBase.merge(type.or(...))`
 - `.agents/skills/typescript/SKILL.md`: Arktype optional properties section
-- `.agents/skills/workspace-api/SKILL.md`: `defineTable()` accepts union types
 - [arktype source: merge distributes](https://github.com/arktypeio/arktype/blob/6d0639bf/ark/schema/roots/root.ts#L290-L302): `rNode.distribute()` in merge implementation

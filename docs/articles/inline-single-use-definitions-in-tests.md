@@ -7,24 +7,29 @@ When writing tests, a common pattern is to extract schema definitions, builders,
 AI coding assistants and many developers default to extracting every definition:
 
 ```typescript
-test('creates workspace with tables', () => {
-  const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
-
-  const theme = defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' });
-
-  const workspace = defineWorkspace({
-    id: 'test-app',
-    tables: { posts },
-    kv: { theme },
+test('binds tables to a Y.Doc', () => {
+  const posts = defineTable({
+    id: field.string(),
+    title: field.string(),
   });
 
-  expect(workspace.id).toBe('test-app');
+  const theme = defineKv(
+    field.select(['light', 'dark']),
+    () => 'light' as const,
+  );
+
+  const ydoc = new Y.Doc();
+  const tables = attachTables(ydoc, { posts });
+  const kv = attachKv(ydoc, { theme });
+
+  expect(tables.posts.count()).toBe(0);
+  expect(kv.theme.get()).toBe('light');
 });
 ```
 
 This pattern forces the reader to:
 
-1. See `posts` and `theme` used in `defineWorkspace()`
+1. See `posts` and `theme` used in `attachTables` / `attachKv`
 2. Scroll up to understand what they are
 3. Mentally connect the variable name to its definition
 
@@ -35,18 +40,23 @@ The variable names (`posts`, `theme`) don't add information. They're just the sa
 Inline single-use definitions directly at the call site:
 
 ```typescript
-test('creates workspace with tables', () => {
-  const workspace = defineWorkspace({
-    id: 'test-app',
-    tables: {
-      posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
-    },
-    kv: {
-      theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
-    },
+test('binds tables to a Y.Doc', () => {
+  const ydoc = new Y.Doc();
+  const tables = attachTables(ydoc, {
+    posts: defineTable({
+      id: field.string(),
+      title: field.string(),
+    }),
+  });
+  const kv = attachKv(ydoc, {
+    theme: defineKv(
+      field.select(['light', 'dark']),
+      () => 'light' as const,
+    ),
   });
 
-  expect(workspace.id).toBe('test-app');
+  expect(tables.posts.count()).toBe(0);
+  expect(kv.theme.get()).toBe('light');
 });
 ```
 
@@ -64,7 +74,7 @@ No need to invent variable names for single-use values. The property key (`posts
 
 ### 3. Matches the Mental Model
 
-For factory functions like `createTables()` or `createKv()`, the definition IS the usage. You're not defining a table and then doing something else with it. You're defining a table to pass to a factory. They're inseparable.
+For attachment primitives like `attachTables()` or `attachKv()`, the definition IS the usage. You're not defining a table and then doing something else with it. You're defining a table to bind to a Y.Doc. They're inseparable.
 
 ### 4. Easier to Copy and Modify
 
@@ -81,9 +91,9 @@ Extract to a variable when:
 
 ## What This Applies To
 
-- `defineTable()`, `defineKv()`, `defineWorkspace()` builders
-- `createTables()`, `createKv()` factory calls
-- Schema definitions (arktype, zod, valibot, typebox)
+- `defineTable()`, `defineKv()` definitions
+- `attachTables()`, `attachKv()` attachment calls
+- Schema definitions (TypeBox, zod, valibot, arktype)
 - Configuration objects passed to factories
 - Mock functions used only once
 - Any builder pattern where the output is consumed immediately

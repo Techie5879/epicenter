@@ -1,0 +1,439 @@
+/**
+ * The private Rust-to-Bun startup protocol and the Bun sidecar lifecycle.
+ * Rust resolves the runtime mode and port, then keeps stdin open as its parent
+ * lifetime signal. Bun validates that input but never resolves a port itself.
+ */
+
+export const SIDECAR_PROTOCOL_VERSION = 2;
+export const PRODUCTION_PORT = 39_130;
+
+export type SidecarRuntimeMode = 'production' | 'development';
+
+export type BootFrame = {
+	type: 'boot';
+	protocolVersion: typeof SIDECAR_PROTOCOL_VERSION;
+	token: string;
+	port: number;
+	authCell: string | null;
+};
+
+export type ReadyFrame = {
+	type: 'ready';
+	protocolVersion: typeof SIDECAR_PROTOCOL_VERSION;
+	port: number;
+};
+
+type SidecarServer = {
+	stop(closeActiveConnections?: boolean): Promise<void> | void;
+};
+
+type SidecarHost = {
+	[Symbol.asyncDispose](): Promise<void>;
+};
+
+type SignalSource = {
+	once(signal: 'SIGTERM' | 'SIGINT', listener: () => void): unknown;
+	off(signal: 'SIGTERM' | 'SIGINT', listener: () => void): unknown;
+};
+
+export type ParentPipe = {
+	bootLine: Promise<string>;
+	frames: ReadableStream<string>;
+	closed: Promise<void>;
+	cancel(): Promise<void>;
+};
+
+export type NativeAuthPort = ReturnType<typeof createNativeAuthPort>;
+
+const BOOT_FRAME_KEYS = [
+	'authCell',
+	'port',
+	'protocolVersion',
+	'token',
+	'type',
+];
+const BASE64URL = /^[A-Za-z0-9_-]+$/;
+const OAUTH_CALLBACK = 'epicenter://auth/callback';
+
+/**
+ * Parse the one explicit runtime-mode argument supplied by the Rust parent.
+ * The full argv works for both Bun source runs (`bun`, script, args) and
+ * compiled executables (executable, args), whose leading shapes differ.
+ */
+export function parseRuntimeMode(argv: string[]): SidecarRuntimeMode {
+	const runtimeModeArguments = argv.filter((argument) =>
+		argument.startsWith('--runtime-mode='),
+	);
+	if (runtimeModeArguments.length !== 1) {
+		throw new Error(
+			'Expected exactly one --runtime-mode=production|development argument.',
+		);
+	}
+
+	switch (runtimeModeArguments[0]) {
+		case '--runtime-mode=production':
+			return 'production';
+		case '--runtime-mode=development':
+			return 'development';
+		default:
+			throw new Error(
+				'Expected --runtime-mode=production or --runtime-mode=development.',
+			);
+	}
+}
+
+/** Strictly validate the first stdin line as the current protocol version. */
+export function parseBootFrame(
+	line: string,
+	runtimeMode: SidecarRuntimeMode,
+): BootFrame {
+	let value: unknown;
+	try {
+		value = JSON.parse(line);
+	} catch {
+		throw new Error('The boot frame must be valid JSON.');
+	}
+
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		throw new Error('The boot frame must be a JSON object.');
+	}
+
+	const keys = Object.keys(value).sort();
+	if (
+		keys.length !== BOOT_FRAME_KEYS.length ||
+		keys.some((key, index) => key !== BOOT_FRAME_KEYS[index])
+	) {
+		throw new Error(
+			'The boot frame must contain exactly type, protocolVersion, token, port, and authCell.',
+		);
+	}
+
+	const frame = value as Record<string, unknown>;
+	if (frame.type !== 'boot') {
+		throw new Error('The boot frame type must be "boot".');
+	}
+	if (frame.protocolVersion !== SIDECAR_PROTOCOL_VERSION) {
+		throw new Error(
+			`Unsupported boot protocol version: ${String(frame.protocolVersion)}.`,
+		);
+	}
+	if (typeof frame.token !== 'string' || !BASE64URL.test(frame.token)) {
+		throw new Error('The boot token must be a non-empty base64url string.');
+	}
+	if (
+		typeof frame.port !== 'number' ||
+		!Number.isInteger(frame.port) ||
+		frame.port < 1_024 ||
+		frame.port > 65_535
+	) {
+		throw new Error(
+			'The boot port must be an integer from 1024 through 65535.',
+		);
+	}
+	if (runtimeMode === 'production' && frame.port !== PRODUCTION_PORT) {
+		throw new Error(`Production must bind port ${PRODUCTION_PORT}.`);
+	}
+	if (frame.authCell !== null && typeof frame.authCell !== 'string') {
+		throw new Error('The boot auth cell must be a string or null.');
+	}
+
+	return frame as BootFrame;
+}
+
+export function createReadyFrame(port: number): ReadyFrame {
+	return {
+		type: 'ready',
+		protocolVersion: SIDECAR_PROTOCOL_VERSION,
+		port,
+	};
+}
+
+/** Read the boot line, then expose every later Rust frame on the same pipe. */
+export function watchParentPipe(
+	stream: ReadableStream<Uint8Array>,
+): ParentPipe {
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
+	let isBootSettled = false;
+	const boot = Promise.withResolvers<string>();
+	let frameController!: ReadableStreamDefaultController<string>;
+	const frames = new ReadableStream<string>({
+		start(controller) {
+			frameController = controller;
+		},
+	});
+
+	const closed = (async (): Promise<void> => {
+		let buffer = '';
+		try {
+			while (true) {
+				const { value, done } = await reader.read();
+				if (value) {
+					buffer += decoder.decode(value, { stream: true });
+				}
+
+				let newline = buffer.indexOf('\n');
+				while (newline !== -1) {
+					const line = buffer.slice(0, newline).replace(/\r$/, '');
+					buffer = buffer.slice(newline + 1);
+					if (isBootSettled) frameController.enqueue(line);
+					else {
+						isBootSettled = true;
+						boot.resolve(line);
+					}
+					newline = buffer.indexOf('\n');
+				}
+
+				if (!done) continue;
+				if (!isBootSettled) {
+					isBootSettled = true;
+					boot.reject(
+						new Error('The parent pipe closed before a complete boot line.'),
+					);
+				}
+				if (buffer !== '') {
+					frameController.error(
+						new Error('The parent pipe closed during an incomplete frame.'),
+					);
+				} else {
+					frameController.close();
+				}
+				return;
+			}
+		} catch (error) {
+			if (!isBootSettled) {
+				isBootSettled = true;
+				boot.reject(
+					error instanceof Error
+						? error
+						: new Error('Failed to read the parent pipe.'),
+				);
+			}
+			frameController.error(error);
+			throw error;
+		}
+	})();
+
+	return {
+		bootLine: boot.promise,
+		frames,
+		closed,
+		async cancel() {
+			await reader.cancel();
+		},
+	};
+}
+
+/**
+ * Bind the fixed native auth operations to the versioned Rust pipe.
+ * The port is deliberately content-blind: it cannot name a keyring entry or
+ * invoke arbitrary native commands.
+ */
+export function createNativeAuthPort(
+	{ parentPipe }: { parentPipe: ParentPipe },
+	{
+		writeLine = (line) => process.stdout.write(`${line}\n`),
+		createRequestId = () => crypto.randomUUID(),
+	}: {
+		writeLine?: (line: string) => unknown;
+		createRequestId?: () => string;
+	} = {},
+) {
+	const pending = new Map<
+		string,
+		{ resolve(): void; reject(error: Error): void }
+	>();
+	const callbackListeners = new Set<(url: string) => void>();
+	let queuedCallback: string | null = null;
+
+	function send(frame: unknown) {
+		writeLine(JSON.stringify(frame));
+	}
+
+	function request(
+		frame:
+			| { type: 'store-auth'; serialized: string | null }
+			| { type: 'open-auth-url'; url: string },
+	): Promise<void> {
+		const requestId = createRequestId();
+		return new Promise<void>((resolve, reject) => {
+			pending.set(requestId, { resolve, reject });
+			try {
+				send({ ...frame, requestId });
+			} catch (cause) {
+				pending.delete(requestId);
+				reject(cause instanceof Error ? cause : new Error(String(cause)));
+			}
+		});
+	}
+
+	function accept(line: string) {
+		const frame = parseNativeFrame(line);
+		if (frame.type === 'oauth-callback') {
+			if (callbackListeners.size === 0) queuedCallback = frame.url;
+			else for (const listener of callbackListeners) listener(frame.url);
+			return;
+		}
+
+		const request = pending.get(frame.requestId);
+		if (!request) {
+			throw new Error(
+				`Rust returned unknown native request ${frame.requestId}.`,
+			);
+		}
+		pending.delete(frame.requestId);
+		if (frame.status === 'ok') request.resolve();
+		else request.reject(new Error(frame.message));
+	}
+
+	const completed = (async () => {
+		const reader = parentPipe.frames.getReader();
+		try {
+			while (true) {
+				const { value, done } = await reader.read();
+				if (done) return;
+				accept(value);
+			}
+		} finally {
+			for (const request of pending.values()) {
+				request.reject(new Error('The native auth port closed.'));
+			}
+			pending.clear();
+		}
+	})();
+
+	return {
+		completed,
+		storeAuth(serialized: string | null) {
+			return request({ type: 'store-auth', serialized });
+		},
+		openAuthUrl(url: string) {
+			return request({ type: 'open-auth-url', url });
+		},
+		relaunch() {
+			send({ type: 'relaunch' });
+		},
+		onOAuthCallback(listener: (url: string) => void) {
+			callbackListeners.add(listener);
+			if (queuedCallback !== null) {
+				const callback = queuedCallback;
+				queuedCallback = null;
+				listener(callback);
+			}
+			return () => callbackListeners.delete(listener);
+		},
+	};
+}
+
+type NativeFrame =
+	| { type: 'native-result'; requestId: string; status: 'ok' }
+	| {
+			type: 'native-result';
+			requestId: string;
+			status: 'error';
+			message: string;
+	  }
+	| { type: 'oauth-callback'; url: string };
+
+function parseNativeFrame(line: string): NativeFrame {
+	let value: unknown;
+	try {
+		value = JSON.parse(line);
+	} catch {
+		throw new Error('The native auth frame must be valid JSON.');
+	}
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		throw new Error('The native auth frame must be a JSON object.');
+	}
+	const frame = value as Record<string, unknown>;
+	if (frame.type === 'oauth-callback') {
+		assertExactKeys(frame, ['type', 'url']);
+		if (typeof frame.url !== 'string' || !isOAuthCallback(frame.url)) {
+			throw new Error('Rust sent an invalid OAuth callback URL.');
+		}
+		return frame as NativeFrame;
+	}
+	if (frame.type === 'native-result') {
+		const keys =
+			frame.status === 'error'
+				? ['message', 'requestId', 'status', 'type']
+				: ['requestId', 'status', 'type'];
+		assertExactKeys(frame, keys);
+		if (typeof frame.requestId !== 'string' || frame.requestId === '') {
+			throw new Error('The native result requestId must be non-empty.');
+		}
+		if (frame.status !== 'ok' && frame.status !== 'error') {
+			throw new Error('The native result status must be ok or error.');
+		}
+		if (frame.status === 'error' && typeof frame.message !== 'string') {
+			throw new Error('The native result error must include a message.');
+		}
+		return frame as NativeFrame;
+	}
+	throw new Error(`Unknown native auth frame: ${String(frame.type)}.`);
+}
+
+function assertExactKeys(value: Record<string, unknown>, expected: string[]) {
+	const keys = Object.keys(value).sort();
+	if (
+		keys.length !== expected.length ||
+		keys.some((key, index) => key !== expected[index])
+	) {
+		throw new Error(`Unexpected keys in ${String(value.type)} frame.`);
+	}
+}
+
+function isOAuthCallback(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return (
+			`${url.protocol}//${url.host}${url.pathname}` === OAUTH_CALLBACK &&
+			(url.searchParams.has('code') || url.searchParams.has('error')) &&
+			url.username === '' &&
+			url.password === '' &&
+			url.hash === ''
+		);
+	} catch {
+		return false;
+	}
+}
+
+/** Wait for a parent exit signal, then stop accepting work and release state. */
+export async function superviseSidecar({
+	server,
+	host,
+	parentPipe,
+	protocol,
+	signals = process,
+}: {
+	server: SidecarServer;
+	host: SidecarHost;
+	parentPipe: ParentPipe;
+	protocol?: { completed: Promise<void> };
+	signals?: SignalSource;
+}): Promise<void> {
+	const shutdownRequested = Promise.withResolvers<void>();
+	const onSignal = () => shutdownRequested.resolve();
+	signals.once('SIGTERM', onSignal);
+	signals.once('SIGINT', onSignal);
+
+	try {
+		await Promise.race([
+			shutdownRequested.promise,
+			parentPipe.closed,
+			...(protocol ? [protocol.completed] : []),
+		]);
+	} finally {
+		try {
+			await server.stop(true);
+		} finally {
+			try {
+				await host[Symbol.asyncDispose]();
+			} finally {
+				signals.off('SIGTERM', onSignal);
+				signals.off('SIGINT', onSignal);
+				await parentPipe.cancel();
+			}
+		}
+	}
+}

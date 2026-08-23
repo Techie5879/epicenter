@@ -72,8 +72,7 @@ export const MistralTranscriptionServiceLive = {
 		audioBlob: Blob,
 		options: {
 			prompt: string;
-			temperature: string;
-			outputLanguage: string;
+			spokenLanguage: string;
 			apiKey: string;
 			modelName: string;
 		},
@@ -106,12 +105,9 @@ export const MistralTranscriptionServiceLive = {
 					file,
 					model: options.modelName,
 					language:
-						options.outputLanguage !== 'auto'
-							? options.outputLanguage
+						options.spokenLanguage !== 'auto'
+							? options.spokenLanguage
 							: undefined,
-					temperature: options.temperature
-						? Number.parseFloat(options.temperature)
-						: undefined,
 				}),
 			catch: (error) => {
 				if (error instanceof MistralConnectionError) {
@@ -150,6 +146,3 @@ export const MistralTranscriptionServiceLive = {
 		return Ok(transcription.text.trim());
 	},
 };
-
-export type MistralTranscriptionService =
-	typeof MistralTranscriptionServiceLive;

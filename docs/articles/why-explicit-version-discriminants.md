@@ -1,6 +1,8 @@
 # Why Epicenter Makes You Type \_v in Every Write
 
-Epicenter makes you type `_v: 2` in every versioned table write. We explored three different approaches, an auto-injection system, and a "start simple, add later" pattern before landing here. The explicit `_v` survived because it solved a problem the alternatives couldn't: one pattern, no ambiguity, greppable version bumps.
+> **Historical: API has moved.** This article documents the explicit `_v` era, where users declared `_v` in every column schema and stamped it in every `set` call. Workspace tables now make `_v` library-managed: users never declare it, never write it, and never see it on returned rows. The library stamps it on write, routes by it on read, and strips it before handing the row back. Migrate functions receive `{ value, version }` instead of `row`. See `packages/workspace/specs/20260525T061910-library-managed-row-version.md` for the rationale.
+
+Epicenter used to make you type `_v: 2` in every versioned table write. We explored three different approaches, an auto-injection system, and a "start simple, add later" pattern before landing on explicit `_v`. The explicit `_v` survived for a while because it solved a problem the alternatives couldn't: one pattern, no ambiguity, greppable version bumps. We've since gone further and pulled the discriminator out of the user-facing API entirely; the section below preserves the reasoning behind the intermediate explicit-`_v` design.
 
 ## Three Approaches, One Problem
 
@@ -121,6 +123,6 @@ One pattern, explicit, greppable. That's the bet.
 
 We didn't stop at documentation. In [PR #1366](https://github.com/EpicenterHQ/epicenter/pull/1366), we changed the table generic constraint from `CombinedStandardSchema<{ id: string }>` to `CombinedStandardSchema<{ id: string; _v: number }>`. Passing a table schema without `_v` to `defineTable()` is now a compile error.
 
-This closed the loop: `_v` went from "recommended" to "the only way." The pattern taxonomy — field presence, asymmetric `_v`, symmetric `_v` — disappeared from the docs entirely. There's one pattern for tables. KV stores stay flexible since they're small objects where field presence is unambiguous.
+This closed the loop: `_v` went from "recommended" to "the only way." The pattern taxonomy: field presence, asymmetric `_v`, symmetric `_v`: disappeared from the docs entirely. There's one pattern for tables. KV stores stay flexible since they're small objects where field presence is unambiguous.
 
 The change was zero-risk because every table schema already had `_v: 1` from the same PR. The type enforcement just prevents future code from going back to the old patterns.

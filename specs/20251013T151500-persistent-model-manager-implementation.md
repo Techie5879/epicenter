@@ -1,5 +1,7 @@
 # Persistent Model Manager Implementation Plan
 
+> Historical note: this spec predates the current Wellcrafted query API. In Svelte components, pass an accessor to `createQuery` and `createMutation`. Shared query and mutation definitions expose `.options` as a property.
+
 ## Executive Decision: Smart Default with User Control
 
 After analyzing approaches and considering Whispering's user base, here's my recommendation:
@@ -438,7 +440,7 @@ const DEFAULT_MODEL_SETTINGS: ModelSettings = {
 
   let { settings = $bindable() }: Props = $props();
 
-  const updateMutation = createMutation(rpc.updateModelConfig.options);
+  const updateMutation = createMutation(() => rpc.updateModelConfig.options);
 
   function handleStrategyChange(value: ModelMemoryStrategy) {
     settings.memoryStrategy = value;
@@ -616,9 +618,10 @@ const DEFAULT_MODEL_SETTINGS: ModelSettings = {
   import * as rpc from '$lib/query';
   import { Badge } from '$lib/components/ui/badge';
 
-  const statusQuery = createQuery(rpc.getModelStatus.options, {
+  const statusQuery = createQuery(() => ({
+    ...rpc.getModelStatus.options,
     refetchInterval: 5000, // Update every 5 seconds
-  });
+  }));
 
   $: status = $statusQuery.data;
   $: isLoaded = status?.is_loaded ?? false;

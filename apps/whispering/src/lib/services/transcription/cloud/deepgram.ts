@@ -5,7 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { HttpServiceLive } from '$lib/services/http';
+import { HttpServiceLive } from '#platform/http';
 import type { HttpError } from '$lib/services/http/types';
 
 const MAX_FILE_SIZE_MB = 500 as const;
@@ -88,8 +88,7 @@ export const DeepgramTranscriptionServiceLive = {
 		audioBlob: Blob,
 		options: {
 			prompt: string;
-			temperature: string;
-			outputLanguage: string;
+			spokenLanguage: string;
 			apiKey: string;
 			modelName: string;
 		},
@@ -108,8 +107,8 @@ export const DeepgramTranscriptionServiceLive = {
 			paragraphs: 'true',
 		});
 
-		if (options.outputLanguage !== 'auto') {
-			params.append('language', options.outputLanguage);
+		if (options.spokenLanguage !== 'auto') {
+			params.append('language', options.spokenLanguage);
 		}
 
 		if (options.prompt) {
@@ -171,6 +170,3 @@ export const DeepgramTranscriptionServiceLive = {
 		return Ok(transcript.trim());
 	},
 };
-
-export type DeepgramTranscriptionService =
-	typeof DeepgramTranscriptionServiceLive;

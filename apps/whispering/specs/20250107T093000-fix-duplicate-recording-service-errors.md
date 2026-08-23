@@ -38,7 +38,7 @@ Each service should have its own specific error type:
 In commands.ts, change error handling from:
 
 ```typescript
-rpc.notify.error.execute({
+rpc.notify.error({
 	id: toastId,
 	title: '❌ Failed to start recording',
 	description: 'Your recording could not be started. Please try again.',
@@ -49,7 +49,7 @@ rpc.notify.error.execute({
 To:
 
 ```typescript
-rpc.notify.error.execute({
+rpc.notify.error({
 	id: toastId,
 	title: '❌ Failed to start recording',
 	description: startRecordingError.message,

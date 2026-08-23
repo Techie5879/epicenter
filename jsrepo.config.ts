@@ -3,7 +3,7 @@
  *
  * Each app under apps/<app>/blocks/ contributes recipe blocks that consumers
  * copy into their own tree with `bunx jsrepo add epicenter/<app>/<recipe>`.
- * The blocks depend on the npm primitives in @epicenter/workspace, the
+ * The blocks depend on the npm primitives in @epicenter/data, the
  * @epicenter/<app> schema package root, and friends; consumers install those
  * normally. The blocks themselves are owned by the consumer once copied.
  */
@@ -15,16 +15,14 @@ import { defineConfig, js, repository } from 'jsrepo';
  *
  * `workspace.ts` (schema + actions) and `daemon-route.ts` (the long-lived
  * writer) ship for every app. Scripts are not recipes: a script is a
- * user-owned Bun file that reads the local SQLite materializer and writes
- * through `connectDaemonActions`. See `docs/scripting.md` for the canonical
- * three-import example.
+ * user-owned Bun file that reads the local SQLite materializer. There is no
+ * daemon write path; writes go through an app or an in-process tool surface
+ * (ADR-0112).
  */
 
 const BLOCKS = {
-	fuji: ['workspace', 'daemon-route'],
 	honeycrisp: ['workspace', 'daemon-route'],
-	opensidian: ['workspace', 'daemon-route'],
-	zhongwen: ['workspace', 'daemon-route'],
+	vocab: ['workspace', 'daemon-route'],
 } as const;
 
 export default defineConfig({

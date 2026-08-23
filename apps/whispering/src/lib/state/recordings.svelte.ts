@@ -1,132 +1,46 @@
-/**
- * Reactive recording state backed by Yjs workspace tables.
- *
- * Replaces TanStack Query + BlobStore for recording CRUD. SvelteMap provides
- * per-key reactivity—updating one recording doesn't re-render the entire list.
- * The Yjs observer fires on local writes, remote CRDT sync, and migration.
- *
- * Audio blob access still goes through BlobStore (blobs are too large for CRDTs).
- *
- * @example
- * ```typescript
- * import { recordings } from '$lib/state/recordings.svelte';
- *
- * // Read reactively (re-renders on change)
- * const recording = recordings.get(id);
- * const all = recordings.sorted; // newest first
- *
- * // Write (Yjs observer auto-updates SvelteMap → components re-render)
- * recordings.set(recording);
- * recordings.delete(id);
- * ```
- */
-import { fromTable } from '@epicenter/svelte';
-import { whispering } from '$lib/whispering/client';
-import type { Recording } from '$lib/workspace';
+import { createSubscriber } from 'svelte/reactivity';
+import type { WhisperingApp } from '$lib/whispering/app';
+import type { Recording } from '$lib/whispering/recording';
 
-/** Re-exported from the workspace definition for consumer convenience. */
-export type { Recording } from '$lib/workspace';
+export type { Recording } from '$lib/whispering/recording';
 
-function createRecordings() {
-	const map = fromTable(whispering.tables.recordings);
+export type Recordings = ReturnType<typeof createRecordings>;
 
-	// Memoize sorted array with $derived so consumers get a stable reference.
-	// Without this, every access creates a new array → TanStack Table's $derived
-	// sees "new data" → updates internal $state → re-triggers $derived → infinite loop.
-	const sorted = $derived(
-		[...map.values()].sort(
-			(a, b) =>
-				new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime(),
-		),
-	);
-
+/** Bridges committed recordings-table invalidations into Svelte tracking. */
+export function createRecordings({
+	recordings,
+}: Pick<WhisperingApp, 'recordings'>) {
+	const invalidate = createSubscriber((update) => recordings.subscribe(update));
 	return {
-		[Symbol.dispose]() {
-			map[Symbol.dispose]();
+		get sorted() {
+			invalidate();
+			return recordings.sorted;
 		},
-
-		/**
-		 * All recordings as a reactive SvelteMap.
-		 *
-		 * Components reading this re-render per-key when recordings change.
-		 * Use `.sorted` for a pre-sorted array, or iterate directly for
-		 * custom ordering.
-		 */
-		get all() {
-			return map;
-		},
-
-		/**
-		 * Get a recording by ID. Returns undefined if not found.
-		 *
-		 * Reads from the reactive SvelteMap—triggers re-render if the
-		 * recording changes or is deleted.
-		 */
-		get(id: string) {
-			return map.get(id);
-		},
-
-		/**
-		 * All recordings as a sorted array (newest first by recordedAt).
-		 *
-		 * Memoized via `$derived`—returns a stable reference until the
-		 * SvelteMap actually changes. This is critical for TanStack Table,
-		 * which uses reference equality to detect data changes.
-		 */
-		get sorted(): Recording[] {
-			return sorted;
-		},
-
-		/**
-		 * Create or update a recording. Writes to Yjs → observer updates SvelteMap.
-		 *
-		 * Accepts a recording without `_v` (version tag is added automatically).
-		 * No manual cache invalidation needed—the observer handles UI updates.
-		 */
-		set(recording: Omit<Recording, '_v'>) {
-			whispering.tables.recordings.set({ ...recording, _v: 2 } as Recording);
-		},
-
-		/**
-		 * Partially update a recording by ID.
-		 *
-		 * Reads the current row, merges the partial fields, validates, and writes.
-		 * Returns the update result for error handling.
-		 */
-		update(id: string, partial: Partial<Omit<Recording, 'id' | '_v'>>) {
-			return whispering.tables.recordings.update(id, partial);
-		},
-
-		/**
-		 * Delete a recording by ID.
-		 *
-		 * Fire-and-forget—Yjs observer fires `map.delete(id)` automatically.
-		 * Callers should clean up audio URLs before calling this.
-		 */
-		delete(id: string) {
-			whispering.tables.recordings.delete(id);
-		},
-
-		/**
-		 * Delete multiple recordings by ID in a single optimized scan.
-		 *
-		 * Uses the workspace table's bulkDelete (O(n) single scan) instead of
-		 * looping delete calls (O(n²)). Callers should clean up audio URLs
-		 * and audio blobs separately via `services.blobs.audio.delete(ids)`.
-		 */
-		async bulkDelete(ids: string[]) {
-			await whispering.tables.recordings.bulkDelete(ids);
-		},
-
-		/** Total number of recordings. */
 		get count() {
-			return map.size;
+			invalidate();
+			return recordings.count;
 		},
+		get nonconforming() {
+			invalidate();
+			return recordings.nonconforming;
+		},
+		// Availability follows the platform's reactive auth state, which the
+		// underlying getter reads on every access; no record subscription needed.
+		get remoteAvailable() {
+			return recordings.remoteAvailable;
+		},
+		get(id: Recording['id']) {
+			invalidate();
+			return recordings.get(id);
+		},
+		storeAudio: recordings.storeAudio,
+		create: recordings.create,
+		patch: recordings.patch,
+		delete: recordings.delete,
+		audioAvailability: recordings.audioAvailability,
+		uploadAudio: recordings.uploadAudio,
+		downloadAudio: recordings.downloadAudio,
+		removeLocalAudio: recordings.removeLocalAudio,
+		subscribe: recordings.subscribe,
 	};
-}
-
-export const recordings = createRecordings();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => recordings[Symbol.dispose]());
 }

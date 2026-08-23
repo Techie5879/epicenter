@@ -1,13 +1,20 @@
 <script lang="ts">
-	import { fromDisposableCache } from '@epicenter/svelte';
-	import { skills } from '$lib/skills/client';
+	import { SKILL_CONTENT } from '@epicenter/skills';
+	import { getSkills } from '$lib/context.js';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { id }: { id: string } = $props();
+	const skills = getSkills();
 
-	const doc = fromDisposableCache(skills.referenceDocs, () => id);
+	const content = $derived(
+		skills.data.tables.skillReferences.document(id)?.get(SKILL_CONTENT),
+	);
 </script>
 
 <div class="h-48 border-t">
-	<CodeMirrorEditor ytext={doc.current.content.binding} />
+	{#if content !== undefined}
+		{#key id}
+			<CodeMirrorEditor {content} />
+		{/key}
+	{/if}
 </div>

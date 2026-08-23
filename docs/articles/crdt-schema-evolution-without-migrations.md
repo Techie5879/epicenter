@@ -1,5 +1,10 @@
 # How CRDTs Evolve Schemas Without Traditional Migrations
 
+> Historical: this article describes the retired Yjs-record model. Epicenter's
+> target record plane keeps schema-opaque canonical JSON and applies
+> release-local lenses without user-data migration. See
+> [ADR-0125](../adr/0125-record-definitions-are-release-local-lenses-and-never-migrate-user-data.md).
+
 I'm building Epicenter, a local-first workspace system using Yjs CRDTs. When I started thinking about schema evolution, I assumed I'd need something like database migrations: version numbers, up/down scripts, the whole ceremony.
 
 Then I realized: CRDTs don't work like databases. And that changes everything.
@@ -42,14 +47,10 @@ Notice what's _not_ there: no error when the row doesn't match the schema. The r
 KV stores (settings, preferences) use a flat Y.Map with string keys:
 
 ```typescript
-const settings = createKv(ydoc, {
-  theme: kv({
-    field: select({ options: ['light', 'dark'], default: 'light' }),
-  }),
-  fontSize: kv({
-    field: integer({ default: 14 }),
-  }),
-});
+const settings = {
+  theme: defineKv(field.select(['light', 'dark']), () => 'light' as const),
+  fontSize: defineKv(field.integer(), () => 14),
+};
 ```
 
 The schema exists in your code, not in the data. The Y.Map just stores whatever you write to it.
@@ -57,18 +58,12 @@ The schema exists in your code, not in the data. The Y.Map just stores whatever 
 **Add a new setting?**
 
 ```typescript
-const settings = createKv(ydoc, {
-  theme: kv({
-    field: select({ options: ['light', 'dark'], default: 'light' }),
-  }),
-  fontSize: kv({
-    field: integer({ default: 14 }),
-  }),
-  // New field - just add it
-  language: kv({
-    field: select({ options: ['en', 'es', 'fr'], default: 'en' }),
-  }),
-});
+const settings = {
+  theme: defineKv(field.select(['light', 'dark']), () => 'light' as const),
+  fontSize: defineKv(field.integer(), () => 14),
+  // New field: just add it
+  language: defineKv(field.select(['en', 'es', 'fr']), () => 'en' as const),
+};
 
 // Old clients: ignore language (they don't know about it)
 // New clients: read language, get default 'en' if never set
@@ -80,12 +75,10 @@ No migration needed. Old clients just don't read that key. New clients get the d
 
 ```typescript
 // Just remove it from the code
-const settings = createKv(ydoc, {
-  theme: kv({
-    field: select({ options: ['light', 'dark'], default: 'light' }),
-  }),
+const settings = {
+  theme: defineKv(field.select(['light', 'dark']), () => 'light' as const),
   // fontSize: removed from code
-});
+};
 
 // The data stays in Y.Map forever
 // But nobody reads it anymore
@@ -99,15 +92,10 @@ Tables work similarly, but with a twist: each field has its own validator and de
 
 ```typescript
 const tables = {
-  posts: table({
-    fields: {
-      id: id(),
-      title: text(),
-      status: select({
-        options: ['draft', 'published'],
-        default: 'draft'
-      }),
-    },
+  posts: defineTable({
+    id: field.string(),
+    title: field.string(),
+    status: field.select(['draft', 'published'], { default: 'draft' }),
   }),
 };
 ```
@@ -116,17 +104,12 @@ const tables = {
 
 ```typescript
 const tables = {
-  posts: table({
-    fields: {
-      id: id(),
-      title: text(),
-      status: select({
-        options: ['draft', 'published'],
-        default: 'draft'
-      }),
-      // New field
-      priority: integer({ default: 0 }),
-    },
+  posts: defineTable({
+    id: field.string(),
+    title: field.string(),
+    status: field.select(['draft', 'published'], { default: 'draft' }),
+    // New field
+    priority: field.integer({ default: 0 }),
   }),
 };
 ```
@@ -258,6 +241,6 @@ And for 80% of apps? That's enough.
 
 _See also:_
 
-- [Schema Migration Patterns spec](../../specs/20260116T082500-schema-migration-patterns.md) - Full technical breakdown
+- Removed Schema Migration Patterns spec, recoverable through [Spec History](../spec-history.md) - Full technical breakdown
 - [Workspace Schema Versioning spec](../../specs/20260124T125300-workspace-schema-versioning.md) - How to build explicit versioning when you need it
 - [The Nested Y.Map Trap](./yjs-nested-maps-lww-trap.md) - Why schema structure matters in CRDTs

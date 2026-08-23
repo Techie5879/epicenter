@@ -2,7 +2,7 @@
 
 # Types Should Be Computed, Not Declared
 
-> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. Code examples below use the original names. See `specs/20260213T014300-rename-suspended-to-saved.md`.
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. Code examples below use the original names.
 
 ## `types.ts` is a code smell
 
@@ -69,7 +69,7 @@ And `background.ts` had its own `defineWorkspace({ id: 'tab-manager', tables: BR
 After:
 
 ```typescript
-// workspace.ts — single source of truth
+// workspace.ts: single source of truth
 const tabs = defineTable(
 	type({ id: TabCompositeId, deviceId: 'string' /* ... */ }),
 );

@@ -1,5 +1,7 @@
 # Transform Clipboard Command
 
+> Historical note: this spec predates the current Wellcrafted query API. Shared mutations are now called directly. Shared queries use `.fetch()` or `.ensure()`. Do not copy `.execute()` examples from older revisions of this plan.
+
 ## Date
 October 27, 2025
 
@@ -90,7 +92,7 @@ File: `apps/whispering/src/lib/commands.ts`
   id: 'transformClipboard',
   title: 'Transform clipboard text',
   on: 'Pressed',
-  callback: () => rpc.commands.transformClipboard.execute(undefined),
+  callback: () => rpc.commands.transformClipboard(),
 },
 ```
 
@@ -103,7 +105,7 @@ transformClipboard: defineMutation({
   mutationFn: async (): Promise<WhisperingResult<void>> => {
     // 1. Read clipboard
     const { data: clipboardText, error: readError } =
-      await rpc.text.readFromClipboard.execute();
+      await rpc.text.readFromClipboard.fetch();
 
     if (readError || !clipboardText?.trim()) {
       return WhisperingErr({
@@ -149,25 +151,25 @@ File: `apps/whispering/src/routes/+layout/AppShell.svelte`
     bind:open={transformClipboardPickerOpen}
     onSelect={async (transformation) => {
       const toastId = nanoid();
-      rpc.notify.loading.execute({
+      rpc.notify.loading({
         id: toastId,
         title: '🔄 Running transformation...',
         description: 'Transforming your clipboard text...',
       });
 
-      const { data: output, error } = await rpc.transformer.transformInput.execute({
+      const { data: output, error } = await rpc.transformer.transformInput({
         input: transformClipboardText,
         transformation,
       });
 
       if (error) {
-        rpc.notify.error.execute(error);
+        rpc.notify.error(error);
         return;
       }
 
-      rpc.sound.playSoundIfEnabled.execute('transformationComplete');
+      rpc.sound.playSoundIfEnabled('transformationComplete');
 
-      rpc.delivery.deliverTransformationResult.execute({
+      rpc.delivery.deliverTransformationResult({
         text: output,
         toastId,
       });
@@ -210,7 +212,7 @@ Add a second command that uses last-used:
   id: 'transformClipboardQuick',
   title: 'Transform clipboard (use last transformation)',
   on: 'Pressed',
-  callback: () => rpc.commands.transformClipboardQuick.execute(undefined),
+  callback: () => rpc.commands.transformClipboardQuick(),
 },
 ```
 

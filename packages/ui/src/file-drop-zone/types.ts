@@ -29,6 +29,11 @@ export type FileDropZonePropsWithoutHTML = WithChildren<{
 	 * ```
 	 */
 	accept?: string;
+	/**
+	 * Number of files already uploaded. Provide it alongside `maxFiles` to cap
+	 * uploads cumulatively across drops; omit it to cap each drop or selection
+	 * independently.
+	 */
 	fileCount?: number;
 	/** The maximum amount files allowed to be uploaded */
 	maxFiles?: number;

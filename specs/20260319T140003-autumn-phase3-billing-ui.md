@@ -2,7 +2,7 @@
 
 **Position**: Phase 3 of 4
 **Dependencies**: Phase 1 (credit system working) + Phase 2 (billing routes mounted)
-**Estimated effort**: ~3–5 days
+**Estimated effort**: ~3-5 days
 **Spec**: [Master plan](./20260319T140000-autumn-billing-overview.md)
 
 ## Goal
@@ -104,32 +104,32 @@ Autumn v2 API + Stripe
 // Request
 { planId: 'pro', redirectMode: 'if_required', carryOverBalances: { enabled: true } }
 
-// Response — redirect needed (no saved payment method)
+// Response: redirect needed (no saved payment method)
 { paymentUrl: 'https://checkout.stripe.com/...' }
 
-// Response — no redirect needed (payment method on file)
+// Response: no redirect needed (payment method on file)
 { success: true }
 ```
 
 ## Implementation Plan
 
-### Sub-phase A: Query layer (days 1–2)
+### Sub-phase A: Query layer (days 1-2)
 
 Build TanStack Query wrappers that call the `/api/autumn/*` routes. These are the data primitives the UI components consume.
 
-- [ ] **A.1** Create `getAutumnCustomer()` — fetches `POST /api/autumn/customer`
-- [ ] **A.2** Create `listAutumnPlans()` — fetches `POST /api/autumn/plans.list`
-- [ ] **A.3** Create `previewAutumnAttach(planId)` — fetches `POST /api/autumn/billing.preview_attach`
-- [ ] **A.4** Create `attachAutumnPlan(planId, options)` — calls `POST /api/autumn/attach`, handles redirect vs inline success
-- [ ] **A.5** Create `updateAutumnSubscription(planId, cancelAction)` — calls `POST /api/autumn/billing.update`
-- [ ] **A.6** Create `openAutumnCustomerPortal(returnUrl)` — calls `POST /api/autumn/billing.open_customer_portal`
-- [ ] **A.7** Create `aggregateAutumnEvents(featureId, range)` — calls `POST /api/autumn/events.aggregate`
+- [ ] **A.1** Create `getAutumnCustomer()`: fetches `POST /api/autumn/customer`
+- [ ] **A.2** Create `listAutumnPlans()`: fetches `POST /api/autumn/plans.list`
+- [ ] **A.3** Create `previewAutumnAttach(planId)`: fetches `POST /api/autumn/billing.preview_attach`
+- [ ] **A.4** Create `attachAutumnPlan(planId, options)`: calls `POST /api/autumn/attach`, handles redirect vs inline success
+- [ ] **A.5** Create `updateAutumnSubscription(planId, cancelAction)`: calls `POST /api/autumn/billing.update`
+- [ ] **A.6** Create `openAutumnCustomerPortal(returnUrl)`: calls `POST /api/autumn/billing.open_customer_portal`
+- [ ] **A.7** Create `aggregateAutumnEvents(featureId, range)`: calls `POST /api/autumn/events.aggregate`
 - [ ] **A.8** Add error handling: expired sessions → re-auth, failed checkout → show error, network failures → retry
 
-**Pattern**: Each wrapper is a function that returns a TanStack Query `queryOptions` or `mutationOptions` object. Example:
+**Pattern**: Each wrapper is a function that returns a Wellcrafted `queryOptions` or `mutationOptions` object for TanStack Query. Example:
 
 ```ts
-import { queryOptions } from '@tanstack/svelte-query';
+import { queryOptions } from 'wellcrafted/query';
 
 export function autumnCustomerQuery() {
   return queryOptions({
@@ -143,42 +143,42 @@ export function autumnCustomerQuery() {
 }
 ```
 
-### Sub-phase B: Billing page components (days 2–4)
+### Sub-phase B: Billing page components (days 2-4)
 
 Build each component. Priority order (most urgent first):
 
-- [ ] **B.1** `UpgradePrompt` — **Most urgent.** Detects 402 from `/ai/chat`, shows preview of Pro plan cost, handles upgrade. This directly unblocks the AI exhaustion dead-end.
+- [ ] **B.1** `UpgradePrompt`: **Most urgent.** Detects 402 from `/ai/chat`, shows preview of Pro plan cost, handles upgrade. This directly unblocks the AI exhaustion dead-end.
   - Triggered when AI chat returns 402
   - Calls `previewAutumnAttach('pro')` to show what the charge would be
   - On confirm: calls `attachAutumnPlan('pro', { redirectMode: 'if_required', carryOverBalances: { enabled: true } })`
   - If `paymentUrl` returned → redirect to Stripe checkout
   - If no redirect needed → refetch customer state, show success, allow retry
 
-- [ ] **B.2** `CreditBalance` — Shows remaining credits as progress bar or "32 / 50 credits remaining". Shows reset date ("Resets in 12 days"). Uses `autumnCustomerQuery()`.
+- [ ] **B.2** `CreditBalance`: Shows remaining credits as progress bar or "32 / 50 credits remaining". Shows reset date ("Resets in 12 days"). Uses `autumnCustomerQuery()`.
 
-- [ ] **B.3** `PricingTable` — Lists plans from `listAutumnPlans()`. Button text based on `attachAction`:
+- [ ] **B.3** `PricingTable`: Lists plans from `listAutumnPlans()`. Button text based on `attachAction`:
   - `"none"` → "Current plan" (disabled)
   - `"activate"` → "Subscribe"
   - `"upgrade"` → "Upgrade"
   - `"downgrade"` → "Downgrade"
   - `"purchase"` → "Buy"
 
-- [ ] **B.4** `BillingPortalButton` — Button that calls `openAutumnCustomerPortal({ returnUrl: window.location.href })` and redirects to the Stripe portal URL. Requires enabling billing portal in [Stripe dashboard settings](https://dashboard.stripe.com/settings/billing/portal).
+- [ ] **B.4** `BillingPortalButton`: Button that calls `openAutumnCustomerPortal({ returnUrl: window.location.href })` and redirects to the Stripe portal URL. Requires enabling billing portal in [Stripe dashboard settings](https://dashboard.stripe.com/settings/billing/portal).
 
-- [ ] **B.5** `SubscriptionManager` — Shows current subscription state. Handles:
+- [ ] **B.5** `SubscriptionManager`: Shows current subscription state. Handles:
   - Active: show "Cancel at end of cycle" button
   - Canceled but still active (`canceledAt !== null`): show "Cancels on [date]" + "Keep plan" button
   - Cancel: `updateAutumnSubscription('pro', 'cancel_end_of_cycle')`
   - Uncancel: `updateAutumnSubscription('pro', 'uncancel')`
 
-- [ ] **B.6** `UsageChart` — Shows AI usage over time using `aggregateAutumnEvents('ai-credits', '30d')`. Returns timeseries data. Can group by `properties.model` for per-model breakdown. Lower priority—can ship after the core billing flow works.
+- [ ] **B.6** `UsageChart`: Shows AI usage over time using `aggregateAutumnEvents('ai-credits', '30d')`. Returns timeseries data. Can group by `properties.model` for per-model breakdown. Lower priority. Can ship after the core billing flow works.
 
-### Sub-phase C: Integration (day 4–5)
+### Sub-phase C: Integration (day 4-5)
 
 - [ ] **C.1** Create billing page route (recommendation: `/billing` as a dedicated page)
 - [ ] **C.2** Add billing link to settings/account area
 - [ ] **C.3** Wire 402 detection in AI chat client code to trigger `UpgradePrompt`
-- [ ] **C.4** Add "Buy more credits" card for the `credit-top-up` add-on (separate from pricing table—one-time purchase behaves differently from subscriptions)
+- [ ] **C.4** Add "Buy more credits" card for the `credit-top-up` add-on (separate from pricing table. One-time purchase behaves differently from subscriptions)
 - [ ] **C.5** Handle BYOK visibility: make it explicit in both the AI UI and billing page that using your own API key doesn't consume credits
 
 ## Edge Cases

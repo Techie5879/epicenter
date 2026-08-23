@@ -1,25 +1,77 @@
 ---
 name: tauri
-description: Tauri path handling, cross-platform file ops, API usage. Use when mentioning Tauri, desktop app, or working with file paths, native filesystem APIs, Tauri commands, platform differences.
+description: Tauri commands, permissions, capabilities, security config, path handling, cross-platform file ops, and native filesystem APIs. Use when mentioning Tauri, desktop apps, Rust commands, invoke, capabilities, permissions, ResourceId, file paths, or platform differences.
 metadata:
   author: epicenter
   version: '1.0'
 ---
 
-# Tauri Path Handling
+# Tauri Patterns
 ## Reference Repositories
 
-- [Tauri](https://github.com/tauri-apps/tauri) — Desktop app framework with Rust backend and web frontend
+- [Tauri](https://github.com/tauri-apps/tauri): Desktop app framework with Rust backend and web frontend
 
-## When to Apply This Skill
+## Upstream Grounding
 
-Use this pattern when you need to:
+When Tauri command behavior, permissions, capabilities, CSP, asset protocols, path APIs, plugin filesystem behavior, or IPC semantics affect correctness, use source-backed grounding before relying on memory. If DeepWiki MCP is available, ask a narrow question against `tauri-apps/tauri`; if it is unavailable or the repo is not indexed, use upstream source or official docs directly. Treat DeepWiki as orientation, then verify decisive details against local generated bindings, installed Rust crates, TypeScript types, source, or official docs before changing code.
 
-- Build file paths in Tauri frontend code running in the webview.
-- Choose correctly between `@tauri-apps/api/path` and Node/Bun `path` APIs.
-- Replace manual slash concatenation with `join()`, `dirname()`, and related helpers.
-- Handle cross-platform filesystem behavior for desktop apps.
-- Combine Tauri path APIs with `@tauri-apps/plugin-fs` operations.
+Skip DeepWiki for repo-local command naming and app-specific wrapper conventions already visible in the code.
+
+## Commands, Permissions, And Security
+
+- Expose focused Rust APIs with `#[tauri::command]`, register them with `generate_handler!`, and return `Result<T, E>` for fallible work.
+- Validate command inputs on the Rust side. TypeScript callers are not the trust boundary.
+- Keep capabilities least-privilege in `app.security.capabilities`, scoped to the windows or webviews that need them. Avoid broad permission wildcards.
+- Treat CSP, `devCsp`, asset protocol configuration, `convertFileSrc`, `freezePrototype`, and remote IPC as security-sensitive config.
+- Long-lived Rust objects should be Tauri resources with frontend `ResourceId`s. Do not serialize complex long-lived objects through command responses.
+
+### Webview CSP
+
+Never ship `app.security.csp: null` (that disables CSP entirely). The
+highest-value directive is `connect-src`: locking it to your API origin plus
+Tauri's IPC blocks an injected same-origin script from exfiltrating in-memory
+secrets (tokens, keys) to an attacker host. Start from a narrow policy, then
+add only the sources your app actually uses, for example asset protocols, wasm,
+workers, media, or dev server origins. Set both `csp` (production) and `devCsp`
+(the dev override, which replaces `csp` during `tauri dev`):
+
+```jsonc
+"security": {
+  // Tauri's tauri-codegen hashes every inline <script> in the built
+  // frontendDist and injects the hashes, so production script-src does NOT
+  // need 'unsafe-inline' (a SvelteKit SPA still boots via its hash).
+  "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://api.example.com wss://api.example.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+  // Dev loads from the Vite server (not the hashed build), so its inline/HMR
+  // scripts ARE unhashed: devCsp must keep 'unsafe-inline' (+ 'unsafe-eval')
+  // and add the localhost dev origins.
+  "devCsp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://localhost:5173 ws://localhost:5173 https://api.example.com wss://api.example.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; object-src 'none'; base-uri 'self'"
+}
+```
+
+Rules: always include `ipc: http://ipc.localhost` in `connect-src` or `invoke()`
+breaks; only list `asset:` / `http://asset.localhost` if the asset protocol is
+actually enabled (`convertFileSrc`); always smoke-test a real `tauri dev` AND a
+release build, watching the webview console for CSP violations.
+
+## Typed IPC And Generated Bindings
+
+When a Tauri app uses `tauri-specta`, keep the Rust command registry, generated TypeScript bindings, and handwritten frontend wrapper in sync.
+
+- Register every typed command in the `tauri_specta::collect_commands!` builder.
+- Register frontend-listened event payloads in `tauri_specta::collect_events!`, even when no command returns that event type.
+- For tauri-specta v2 RC events, use `#[tauri_specta(event_name = "...")]` on the event type. Do not invent `#[tauri_specta::event(...)]` unless installed macro docs or local macro source prove that form exists.
+- Re-export event and command payload types from their owning Rust module when `lib.rs` imports them for the builder.
+- Treat `bindings.gen.ts` as derived output. Commit regenerated bindings only when the Rust IPC surface intentionally changed. If a command only fixes Rust compile shape without changing the public IPC contract, avoid broad generated churn.
+- Commands returning raw `tauri::ipc::Response` cannot be generated by specta because the body is not `specta::Type`. Mount those through a separate `tauri::generate_handler!` route and keep a small handwritten TypeScript wrapper.
+
+Verification for IPC changes usually needs both sides:
+
+```bash
+cargo check --manifest-path apps/epicenter/src-tauri/Cargo.toml
+cargo test --manifest-path apps/epicenter/src-tauri/Cargo.toml export_types
+```
+
+If binding generation rewrites unrelated sections, inspect the diff before committing it.
 
 ## Context Detection
 
@@ -53,6 +105,8 @@ Before choosing a path API, determine your execution context:
 | `sep()`       | Platform path separator | `\` on Windows, `/` on POSIX |
 | `delimiter()` | Platform path delimiter | `;` on Windows, `:` on POSIX |
 
+`sep()` and `delimiter()` are synchronous in Tauri v2. Most directory and path manipulation helpers are async because they call the backend.
+
 ### Base Directories
 
 | Function                | Purpose                            |
@@ -73,11 +127,11 @@ Before choosing a path API, determine your execution context:
 ```typescript
 import { appLocalDataDir, dirname, join } from '@tauri-apps/api/path';
 
-// Join path segments - handles platform separators automatically
+// Join path segments; handles platform separators automatically
 const baseDir = await appLocalDataDir();
 const filePath = await join(baseDir, 'workspaces', workspaceId, 'data.json');
 
-// Get parent directory - cleaner than manual slicing
+// Get parent directory; cleaner than manual slicing
 const parentDir = await dirname(filePath);
 await mkdir(parentDir, { recursive: true });
 ```
@@ -87,7 +141,7 @@ await mkdir(parentDir, { recursive: true });
 For human-readable log output, hardcoded `/` is acceptable since it's not used for filesystem operations:
 
 ```typescript
-// OK for logging - consistent cross-platform log output
+// OK for logging; consistent cross-platform log output
 const logPath = pathSegments.join('/');
 console.log(`[Persistence] Loading from ${logPath}`);
 ```
@@ -158,14 +212,13 @@ import {
 
 ## Note on Async
 
-All Tauri path functions are **async** because they communicate with the Rust backend via IPC. Always `await` them:
+Most Tauri path helpers are async because they communicate with the Rust backend via IPC. Always check the installed TypeScript types before assuming a helper returns a Promise. Directory helpers and path manipulation helpers such as `appLocalDataDir()`, `join()`, and `dirname()` are async; simple constants such as `sep()` and `delimiter()` are sync in Tauri v2.
 
 ```typescript
-// All path operations return Promises
 const baseDir = await appLocalDataDir();
 const filePath = await join(baseDir, 'file.txt');
 const parent = await dirname(filePath);
-const separator = await sep();
+const separator = sep();
 ```
 
 ## Filesystem Operations
@@ -187,3 +240,14 @@ async function saveData(segments: string[], data: Uint8Array) {
 	await writeFile(filePath, data);
 }
 ```
+
+## Native Ownership Boundaries
+
+Prefer app-owned identifiers over frontend-controlled paths when the native side owns data.
+
+- Recording operations should pass a recording id when Rust owns the recordings directory.
+- Model selection can pass a path, but Rust should canonicalize it and reject values outside the allowed app data model directory.
+- Markdown export, downloads, and temporary files should use focused commands rooted in app-owned directories rather than broad filesystem permissions.
+- Removing a capability from `capabilities/*.json`, `Cargo.toml`, or `package.json` should be paired with removing stale docs and UI that still describe that permission.
+
+The frontend can remember user intent. Rust enforces the filesystem boundary.

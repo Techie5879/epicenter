@@ -1,0 +1,43 @@
+{
+	"name": "@epicenter/app-shell",
+	"version": "0.3.0",
+	"private": true,
+	"type": "module",
+	"description": "Shared Epicenter app chrome: account popover, workspace gate, and agent chat. Branded, full-stack-aware UI mounted in each app's layout. Private (not published).",
+	"keywords": [
+		"svelte",
+		"epicenter",
+		"app-shell"
+	],
+	"exports": {
+		"./account-popover": "./src/account-popover/index.ts",
+		"./agent-chat": "./src/agent-chat/index.ts",
+		"./inference-picker": "./src/inference-picker/index.ts"
+	},
+	"scripts": {
+		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@epicenter/agent": "workspace:*",
+		"@epicenter/auth": "workspace:*",
+		"@epicenter/chat": "workspace:*",
+		"@epicenter/client": "workspace:*",
+		"@epicenter/data": "workspace:*",
+		"@epicenter/svelte": "workspace:*",
+		"@epicenter/ui": "workspace:*",
+		"@lucide/svelte": "catalog:",
+		"@standard-schema/spec": "catalog:",
+		"@tanstack/svelte-query": "catalog:",
+		"arktype": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@epicenter/field": "workspace:*",
+		"@types/bun": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"typescript": "catalog:"
+	},
+	"license": "AGPL-3.0-or-later"
+}

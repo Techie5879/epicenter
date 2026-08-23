@@ -1,6 +1,6 @@
 ---
 name: standalone-commits
-description: Make commits reviewable and auditable as self-contained units. Use when planning commits, splitting work into waves, staging changes, reviewing branch history, or deciding whether a commit is too broad, too tiny, incomplete, or hard to revert.
+description: Make commits reviewable and auditable as self-contained units, and order multi-file changes into atomic dependency-ordered waves. Use when planning commits, 'split this into commits', 'break this up', 'commit strategy', splitting work into waves, staging changes, reviewing branch history, or deciding whether a commit is too broad, too tiny, incomplete, or hard to revert.
 metadata:
   author: epicenter
   version: '1.0'
@@ -10,23 +10,16 @@ metadata:
 
 A standalone commit is a commit a reviewer can audit on its own, at that point in branch history. It may depend on earlier commits in the same branch, but it should not require future commits to explain, compile, test, or justify it.
 
-> **Related Skills**: See `incremental-commits` for ordering multi-commit work into waves. See `git` for conventional commit messages.
+> **Related Skills**: See [git](../git/SKILL.md) for conventional commit messages and PR text.
 
-## Relationship To Incremental Commits
+## Two Halves: Boundary And Order
 
-`standalone-commits` is the philosophy and acceptance test. It answers: "Is this commit worth reviewing by itself?"
+This skill owns both halves of commit shaping. Hold them at once:
 
-`incremental-commits` is the sequencing workflow. It answers: "What order should the standalone commits happen in?"
+- **The review boundary** (this file): is each commit worth reviewing by itself? That is the philosophy and the acceptance checks below.
+- **The ordering**: what order should the standalone commits happen in? For the detailed dependency-ordered wave procedure, read [references/splitting-into-ordered-waves.md](references/splitting-into-ordered-waves.md).
 
-Use them together:
-
-```
-standalone-commits  -> defines the review boundary for each commit
-incremental-commits -> orders those boundaries by dependency
-git                 -> writes the final message and PR text
-```
-
-Do not replace `incremental-commits` with this skill. Without incremental planning, "standalone" can drift into polished but poorly ordered commits. Without standalone checks, "incremental" can drift into technically ordered commits that are still hard to review.
+Without ordering, "standalone" drifts into polished but poorly sequenced commits. Without the boundary checks, technically ordered commits can still be hard to review.
 
 ## The Standard
 
@@ -70,7 +63,7 @@ Standalone does not mean:
 
 ## Wave Planning
 
-When using `incremental-commits`, plan each wave as a standalone commit:
+When ordering work into waves, plan each wave as a standalone commit:
 
 ```
 Wave 1 claim: Add the type or contract, plus any tests that prove the new shape.
@@ -121,7 +114,7 @@ feat(sync): add workspace sync types
 
 Problem: The types are unused, untested, and only make sense after a later implementation commit.
 
-Better: Include the smallest implementation or contract test that proves why the types exist.
+Better: Include the contract-level implementation or test that proves why the types exist.
 
 ### Hidden Behavior In Refactor
 

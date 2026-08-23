@@ -8,25 +8,25 @@
 		// Each package opts in explicitly via `"types": ["bun"]` or `["node"]`.
 		"types": [],
 
-		// Modules
+		// Modules: packages are source-only by default and consumed by Bun or a
+		// bundler. The externally bundled app SDK closure emits from its own
+		// build configs. `module: preserve` implies `moduleResolution: bundler`;
+		// the pair is kept explicit for readability.
 		"module": "preserve",
 		"moduleResolution": "bundler",
-		"resolvePackageJsonExports": true,
 		"resolveJsonModule": true,
 		"allowImportingTsExtensions": true,
 
 		// JavaScript Support
 		"allowJs": true,
 
-		// Emit
+		// Emit: type-check only; Bun and bundlers handle transpilation.
 		"noEmit": true,
-		"sourceMap": true,
 
 		// Interop
 		"isolatedModules": true,
 		"verbatimModuleSyntax": true,
 		"esModuleInterop": true,
-		"forceConsistentCasingInFileNames": true,
 
 		// Type Checking
 		"strict": true,

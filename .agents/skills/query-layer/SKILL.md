@@ -1,43 +1,33 @@
 ---
 name: query-layer
-description: Query layer with TanStack Query, error transformation, runtime DI. Use for createQuery, createMutation, queries/mutations, reactive data management.
+description: 'Query boundaries with TanStack Query and Wellcrafted Results. Use when editing createQuery, createMutation, resultQueryOptions, resultMutationOptions, defineQuery, defineMutation, defineKeys, shared cache identity, mutation lifecycle, or service-to-TanStack adapters.'
 metadata:
   author: epicenter
-  version: '2.0'
+  version: '3.0'
 ---
 
 # Query Layer Patterns
 
 ## Reference Repositories
 
-- [TanStack Query](https://github.com/tanstack/query) — Async state management for data fetching
+- [TanStack Query](https://github.com/tanstack/query): async state management for data fetching
 
 ## Upstream Grounding
 
-When TanStack Query behavior, Svelte adapter types, cache invalidation semantics, optimistic updates, or mutation lifecycle callbacks affect correctness, ask DeepWiki a narrow question against `tanstack/query` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+When TanStack Query behavior, Svelte adapter types, cache invalidation semantics, optimistic updates, or mutation lifecycle callbacks affect correctness, ask DeepWiki a narrow question against `TanStack/query` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
 
 Skip DeepWiki for stable basics and repo-local patterns already documented below.
 
-The query layer is the reactive bridge between UI components and the service layer. It wraps pure service functions with caching, reactivity, and state management using TanStack Query and WellCrafted factories.
+The query layer is the reactive bridge between UI components and the service layer. It wraps service functions or observable operations with caching, mutation lifecycle state, invalidation, and direct imperative access using TanStack Query and Wellcrafted factories.
 
-> **Related Skills**: See `services-layer` for the service layer these queries consume. See `svelte` for Svelte-specific TanStack Query patterns. See `error-handling` for toast-on-error patterns—how errors from Results surface to users via `toastOnError` and `extractErrorMessage`.
-
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Create queries or mutations that consume services
-- Transform service-layer errors into user-facing error types
-- Implement runtime service selection based on user settings
-- Add optimistic cache updates for instant UI feedback
-- Understand the dual interface pattern (reactive vs imperative)
+> **Related Skills**: See `services-layer` for the service layer these queries consume. See `svelte` for Svelte-specific TanStack Query patterns. See `error-handling` for toast/report patterns after Results reach the UI boundary.
 
 ## Core Architecture
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
-│     UI      │ --> │  RPC/Query  │ --> │   Services   │
-│ Components  │     │    Layer    │     │    (Pure)    │
+│     UI      │ --> │    Query    │ --> │   Services   │
+│ Components  │     │    Layer    │     │  (UI-free)   │
 └─────────────┘     └─────────────┘     └──────────────┘
       ↑                    │
       └────────────────────┘
@@ -47,97 +37,139 @@ Use this pattern when you need to:
 **Query Layer Responsibilities:**
 
 - Call services with injected settings/configuration
-- Transform service errors to user-facing error types for display
+- Preserve typed service and operation errors unless the adapter introduces a new local failure
 - Manage TanStack Query cache for optimistic updates
-- Provide dual interfaces: reactive (`.options`) and imperative (`.execute()`)
+- Provide hook-ready `.options` for shared definitions and explicit imperative APIs where they exist
+- Own shared cache identity through exported `*Keys` maps
 
-## Error Transformation Pattern
+## Wellcrafted Query API Shape
 
-**Critical**: Service errors should be transformed to user-facing error types at the query layer boundary.
+| Scope | Query | Mutation |
+| --- | --- | --- |
+| Hook-local Result adapter | `resultQueryOptions(input)` | `resultMutationOptions(input)` |
+| Reusable definition | `defineQuery(input)` | `defineMutation(input)` |
 
-### Three-Layer Error Flow
+Use `resultQueryOptions` and `resultMutationOptions` at one hook call site when a Result-returning function needs to enter TanStack's data/error channels and no imperative API or shared query identity is needed.
 
-```
-Service Layer         →  Query Layer           →  UI Layer
-TaggedError<'Name'>   →  UserFacingError       →  Toast notification
-(domain-specific)        (display-ready)          (display)
-```
+Use `defineQuery` and `defineMutation` in shared `$lib/queries` modules.
 
-### Standard Error Transformation
+Queries expose `.options`, `.fetch()`, and `.ensure()`. They are not callable.
+
+Mutations expose `.options` and are callable. They do not expose `.execute()`.
+
+## Canonical Whispering Query Module Shape
+
+For Whispering-style `$lib/queries` modules, keep source-of-truth declarations close to the work they describe. Factories receive the session-owned runtime explicitly:
 
 ```typescript
-import { Err, Ok } from 'wellcrafted/result';
+export const audioKeys = defineKeys({
+	availability: (id: string, blobId: string, uploadedAt: string | null) =>
+		['audio', 'availability', id, blobId, uploadedAt] as const,
+});
 
-// In query layer - transform service error to user-facing error
-const { data, error } = await services.recorder.startRecording(params);
-
-if (error) {
-	return Err({
-		title: '❌ Failed to start recording',
-		description: error.message,
-		action: { type: 'more-details', error },
-	});
+export function createAudioQueries({ defineQuery }: WhisperingQueryRuntime) {
+	return {
+		availability: (recording: Accessor<Recording>) =>
+			defineQuery({
+				queryKey: audioKeys.availability(
+					recording().id,
+					recording().audioBlobId,
+					recording().uploadedAt,
+				),
+				queryFn: () => getRecordingAudioAvailability(recording()),
+			}),
+	};
 }
-
-return Ok(data);
 ```
 
-## Dual Interface Pattern
+Rules:
 
-Every query/mutation provides two ways to use it:
+- Export `*Keys = defineKeys({ ... })` beside the adapter or state module that owns the work.
+- Static keys do not need `as const`; key factories use `as const` when literal positions matter.
+- Keep keys in the owning module unless another layer needs the same fallback identity.
+- Inline small single-use input objects. Name an input type only when it is reused, exported, large enough to obscure the function, or carries domain meaning. Put named input types immediately before the adapter namespace that uses them.
+- Keep adapter-local `defineErrors` namespaces local unless another module needs to name that exact union.
+
+## Adapter Boundary: Queries vs Operations
+
+Use `$lib/queries` as the shared TanStack observation surface. It may wrap a direct service/state call, or a `$lib/operations` entry point when UI needs shared mutation identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a named mutation key over that operation.
+
+Keep orchestration in `$lib/operations`: delivery, reporting, sounds, analytics, clipboard writes, and multi-step workflows. Do not promote a one-component operation into `$lib/queries` merely to observe local pending state. The `svelte` skill owns the component's choice between local `createMutation` and direct `await`.
+
+## Dependency Direction
+
+```txt
+UI -> operations/* -> services/* + state/* + $lib/tauri
+UI -> queries/*    -> services/* or operations/*, plus narrow state reads/writes for observed lifecycle
+```
+
+Query modules receive the session-owned query runtime and import services, state, or operations. They do not import sibling query modules just to sequence work; cross-adapter coordination belongs in operations.
+
+## Error Flow
+
+In Whispering, service and operation errors are already tagged errors. Query adapters pass them through. The UI/report boundary decides how to present them.
+
+```txt
+Service / Operation       ->  Query Adapter     ->  UI / Report
+TaggedError<'Name'>           same error            report.error({ cause: error })
+```
+
+Only define a query-local error when the adapter itself discovers a failure that no lower layer can own, such as a missing recording lookup before calling an operation.
+
+## Reactive And Imperative Use
+
+Query-layer adapters provide reactive hook usage and explicit imperative usage.
 
 ### Reactive Interface: `.options`
 
-Use in Svelte components for automatic state management. Pass `.options` (a static object) inside an accessor function:
+Shared query adapters expose `.options` as a static object. Svelte hooks read it inside an accessor:
 
 ```svelte
 <script lang="ts">
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
-	import { rpc } from '$lib/query';
+	import { getWhisperingQueries } from '$lib/whispering/context';
 
-	// Reactive query - wrap in accessor function, access .options (no parentheses)
-	const recorderState = createQuery(() => rpc.recorder.getRecorderState.options);
+	const queries = getWhisperingQueries();
+	const availability = createQuery(() =>
+		queries.audio.availability(() => recording).options,
+	);
 
-	// Reactive mutation - same pattern
-	const transformRecording = createMutation(
-		rpc.transformer.transformRecording.options,
+	const transcribeRecording = createMutation(
+		() => queries.transcription.transcribeRecording.options,
 	);
 </script>
 
-{#if recorderState.isPending}
+{#if availability.isPending}
 	<Spinner />
-{:else if recorderState.error}
-	<Error message={recorderState.error.description} />
+{:else if availability.error !== null}
+	<Error message={availability.error.message} />
 {:else}
-	<RecorderIndicator state={recorderState.data} />
+	<AvailabilityBadge value={availability.data} />
 {/if}
 ```
 
-### Imperative Interface: `.execute()` / `.fetch()`
+### Imperative Interface: Queries Choose Cache Policy, Mutations Are Callable
 
-Use in event handlers and workflows without reactive overhead:
+Use outside component context, or whenever the caller needs a direct Result:
 
 ```typescript
 // In an event handler or workflow
-async function handleTransform(recordingId: string, transformation: Transformation) {
-	const { error } = await rpc.transformer.transformRecording({
-		recordingId,
-		transformation,
-	});
-	if (error) {
-		notify.error(error);
+async function handleDownload(recording: Recording) {
+	const { error } = await queries.download.downloadRecording(recording);
+	if (error !== null) {
+		report.error({ cause: error });
 		return;
 	}
-	notify.success({ title: 'Transformation complete' });
+	report.success({ title: 'Recording downloaded' });
 }
 
 // In a sequential workflow
 async function stopAndTranscribe(toastId: string) {
-	const { data: blobData, error: stopError } =
-		await rpc.recorder.stopRecording({ toastId });
+	const { data: url, error: playbackUrlError } =
+		await queries.audio.availability(() => recording).fetch();
 
-	if (stopError) {
-		notify.error(stopError);
+	if (playbackUrlError !== null) {
+		report.error({ cause: playbackUrlError });
 		return;
 	}
 
@@ -145,33 +177,37 @@ async function stopAndTranscribe(toastId: string) {
 }
 ```
 
+Use `.fetch()` when TanStack should evaluate the query's normal staleness policy: fresh cached data may still be returned without a request. Use `.ensure()` when any cached data is acceptable and fetching is only required when the cache is empty.
+
 ### When to Use Each
 
-| Use `.options` with createQuery/createMutation | Use `.execute()`/`.fetch()` |
-| ---------------------------------------------- | --------------------------- |
-| Component data display                         | Event handlers              |
-| Loading spinners needed                        | Sequential workflows        |
-| Auto-refetch wanted                            | One-time operations         |
-| Reactive state needed                          | Outside component context   |
-| Cache synchronization                          | Performance-critical paths  |
+| Adapter surface | Pattern |
+| --------------- | ------- |
+| Shared reactive query | `createQuery(() => queries.thing.options)` |
+| Shared reactive mutation | `createMutation(() => queries.thing.options)` |
+| Imperative query read | `queries.thing(...).fetch()` or `queries.thing(...).ensure()` |
+| Imperative mutation | `queries.thing(input)` |
+
+For local component operation placement and lifecycle decisions, use the
+`svelte` skill's mutation guidance.
 
 ## Key Rules
 
-1. **Always transform errors at query boundary** - Never return raw service errors
+1. **Use `defineKeys` for shared cache identity** - Export the key map beside the owner
 2. **Use `.options` (no parentheses)** - It's a static object, wrap in accessor for Svelte
-3. **Never double-wrap errors** - Each error is wrapped exactly once
-4. **Services are pure, queries inject settings** - Services take explicit params
-5. **Use imperative calls in `.ts` files** - `createMutation` requires component context
-6. **Update cache optimistically** - Better UX for mutations
+3. **Do not translate tagged errors by default** - Pass service/operation errors through to the report boundary
+4. **Services receive explicit app inputs** - The consuming edge injects settings and device config
+5. **Keep component lifecycle policy in `svelte`** - This skill owns shared adapter shape and cache behavior
+6. **Update cache deliberately** - Use optimistic writes only when the cache owner and rollback path are explicit; otherwise invalidate or refetch
 
 ## References
 
 Load these on demand based on what you're working on:
 
-- If working with **error transformation examples and anti-patterns**, read [references/error-transformation-patterns.md](references/error-transformation-patterns.md)
+- If working with **error pass-through examples and anti-patterns**, read [references/error-transformation-patterns.md](references/error-transformation-patterns.md)
 - If working with **runtime dependency injection and service selection**, read [references/runtime-dependency-injection.md](references/runtime-dependency-injection.md)
 - If working with **cache management, query definitions, RPC namespace, or notify coordination**, read [references/advanced-query-patterns.md](references/advanced-query-patterns.md)
 
-- See `apps/whispering/src/lib/query/README.md` for detailed architecture
+- See `apps/whispering/src/lib/queries/README.md` for detailed architecture
 - See the `services-layer` skill for how services are implemented
 - See the `error-handling` skill for trySync/tryAsync patterns and toast-on-error conventions

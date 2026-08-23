@@ -1,6 +1,6 @@
 # The XDG Base Directory Specification: Why Your App Belongs in ~/.config
 
-> **Note (2026-02-22)**: This article argues for XDG compliance, and that argument holds for system-level services and traditional desktop apps. However, for developer tools like Epicenter, we've since adopted the home dotfile convention (`~/.epicenter/`) instead. See [Home Dotfiles Beat XDG for Developer Tools](./home-dotfiles-beat-xdg-for-developer-tools.md) for why discoverability won over spec compliance, and how Epicenter's centralized store (`~/.epicenter/workspaces/`) works in practice.
+> **Note (2026-05-22)**: This article is historical. Epicenter no longer writes machine-wide state to top-level `~/.epicenter/`. Machine auth uses the platform data directory from `env-paths('epicenter')`, daemon runtime files use the OS runtime directory, daemon logs use the platform log directory, and generated project data stays under `<projectDir>/.epicenter/`.
 
 If you run `ls -a ~` on a machine that has been in use for more than a month, you will likely see a graveyard of dotfiles. From `~/.ssh` and `~/.bashrc` to more modern offenders like `~/.docker`, `~/.npm`, and `~/.claude`, the root of the user's home directory has become a dumping ground for application metadata.
 

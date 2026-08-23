@@ -1,5 +1,7 @@
 # Home Dotfiles Beat XDG for Developer Tools
 
+> **Note (2026-05-22)**: This article is superseded. Current Epicenter does not write machine-wide auth, runtime files, logs, or global persistence under top-level `~/.epicenter/`. Machine auth uses the platform data directory from `env-paths('epicenter')`, daemon runtime files use the OS runtime directory, daemon logs use the platform log directory, and generated project data stays under `<projectDir>/.epicenter/`.
+
 We wrote an article a few months ago arguing for XDG compliance. The position was that `~/.config/` is the correct place for application settings, `~/.local/share/` for data, and apps that dump dotfiles in `~/` are "bad citizens." That argument is technically correct and practically wrong for developer tools.
 
 Here's what the tools developers actually use every day chose:
@@ -10,7 +12,7 @@ Here's what the tools developers actually use every day chose:
 | Ollama             | `~/.ollama/`                                               | Home dotfile               |
 | Cursor             | `~/.cursor/`                                               | Home dotfile               |
 | OpenCode           | `~/.config/opencode/`                                      | XDG                        |
-| Whispering (Tauri) | `~/Library/Application Support/com.bradenwong.whispering/` | Platform-specific app data |
+| Whispering (Tauri) | `~/Library/Application Support/so.epicenter.whispering/`    | Platform-specific app data |
 
 Four out of five chose home dotfiles. The one that chose XDG is the one you have to remember the path for.
 
@@ -62,7 +64,7 @@ Epicenter follows the same model as Homebrew. All workspaces live under `~/.epic
           └── ...
 ```
 
-One directory to back up, one directory to nuke, one directory to `ls`. The app server discovers workspaces by reading `~/.epicenter/workspaces/`—no registry file, no scattered project folders to track down.
+One directory to back up, one directory to nuke, one directory to `ls`. The app server discovers workspaces by reading `~/.epicenter/workspaces/`: no registry file, no scattered project folders to track down.
 
 This mirrors how Homebrew puts everything in `/opt/homebrew/Cellar/` and how Cargo puts everything in `~/.cargo/`. A single, predictable location that you can find with your eyes closed.
 

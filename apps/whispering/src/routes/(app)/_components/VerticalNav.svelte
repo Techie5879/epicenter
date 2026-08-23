@@ -1,22 +1,17 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { useSidebar } from '@epicenter/ui/sidebar';
-	import Database from '@lucide/svelte/icons/database';
-	import Minimize2Icon from '@lucide/svelte/icons/minimize-2';
 	import MoonIcon from '@lucide/svelte/icons/moon';
-	import LogsIcon from '@lucide/svelte/icons/scroll-text';
 	import SunIcon from '@lucide/svelte/icons/sun';
 	import { toggleMode } from 'mode-watcher';
 	import { page } from '$app/state';
 	import { GithubIcon } from '$lib/components/icons';
-	import { notificationLog } from '$lib/components/NotificationLog.svelte';
-	import { NAV_ITEMS } from '$lib/constants/ui';
-	import MigrationDialog from '$lib/migration/MigrationDialog.svelte';
-	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
-
-	const shouldShowMigrationButton = $derived(
-		import.meta.env.DEV || migrationDialog.isPending,
-	);
+	import studioMicrophone from '$lib/assets/studio-microphone.png';
+	import { NAV_ITEMS } from './nav-items';
+	import { auth } from '#platform/auth';
+	import { instanceSetting } from '#platform/instance';
+	import { AccountPopover } from '@epicenter/app-shell/account-popover';
+	import { recordingActive } from '$lib/state/recording-active.svelte';
 
 	const sidebar = useSidebar();
 </script>
@@ -32,9 +27,9 @@
 					{#snippet child({ props })}
 						<button {...props} onclick={sidebar.toggle}>
 							<div
-								class="bg-sidebar-primary text-sidebar-primary-foreground flex size-8 items-center justify-center rounded-lg"
+								class="bg-sidebar-accent flex size-8 items-center justify-center rounded-lg"
 							>
-								<span class="text-lg">🎙️</span>
+								<img src={studioMicrophone} alt="" class="size-4" />
 							</div>
 							<div
 								class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden"
@@ -77,6 +72,18 @@
 
 	<Sidebar.Footer>
 		<Sidebar.Menu>
+			<!-- Account / sync (route-independent: visible on the bare home page) -->
+			<Sidebar.MenuItem>
+				<AccountPopover
+					{auth}
+					syncNoun="recordings"
+					disabledReason={recordingActive.current
+						? 'Stop recording to change your account'
+						: undefined}
+					instanceConnect={{ appName: 'Whispering', setting: instanceSetting }}
+				/>
+			</Sidebar.MenuItem>
+
 			<!-- Toggle dark mode -->
 			<Sidebar.MenuItem>
 				<Sidebar.MenuButton>
@@ -110,59 +117,6 @@
 					{/snippet}
 				</Sidebar.MenuButton>
 			</Sidebar.MenuItem>
-
-			<!-- Notification History -->
-			<Sidebar.MenuItem>
-				<Sidebar.MenuButton>
-					{#snippet child({ props })}
-						<button onclick={() => (notificationLog.isOpen = true)} {...props}>
-							<LogsIcon />
-							<span>Notifications</span>
-						</button>
-					{/snippet}
-				</Sidebar.MenuButton>
-			</Sidebar.MenuItem>
-
-			<!-- Database Migration (desktop only, when data exists) -->
-			{#if shouldShowMigrationButton}
-				<Sidebar.MenuItem>
-					<Sidebar.MenuButton class="relative">
-						{#snippet child({ props })}
-							<MigrationDialog>
-								{#snippet trigger({ props: dialogProps })}
-									<button {...props} {...dialogProps}>
-										<Database />
-										<span>Database Migration</span>
-										<span
-											class="absolute right-2 top-2 size-2 rounded-full bg-warning before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-warning/50 before:animate-ping"
-										></span>
-									</button>
-								{/snippet}
-							</MigrationDialog>
-						{/snippet}
-					</Sidebar.MenuButton>
-				</Sidebar.MenuItem>
-			{/if}
-
-			<!-- Minimize (desktop only) -->
-			{#if window.__TAURI_INTERNALS__}
-				<Sidebar.MenuItem>
-					<Sidebar.MenuButton>
-						{#snippet child({ props })}
-							<button
-								onclick={async () => {
-								const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
-								getCurrentWindow().setSize(new LogicalSize(72, 84));
-							}}
-								{...props}
-							>
-								<Minimize2Icon />
-								<span>Minimize</span>
-							</button>
-						{/snippet}
-					</Sidebar.MenuButton>
-				</Sidebar.MenuItem>
-			{/if}
 		</Sidebar.Menu>
 	</Sidebar.Footer>
 

@@ -1,6 +1,6 @@
 # Hosted Sign-In Is One Door, Not One Token Type
 
-Historical note: this article reflects the superseded cookie-family versus bearer-family design. The active direction is `specs/20260511T105846-auth-oauth-everywhere-clean-break.md`: every app is an OAuth client, `/auth/oauth-session` is replaced by `GET /auth/me`, and Better Auth cookies stay inside the hosted API auth server.
+Historical note: this article reflects the superseded cookie-family versus bearer-family design. The active direction: every app is an OAuth client, `/auth/oauth-session` is replaced by `GET /auth/me`, and Better Auth cookies stay inside the hosted API auth server.
 
 Hosted sign-in does not mean every app should use the same auth transport. It means every app sends the user to the same trusted place to prove who they are. After that, the app still needs the credential shape that fits its runtime.
 

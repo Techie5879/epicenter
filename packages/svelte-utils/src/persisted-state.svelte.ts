@@ -53,16 +53,6 @@ type PersistedStateOptions<TSchema extends StandardSchemaV1> = {
 	 */
 	defaultValue: NoInfer<StandardSchemaV1.InferOutput<TSchema>>;
 	/**
-	 * The Web Storage instance to use.
-	 * @default window.localStorage
-	 */
-	storage?: Storage;
-	/**
-	 * Whether to sync state across tabs via the `storage` event.
-	 * @default true
-	 */
-	syncTabs?: boolean;
-	/**
 	 * Called when a value read from storage fails to parse or validate.
 	 * Fire-and-forget. `defaultValue` is used as the fallback regardless.
 	 */
@@ -102,8 +92,6 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 	key,
 	schema,
 	defaultValue,
-	storage: storageApi = window.localStorage,
-	syncTabs = true,
 	onError,
 	onUpdateError,
 }: PersistedStateOptions<TSchema>) {
@@ -151,10 +139,22 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 	}
 
 	function readFromStorage() {
-		return parseRawValue(storageApi.getItem(key));
+		return parseRawValue(window.localStorage.getItem(key));
 	}
 
-	let value = $state(readFromStorage());
+	// `$state.raw`, not `$state`: this store is replace-only. The single writer is
+	// `setValue`, which always assigns a whole new value (`value = nextValue`), and
+	// the `.current` setter routes through `setAndPersist`, so nothing ever mutates a
+	// field in place. A deep proxy would therefore cost proxying on every persisted
+	// array/object for reactivity we never use. `$state.raw` also keeps the value
+	// identity stable (the getter returns the exact reference set, which a JSON store
+	// wants) and makes the `Object.is` dedup in `setValue` compare real references. It
+	// stores by reference and does not freeze, so an accidental `store.current.foo = x`
+	// mutates the in-memory object without triggering reactivity or persistence (the
+	// missing UI update surfaces the mistake, and the next storage re-parse overwrites
+	// it), rather than the `$state` trap where the proxy updates the UI yet the write
+	// is never persisted (silent data loss).
+	let value = $state.raw(readFromStorage());
 	let disposed = false;
 	const listeners = new Set<
 		(value: StandardSchemaV1.InferOutput<TSchema>) => void
@@ -173,14 +173,18 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		if (disposed) return;
 		setValue(nextValue);
 		try {
-			storageApi.setItem(key, JSON.stringify(nextValue));
+			window.localStorage.setItem(key, JSON.stringify(nextValue));
 		} catch (error) {
 			onUpdateError?.(error);
 		}
 	}
 
-	// Cross-tab sync: `storage` event fires when ANOTHER tab writes to localStorage.
-	// sessionStorage doesn't fire cross-tab events, so enabling this is harmless.
+	// Cross-tab sync: the `storage` event fires when ANOTHER tab writes to
+	// localStorage. This is why the backend is hardcoded to localStorage and not a
+	// `storage: Storage` option: sessionStorage is per-tab and never fires this
+	// event, so a sessionStorage-backed instance's headline feature (cross-tab
+	// sync) would silently no-op. Per-tab ephemeral state wants a separate
+	// primitive, not a swapped backend on this one.
 	const handleStorage = (e: StorageEvent) => {
 		if (disposed) return;
 		if (e.key !== key) return;
@@ -192,9 +196,7 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		setValue(readFromStorage());
 	};
 
-	if (syncTabs) {
-		window.addEventListener('storage', handleStorage);
-	}
+	window.addEventListener('storage', handleStorage);
 
 	// Same-tab sync: catches DevTools edits and writes from other libraries.
 	window.addEventListener('focus', handleFocus);
@@ -246,9 +248,7 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		[Symbol.dispose]() {
 			if (disposed) return;
 			disposed = true;
-			if (syncTabs) {
-				window.removeEventListener('storage', handleStorage);
-			}
+			window.removeEventListener('storage', handleStorage);
 			window.removeEventListener('focus', handleFocus);
 			listeners.clear();
 		},

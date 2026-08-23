@@ -1,13 +1,9 @@
-import { fileURLToPath } from 'node:url';
-import { config } from 'dotenv';
 import { defineConfig } from 'drizzle-kit';
-import { LOCAL_DATABASE_URL } from './env';
-
-config({ path: fileURLToPath(new URL('.dev.vars', import.meta.url)) });
+import { LOCAL_DATABASE_URL } from './wrangler-config';
 
 export default defineConfig({
 	dialect: 'postgresql',
-	schema: './src/db/schema.ts',
+	schema: '../../packages/server/src/db/schema/index.ts',
 	out: './drizzle',
 	dbCredentials: {
 		url: process.env.DATABASE_URL ?? LOCAL_DATABASE_URL,

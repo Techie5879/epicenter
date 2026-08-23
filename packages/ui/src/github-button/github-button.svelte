@@ -3,14 +3,14 @@
 	Adapted for our button API (no sizeMap/Size exports).
 -->
 <script lang="ts" module>
-	import type { ButtonProps, ButtonSize } from '../button/button.svelte';
+	import type { ButtonProps } from '../button/button.svelte';
 
 	export type GithubButtonProps = Omit<ButtonProps, 'href' | 'children'> & {
 		repo: {
 			owner: string;
 			repo: string;
 		};
-		/** Optional path appended after the repo URL (e.g. '/tree/main/apps/fuji'). */
+		/** Optional path appended after the repo URL (e.g. '/tree/main/apps/honeycrisp'). */
 		path?: string;
 		stars?: Promise<number> | number;
 		starsTweenedDuration?: number;
@@ -55,7 +55,7 @@
 </script>
 
 <Button
-	href={`https://github.com/${repo.owner}/${repo.repo}${path ?? ''}`}
+	href="https://github.com/{repo.owner}/{repo.repo}{path ?? ''}"
 	class={cn('[&_span]:text-muted-foreground gap-2 font-mono text-xs', className)}
 	{variant}
 	size={size ?? (stars === undefined ? 'icon' : 'default')}

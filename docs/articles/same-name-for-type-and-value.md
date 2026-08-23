@@ -91,9 +91,33 @@ The first `EncryptionKeys` in the object literal is the schema value. The second
 
 We use this across the codebase for different purposes.
 
-### Shadowed type with a constructor function
+### Shadowed type with a validator and an `as*` helper
 
-The simplest form is a branded type with a same-named constructor function. The constructor does the branding and any validation:
+The default form when the brand flows through an arktype schema. The validator is declared first and is the schema-composition value; the type is derived from it; an `as*` helper provides syntactic sugar for the typed cast at trusted internal call sites:
+
+```typescript
+/**
+ * Signed-in account identifier. Issued by Better Auth, opaque to clients.
+ * The brand prevents accidental cross-assignment with other id-shaped strings.
+ */
+export const UserId = type('string').as<string & Brand<'UserId'>>();
+export type UserId = typeof UserId.infer;
+
+/**
+ * Syntactic sugar for `value as UserId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast: callers can't widen to `unknown`.
+ * The only place in the codebase where `as UserId` appears.
+ */
+export const asUserId = (value: string): UserId => value as UserId;
+```
+
+`UserId` (the const) is the arktype validator, used directly inside schemas (`id: UserId`). `UserId` (the type) is the inferred branded string. `asUserId` covers trusted-source branding without scattering raw `as` casts. The same JSDoc on the validator surfaces in every position: schema field, function parameter, import autocomplete.
+
+This is the preferred shape for any branded primitive that participates in arktype schemas. The two earlier variants below are still appropriate when validation-time composition is not part of the picture.
+
+### Shadowed type with a constructor function (legacy)
+
+The simplest historical form is a branded type with a same-named constructor function. Use only when arktype is not in play and you do not need schema composition: there is no validator, just a typed cast wrapped behind a PascalCase function.
 
 ```typescript
 /**
@@ -111,7 +135,7 @@ export function Id(value: string): Id {
 }
 ```
 
-The JSDoc on the type surfaces everywhere: in function signatures, hover tooltips, and import completions. The function provides runtime construction with the same name. When someone writes `Id('abc')`, the return type is `Id`, the hover shows the docs, and there's nothing else to name.
+If you add arktype validation later, migrate to the validator + `as*` variant above so the validator can flow into schema definitions without a parallel `IdSchema` export.
 
 ### Shadowed type with a validator + separate constructor
 
@@ -189,12 +213,13 @@ export const DateTimeString = {
 
 ### Summary
 
-| Variant                 | Type Side                                | Value Side                                         | Constructor                          |
-| ----------------------- | ---------------------------------------- | -------------------------------------------------- | ------------------------------------ |
-| Constructor function    | `type Id = string & Brand<'Id'>`         | `function Id(s: string): Id`                       | Same as value side                   |
-| Validator + constructor | `type TabCompositeId = ... & Brand<...>` | `const TabCompositeId = type('string').as<…>()`    | `function createTabCompositeId(...)` |
-| Validator + generator  | `type SavedTabId = Id & Brand<…>`        | `const SavedTabId = type('string').as<…>()` | `const generateSavedTabId = () => …`  |
-| Companion object        | `type DateTimeString = ... & Brand<...>` | `const DateTimeString = { parse, stringify, now }` | Methods on the companion             |
+| Variant                  | Type Side                                | Value Side                                         | Third Part                           |
+| ------------------------ | ---------------------------------------- | -------------------------------------------------- | ------------------------------------ |
+| Validator + `as*` helper | `type UserId = typeof UserId.infer`      | `const UserId = type('string').as<…>()`            | `const asUserId = (v: string) => v as UserId` |
+| Validator + constructor  | `type TabCompositeId = ... & Brand<...>` | `const TabCompositeId = type('string').as<…>()`    | `function createTabCompositeId(...)` |
+| Validator + generator    | `type SavedTabId = Id & Brand<…>`        | `const SavedTabId = type('string').as<…>()`        | `const generateSavedTabId = () => …` |
+| Constructor function     | `type Id = string & Brand<'Id'>`         | `function Id(s: string): Id`                       | Same as value side (legacy)          |
+| Companion object         | `type DateTimeString = ... & Brand<...>` | `const DateTimeString = { parse, stringify, now }` | Methods on the companion             |
 
 ## When Not to Do This
 

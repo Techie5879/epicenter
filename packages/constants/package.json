@@ -1,8 +1,7 @@
 {
 	"name": "@epicenter/constants",
-	"description": "Shared URLs, ports, and version info for the Epicenter monorepo",
-	"private": true,
-	"version": "0.1.0",
+	"description": "Shared Epicenter platform contracts: app origins and ports, API and OAuth route surfaces, first-party OAuth clients and their seed projection, Vite build URLs, the model catalog, and the application-data root apps partition below",
+	"version": "0.1.1",
 	"type": "module",
 	"imports": {
 		"#*": [
@@ -12,22 +11,31 @@
 	},
 	"exports": {
 		"./apps": "./src/apps.ts",
-		"./auth": "./src/auth.ts",
-		"./oauth": "./src/oauth.ts",
+		"./app-data": "./src/app-data.ts",
+		"./oauth-clients": "./src/oauth-clients.ts",
+		"./oauth-seed": "./src/oauth-seed.ts",
 		"./vite": "./src/vite.ts",
-		"./versions": "./src/versions.ts",
-		"./ai-chat-errors": "./src/ai-chat-errors.ts"
+		"./ai-providers": "./src/ai-providers.ts",
+		"./api-routes": "./src/api-routes.ts",
+		"./oauth-routes": "./src/oauth-routes.ts",
+		"./provider-credentials": "./src/provider-credentials.ts"
 	},
 	"devDependencies": {
+		"@better-auth/oauth-provider": "catalog:",
+		"@types/bun": "catalog:",
 		"@types/node": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@epicenter/blobs": "workspace:*",
+		"@epicenter/identity": "workspace:*",
+		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},
 	"scripts": {
+		"test": "bun test",
 		"typecheck": "tsc --noEmit"
 	},
-	"license": "MIT"
+	"license": "AGPL-3.0-or-later"
 }

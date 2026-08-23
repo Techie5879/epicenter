@@ -11,30 +11,88 @@
 			"sourceType": "github",
 			"computedHash": "5717187bba9c22030c7174c74012f01c359f21e2ce87e0eb80e24244d8b8c915"
 		},
-		"create-auth-skill": {
-			"source": "better-auth/skills",
+		"diagnose": {
+			"source": "mattpocock/skills",
 			"sourceType": "github",
-			"computedHash": "31c027d02dbf1faa37f58191f574b9443143042fb2b684fe32df53ab0270487c"
-		},
-		"email-and-password-best-practices": {
-			"source": "better-auth/skills",
-			"sourceType": "github",
-			"computedHash": "747d7f73bd9e2ec5317b8ef88dc70f97df716d00e3d02de4051feebaa48b062d"
+			"skillPath": "skills/engineering/diagnose/SKILL.md",
+			"computedHash": "15939a26f86edec2d4862042b8564e5a062cb81d04e047a0cea6305c8830b5f5"
 		},
 		"grill-me": {
 			"source": "mattpocock/skills",
 			"sourceType": "github",
 			"computedHash": "784f0dbb7403b0f00324bce9a112f715342777a0daee7bbb7385f9c6f0a170ea"
 		},
-		"organization-best-practices": {
-			"source": "better-auth/skills",
+		"handoff": {
+			"source": "mattpocock/skills",
 			"sourceType": "github",
-			"computedHash": "79a5a85b43d10e9fe37582b3506b051a33a991817b938f349099baa5ddba21aa"
+			"skillPath": "skills/productivity/handoff/SKILL.md",
+			"computedHash": "d543685cbfb0c64b7bc51a8dc3465975528da9b64f987f863765973b2f3867ab"
 		},
-		"two-factor-authentication-best-practices": {
-			"source": "better-auth/skills",
+		"improve-codebase-architecture": {
+			"source": "mattpocock/skills",
 			"sourceType": "github",
-			"computedHash": "7e297aaf887e11fdc03e52bdbf44974e161e8f7c393170ced7dc66cace4f6d46"
+			"skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
+			"computedHash": "4a02bd01030d5ed6a5040c0382b9f56fbf02c7c8b8fd68aa1bcc55628963f760"
+		},
+		"install-anti-slop": {
+			"source": "dmmulroy/anti-slop",
+			"sourceType": "github",
+			"skillPath": "skills/install-anti-slop/SKILL.md",
+			"computedHash": "b903a7ac2c823d473a4b0046834fccbab0bc75ee4fda8be4f81efa895d475b01"
+		},
+		"prototype": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/prototype/SKILL.md",
+			"computedHash": "e4d0c8f8cb3fc096ee99405a15491da466545cf4a3694bee5a0c9db2fa621a43"
+		},
+		"setup-matt-pocock-skills": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/setup-matt-pocock-skills/SKILL.md",
+			"computedHash": "0164a8b1ef998abca426056c6ed8a7716a9d4692fc6daa5378f68381a6dafd24"
+		},
+		"tdd": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/tdd/SKILL.md",
+			"computedHash": "15a7b5e36383ebadb2dec5e586679e55e9663d292da418926b8da6fc0ef27d84"
+		},
+		"to-issues": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/to-issues/SKILL.md",
+			"computedHash": "47f648f3414848ccfc62cb41d2828b7e575fb5e7cbd6c4bdf630c063b5dc5e82"
+		},
+		"to-prd": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/to-prd/SKILL.md",
+			"computedHash": "6d741474efd4bc3db55fabc2722ed78ca9c374cabcb6212936d79d4fd4a30fcb"
+		},
+		"triage": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/triage/SKILL.md",
+			"computedHash": "2b6efb6da12d92551772fcc04acf331f4e0e6f7bd9d4cb23ce0b301e0b128feb"
+		},
+		"wayfinder": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/wayfinder/SKILL.md",
+			"computedHash": "f343ecf46157cb645a5494644418308ad95391e9fc696faa47ae5a412bf5f6e4"
+		},
+		"write-a-skill": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/productivity/write-a-skill/SKILL.md",
+			"computedHash": "b44d8aab2ead83c716e01af4c9a24ccc4575ce70ad58ec4f1749fb88c9cc82ba"
+		},
+		"zoom-out": {
+			"source": "mattpocock/skills",
+			"sourceType": "github",
+			"skillPath": "skills/engineering/zoom-out/SKILL.md",
+			"computedHash": "8357aeaece3b709c442eab67e64b86844e05e2f1ea95b109565eba50b6def36e"
 		}
 	}
 }

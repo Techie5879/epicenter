@@ -95,6 +95,8 @@ export type HeadDoc = ReturnType<typeof createHeadDoc>;
 
 With `ReturnType`, the returned object is the public type source. Put consumer-facing JSDoc directly on the returned method or getter so hover, completion, and Go to Definition all land on the same member.
 
+JSDoc preservation and Go-to-Definition flow from the same choice: where the consumer's tools resolve to. Method shorthand in zone 4 keeps both on the real definition. A hand-written interface annotation, a destructure-re-export of a module-level object, or a wrapper that just re-emits a function are the regressions that split them apart. See `typescript` "Go-to-Definition Awareness" for the navigation-side rules.
+
 ## Why This Works
 
 1. **JSDoc attaches to the method definition site** - when methods are inline in the return object, the JSDoc is directly on the property TypeScript sees
@@ -130,19 +132,11 @@ function createService(client) {
 }
 ```
 
-## When to Apply
+## Decision Rule
 
-Use this pattern when:
+Move a helper into the returned object when it is only used by returned methods, consumers need hover JSDoc on that method, and the helper does not run during initialization.
 
-- Helper functions are ONLY used by methods in the return object
-- You want JSDoc visible when consumers hover over the method
-- The helper doesn't need to be called before the return statement
-
-Keep helpers separate when:
-
-- They're called during initialization (before return)
-- They're used by multiple factories (extract to shared module)
-- They're truly internal and shouldn't be exposed
+Keep helpers separate when they are called before `return`, shared across factories, or truly internal and not exposed.
 
 ## Arrow Functions Don't Work
 
@@ -225,7 +219,7 @@ Method shorthand is the only approach that preserves JSDoc AND allows methods to
 
 ## Where This Fits in the Factory Function Anatomy
 
-Factory functions follow a four-zone internal shape: immutable state → mutable state → private helpers → return object. Method shorthand lives in the return object (zone 4)—the public API.
+Factory functions follow a four-zone internal shape: immutable state → mutable state → private helpers → return object. Method shorthand lives in the return object (zone 4): the public API.
 
 The `this.method()` vs direct-call decision depends on which zone the function lives in:
 
@@ -235,11 +229,11 @@ The `this.method()` vs direct-call decision depends on which zone the function l
 | Used by return-object methods AND pre-return init logic | Zone 3 (private helper, standalone function) | Direct call: `helperFn()` |
 | Used during initialization only, not exposed | Zone 3 (private helper) | Direct call: `helperFn()` |
 
-When a helper needs to be in zone 3, its JSDoc won't be visible to consumers—but that's correct, because it's a private implementation detail. Only zone 4 methods need consumer-facing JSDoc.
+When a helper needs to be in zone 3, its JSDoc won't be visible to consumers; that's correct, because it's a private implementation detail. Only zone 4 methods need consumer-facing JSDoc.
 
-See [Closures Are Better Privacy Than Keywords](../../docs/articles/closures-are-better-privacy-than-keywords.md) for the full factory function anatomy.
+See [Closures Are Better Privacy Than Keywords](../../../docs/articles/closures-are-better-privacy-than-keywords.md) for the full factory function anatomy.
 
 ## References
 
-- [docs/articles/method-shorthand-jsdoc-preservation.md](../../docs/articles/method-shorthand-jsdoc-preservation.md) - Same content as article
-- [docs/articles/closures-are-better-privacy-than-keywords.md](../../docs/articles/closures-are-better-privacy-than-keywords.md) - Factory function anatomy and zone system
+- [docs/articles/method-shorthand-jsdoc-preservation.md](../../../docs/articles/method-shorthand-jsdoc-preservation.md) - Same content as article
+- [docs/articles/closures-are-better-privacy-than-keywords.md](../../../docs/articles/closures-are-better-privacy-than-keywords.md) - Factory function anatomy and zone system

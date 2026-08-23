@@ -1,5 +1,12 @@
 # API Design Decisions: defineTable and defineKv
 
+> Historical: the chained version API below is retired. The target is one
+> release-local `defineTable({ fields, optional })` lens over schema-opaque
+> canonical fields, one latent document per ordinary row, and a release-local
+> workspace KV lens. See
+> [ADR-0130](../adr/0130-workspace-definitions-expose-tables-with-row-owned-documents-and-a-release-local-kv-lens.md)
+> and [ADR-0135](../adr/0135-row-documents-have-application-owned-roots.md).
+
 Designing an API is about trade-offs. Every choice closes some doors and opens others. Here's the reasoning behind Epicenter's versioned schema API.
 
 ## The Final API
@@ -121,7 +128,7 @@ Benefits:
 2. **Simpler implementation** - Library doesn't inject/strip fields
 3. **Debugging** - Raw data inspection shows exactly what you defined
 
-We later went further: tables now require `_v` as a number at the type level (`CombinedStandardSchema<{ id: string; _v: number }>`). Passing a table schema without `_v` to `defineTable()` is a compile error. KV stores remain flexible — `_v` is optional there. See [PR #1366](https://github.com/EpicenterHQ/epicenter/pull/1366) for the full rationale.
+We later went further: tables now require `_v` as a number at the type level (`CombinedStandardSchema<{ id: string; _v: number }>`). Passing a table schema without `_v` to `defineTable()` is a compile error. KV stores remain flexible: `_v` is optional there. See [PR #1366](https://github.com/EpicenterHQ/epicenter/pull/1366) for the full rationale.
 
 ## Definition/Binding Separation
 
@@ -197,18 +204,18 @@ Both work. We give you the flexibility to choose.
 Tables and KV intentionally have different versioning APIs:
 
 ```typescript
-// Tables — versioning + migration (rows accumulate, schema changes must preserve data)
+// Tables: versioning + migration (rows accumulate, schema changes must preserve data)
 defineTable(v1Schema, v2Schema).migrate(fn)
 createTables(ydoc, { posts })
 tables.posts.get('1')
 
-// KV — validate-or-default (preferences reset gracefully)
+// KV: validate-or-default (preferences reset gracefully)
 defineKv(schema, defaultValue)
 createKv(ydoc, { theme })
 kv.get('theme')
 ```
 
-Tables accumulate rows that must survive schema changes—migration is mandatory. KV stores hold single preferences where resetting to the default is acceptable. This asymmetry is deliberate: borrowing table migration machinery for KV conflates two fundamentally different data lifecycles.
+Tables accumulate rows that must survive schema changes. Migration is mandatory. KV stores hold single preferences where resetting to the default is acceptable. This asymmetry is deliberate: borrowing table migration machinery for KV conflates two fundamentally different data lifecycles.
 
 ## Summary
 

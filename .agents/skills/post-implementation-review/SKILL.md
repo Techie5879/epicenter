@@ -1,6 +1,6 @@
 ---
 name: post-implementation-review
-description: "Second-read protocol: reread files, inline helpers, audit dead paths, boundaries, invariants. Use after implementing or before handoff."
+description: "Hub for the broad post-implementation review and second-read pass after an implementation: list every touched file as an ASCII tree, mentally inline helpers, audit dead paths and stale imports, name invariant owners, sanity-check API shape and naming, and delegate to focused review skills as needed. Use after finishing an implementation, before final response, or when the user says 'post-implementation review', 'review what you just did', 'second pass', or 'final sweep'."
 metadata:
   author: epicenter
   version: '1.0'
@@ -8,13 +8,42 @@ metadata:
 
 # Post Implementation Review
 
-Use this skill after code changes and before final handoff. The goal is a hard
-second read: catch stale abstractions, dead paths, bad ownership, and confusing
-names while the edit context is still fresh.
+The goal is a hard second read: catch stale abstractions, dead paths, bad
+ownership, and confusing names while the edit context is still fresh.
 
-Do not silently fix structural concerns. Flag what is wrong, explain why, then
-make the smallest coherent follow-up edit if the user asked you to continue
-through cleanup.
+Do not silently fix structural concerns. First name what is wrong and why it
+matters, then fix it when it clears the evidence bar below.
+
+## Lane, Evidence, Limits
+
+The user's request sets the lane. Evidence can widen the lane. Explicit user
+limits close it.
+
+```txt
+Fix now:
+  grounded correctness, invariant, public API, verification,
+  and serious clarity issues on the touched path
+
+Report:
+  speculative cleanup, cosmetic cleanup, taste-only cleanup,
+  and issues with weak evidence
+
+Pause:
+  explicit user limits, product direction, destructive actions,
+  broad reshaping, or unclear ownership
+```
+
+Two things never move when the lane widens:
+
+- The lane never widens silently. Every expanded edit is still flagged first,
+  and stays easy to review, with a separate commit when commits are being made.
+- The evidence bar never drops. "Within reason" still means grounded in
+  caller counts, a real invariant, or a named smell, never a hunch. A user
+  signal widens what you may touch; it does not lower the bar for why.
+
+Authorship is not the gate. A smell the review uncovered can belong in the lane
+when it is clear, important, and grounded, even if an earlier commit introduced
+it. Explicit user limits still win.
 
 ## Related Skills
 
@@ -24,15 +53,16 @@ focused skill first, then escalate here when the work needs a full final pass.
 Load only the skills that match the touched surface:
 
 ```txt
-cohesive-clean-breaks   public API, package boundary, config, lifecycle, naming, or ownership change
-refactoring             caller counts, inlining, dead exports, stale imports, straggler sweep
-approachability-audit   too many hops, misleading names, clever types, first-read confusion
-code-audit              recurring repo smells and grep-based checks
-one-sentence-test       new abstraction, wrapper, option, endpoint, command, or module
-testing                 test files or changed behavior that needs coverage
-typescript              type organization, inference, runtime schema, type tests
-svelte                  Svelte components, stores, runes, query usage, UI state
-yjs                     CRDT documents, shared types, transactions, conflict behavior
+collapse-pass            continuous deletion of unearned indirection
+greenfield-clean-breaks    public API, package boundary, config, lifecycle, naming, ownership, greenfield, or clean-break decision
+asymmetric-wins          refuse a feature to collapse a disproportionate code family
+refactoring              caller counts, inlining, dead exports, stale imports, straggler sweep
+code-audit               recurring repo smells and grep-based checks
+one-sentence-test        new abstraction, wrapper, option, endpoint, command, or module
+testing                  test files or changed behavior that needs coverage
+typescript               type organization, inference, runtime schema, type tests
+svelte                   Svelte components, stores, runes, query usage, UI state
+yjs                      CRDT documents, shared types, transactions, conflict behavior
 ```
 
 ## Review Order
@@ -40,12 +70,16 @@ yjs                     CRDT documents, shared types, transactions, conflict beh
 1. Identify every file touched by the implementation.
 2. Re-read each touched file from top to bottom.
 3. List every file read as an ASCII tree before analysis.
-4. Run the mental inlining pass.
-5. Run the smell and invariant checks.
-6. Review API shape, naming, and file organization.
-7. Run diagnostics and tests appropriate to the changed scope.
-8. Report findings before making cleanup edits unless the issue is a direct
-   compile or test failure.
+4. Run the first-read pass.
+5. Run the mental inlining pass.
+6. Run the ownership and collapse check.
+7. Run the smell and invariant checks.
+8. Review API shape, naming, and file organization.
+9. Run diagnostics and tests appropriate to the changed lane. Reproduce any
+   failure on clean HEAD before blaming the change; separate pre-existing red
+   from regressions you introduced.
+10. Report findings before making cleanup edits unless the issue is a direct
+    compile or test failure.
 
 The ASCII tree is not decoration. It forces the review to show its evidence.
 
@@ -59,24 +93,77 @@ packages/foo/
 `-- package.json
 ```
 
+## First-Read Pass
+
+Read the change as a smart but newly onboarded TypeScript developer would.
+Start from the entrypoint a caller reaches first and trace the minimum path
+needed to understand the behavior, rather than reading in the order the diff
+happens to present.
+
+Count the hops. A new developer's first read of a foreign symbol is
+Go-to-Definition, so pressing it from a call site should land on the real source
+of truth in as few jumps as possible. Each hop has to earn its keep: a layer
+that does not own an invariant, name non-obvious domain behavior, or isolate
+unsafe input costs a jump and returns nothing. What bloats the count, meaning
+re-export chains, destructure-re-exports, no-op adapters, and identity-obscuring
+annotations, is cataloged in [typescript](../typescript/SKILL.md)
+"Go-to-Definition Awareness".
+
+Mark each abstraction as one of: earns its keep, probably inlineable, wrong
+ownership boundary, misleading name, or type-system workaround. The mark decides
+the repair, because a misleading name wants a rename and a wrong owner wants a
+move; collapsing both into "delete it" loses the difference and usually picks
+the wrong one.
+
+Do not fix a real parse boundary at a JSON, file, or network edge, runtime
+validation over unsafe input, a contract that genuinely belongs in one place, or
+repetition that is cheaper than the abstraction replacing it. Those read as
+friction on a first pass and are load-bearing on the second.
+
+The pass is done when a new teammate could say which file owns a concept and
+which type is a real contract rather than library glue, without reverse
+engineering either from naming accidents.
+
 ## Mental Inlining Pass
 
 Mentally inline every helper, wrapper, component, prop bundle, adapter, file,
-factory, compartment, and extracted function back into its call sites.
+factory, compartment, and extracted function back into its call sites, then keep
+a layer only when it earns its place.
 
-Ask:
+For the full ask-block and the keep-vs-inline criteria, use
+[radical-options](../radical-options/SKILL.md) "Mental Inlining Pass". The
+ownership check below applies the same test to runtime, durable, and
+user-visible state.
+
+## Ownership And Collapse Check
+
+Before accepting the final shape, replay the change as if designing it from
+scratch:
 
 ```txt
-Would the raw call site be easier to read without this layer?
-Does the helper own an invariant, or only rename simple control flow?
-Does the wrapper hide a branch that every caller already knows?
-Does the file split make the concept clearer, or preserve an old boundary?
-Does this component prop exist for real reuse, or only to pass through values?
+What object owns the runtime lifetime?
+What object owns the durable state?
+What object owns the user-visible state?
+Which props exist only because of a stale file split?
+Which calls need `untrack`, and would moving ownership remove that need?
 ```
 
-Keep indirection when it owns a real invariant, isolates unsafe input, names
-non-obvious domain behavior, supports several real callers, or protects a public
-contract. Otherwise, mark it as inlineable.
+Count callers for every new or changed helper, component, factory, wrapper, and
+export. A one-caller boundary is guilty until it proves it owns one of these:
+
+```txt
+a lifecycle that must be isolated from parent rerenders
+an unsafe parse, network, storage, or external-library boundary
+a repeated domain operation with several real callers
+a public contract that downstream code imports
+a long imperative block whose helper name explains the phase
+```
+
+If a boundary only passes a stable handle, callback, or raw library object to
+another one-call wrapper, collapse it. In particular, treat `untrack` inside an
+imperative widget setup as a design prompt: sometimes it is the right tool for a
+stable callback, but it can also reveal that the prop should not be reactive or
+should not cross the component boundary at all.
 
 ## Smell Check
 
@@ -90,7 +177,9 @@ identity wrappers and pass-through modules
 unnecessary casts or duck-typing inside typed code
 fallback parsers for old shapes
 callbacks that mirror internal implementation steps
+decision callbacks that could be caller-owned composition
 single-file directories and pointless barrels
+near-identical sibling files or types (judge: cheap independence or latent coupling)
 ```
 
 If a smell is repo-recurring, use `code-audit` for the relevant grep pattern. If
@@ -179,7 +268,8 @@ Would leave alone
 [Indirection or duplication that earns its keep]
 
 Verification
-[Commands run and result, or why not run]
+[Commands run and result, or why not run. For any failure, note whether it
+ reproduces on clean HEAD so pre-existing red is not misread as a regression.]
 ```
 
 For an implementation pass, make the cleanup edits after reporting the issue in

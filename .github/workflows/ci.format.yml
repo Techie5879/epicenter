@@ -1,8 +1,29 @@
+# The authoritative merge gate. `bun run check` is the same gate locally, so a
+# green local run predicts a green PR; this job exists to run it on hardware
+# nobody can forget to use.
+#
+# The workflow invokes that script directly, so the local and hosted gates
+# cannot drift.
+#
+# Deliberately NOT in this gate:
+#   - Formatting. ci.autofix.yml runs `bun run format` and pushes the fix, so
+#     failing here would only tell a contributor what a bot is already doing.
+#     `bun run check` still runs `format:check` locally, before the push.
+#   - `bun run check:doc-hygiene`. Its ADR-staleness rule is time-based, so a
+#     PR that touched nothing can go red on a calendar day. It stays an explicit
+#     review command (see 91c4a87c1b), not a merge blocker.
+#   - Runtime parity and Gmail drift. Those need Docker, Postgres, S3, or a live
+#     Google endpoint; they keep their own workflows on their own triggers.
 name: Code quality
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
@@ -14,13 +35,15 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: 'package.json'
       - name: Install dependencies
-        run: bun install
-      - name: Lint check
-        run: bun run lint:check
-      - name: Type check
-        run: bun run typecheck
+        run: bun install --frozen-lockfile
+      - name: Canonical gate
+        run: bun run check

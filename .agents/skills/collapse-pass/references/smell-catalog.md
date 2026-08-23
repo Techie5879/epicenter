@@ -26,7 +26,7 @@ rg "type \w+ = ReturnType<typeof \w+>" packages apps
 rg "Pick<\w+, ['\"]\w+['\"]\s*>" packages apps
 ```
 
-`Pick<Thing, 'method'>` often keeps an object boundary alive after the caller only needs one operation. Calibrate against `code-audit` §6 before fixing.
+`Pick<Thing, 'method'>` often keeps an object boundary alive after the caller only needs one operation. Calibrate against `code-audit` §5 before fixing.
 
 ### Hand-rolled object projection
 
@@ -99,7 +99,7 @@ Look for two types with the same fields under different names. Usually a missed 
 
 ### Option names that describe steps, not policy
 
-No grep; this requires reading. Look for option fields whose names describe *implementation* (`encryptionKeys`, `refreshFn`, `clientId`) instead of *policy* (`keyring`, `refresh`, `identity`). The implementation-named option often signals a leaky abstraction; the policy-named version often hides the right amount.
+No grep; this requires reading. Look for option fields whose names describe *implementation* (`refreshFn`, `clientId`) instead of *policy* (`refresh`, `identity`). The implementation-named option often signals a leaky abstraction; the policy-named version often hides the right amount.
 
 ## Branded-type patterns
 

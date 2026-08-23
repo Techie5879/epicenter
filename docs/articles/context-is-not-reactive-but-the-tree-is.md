@@ -137,7 +137,7 @@ In a signed-in session scope, handle that refresh inside the module that opened 
 
 ```ts
 import { requireSignedIn } from '@epicenter/auth';
-import { createSession, type InferSignedIn } from '@epicenter/svelte';
+import { createSession, type InferSignedIn } from '@epicenter/svelte/auth';
 import { auth } from '$lib/auth';
 import { openVoiceWorkspace } from '$lib/voice/browser';
 

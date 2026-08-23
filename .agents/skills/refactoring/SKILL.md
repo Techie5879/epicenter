@@ -1,6 +1,6 @@
 ---
 name: refactoring
-description: "Refactoring: caller counting, type safety boundaries, inlining single-use extractions, collapsing duplicate branches. Use when cleaning up code or auditing smells."
+description: "Per-change refactoring mechanics: count callers exactly, decide inline vs keep, collapse duplicate switch branches, route raw access through a single typed boundary, surgical one-change-per-commit, post-refactor straggler sweep for stale JSDoc and dead exports. Use when actually editing code to clean it up, when deciding whether a 1-caller helper earns its keep, or when planning a sequence of small refactor commits. For the smell catalog use code-audit; for session-long simplification use collapse-pass."
 metadata:
   author: epicenter
   version: '1.0'
@@ -10,18 +10,14 @@ metadata:
 
 Systematic approach to auditing and improving code. Every change is evidence-based: count callers, show diffs, commit surgically.
 
-> **Related Skills**: See `post-implementation-review` for the full second-read ritual after implementation. See `cohesive-clean-breaks` when the refactor changes public shape, ownership, naming, or lifecycle boundaries. See `control-flow` for linearizing conditionals and guard clauses. See `factory-function-composition` for the four-zone factory anatomy. See `method-shorthand-jsdoc` for when to use `this.method()` vs direct calls.
+> **Related Skills**: See `post-implementation-review` for the full second-read ritual after implementation. See `greenfield-clean-breaks` when the refactor changes public shape, ownership, naming, or lifecycle boundaries. See `control-flow` for linearizing conditionals and guard clauses. See `factory-function-composition` for the four-zone factory anatomy. See `method-shorthand-jsdoc` for when to use `this.method()` vs direct calls.
 
-## When to Apply This Skill
-
-Use this methodology when you need to:
-
-- Audit a module for code smells or unnecessary abstractions
-- Inline single-use helper functions
-- Eliminate raw/untyped access that bypasses a typed boundary
-- Collapse duplicate switch/if branches that do the same thing
-- Refactor function signatures (positional params → parameter objects)
-- Derive types instead of duplicating fields
+Use [asymmetric-wins](../asymmetric-wins/SKILL.md) when a refactor is preserving
+a small promise that owns a large code family: legacy aliases, fallback parsers,
+exact old fixtures, pixel-perfect UI reproduction, duplicate call shapes, or a
+rare mode with its own tests and docs. Refactors do not need to preserve every
+old promise. They need to preserve the product sentence and the load-bearing
+contracts.
 
 ## The Audit: Count Callers First
 
@@ -331,12 +327,25 @@ WorkspaceKeyResponse contract type             grep for the type → zero consum
 
 The sweep is a separate commit from the refactor. Label it `refactor(scope): remove dead X` or `refactor(scope): fix stale JSDoc after Y`.
 
+## Go-to-Definition Check
+
+After a refactor that moves, renames, or re-exports a symbol, press Go-to-Def from a real call site. The cursor should land on the actual definition, not on an alias line, a re-export passthrough, or a destructure-re-export of a module-level object. If it lands somewhere worse than before, the refactor regressed navigation: fix it before committing.
+
+Common regressions introduced by refactors:
+
+- Re-export chains added during file moves where the intermediate file does nothing.
+- Module-level `const x = {...} satisfies T; export const { fn } = x;` introduced "for symmetry" that lands Go-to-Def on the destructuring line.
+- Wrapper / adapter functions inserted with no behavior change.
+- Hand-written interface annotation added to a factory whose `ReturnType<typeof ...>` already covered it.
+
+See `typescript` "Go-to-Definition Awareness" for the per-shape mechanics.
+
 ## Anti-Patterns
 
 - **Premature extraction**: Extracting a 1-3 line block used 2-3 times into a named helper. The indirection costs more than the duplication. See "Prefer Inline for Trivial Duplications" above.
 - **Abstracting away differences**: Three push constructors with different fields share boilerplate, but a `pushEntry(type, fields: Record<string, unknown>)` helper loses all type safety. The duplication communicates structure.
 - **Type-erasing helpers**: Any helper that accepts `unknown` or `Record<string, any>` to "reduce duplication"
-- **Refactoring while fixing bugs**: Fix the bug minimally first, refactor in a separate commit
+- **Refactoring while fixing bugs**: Fix the bug at the owning boundary first, then use a separate commit for cleanup that is not required by that correction
 - **Batch-committing**: "Cleaned up the module" as one commit with 15 changes: impossible to review or revert
 - **Shotgun inlining**: Inlining everything with 1 caller regardless of context. Respect constructor families and complex logic.
 - **Skipping the straggler sweep**: Refactoring without cleaning up dead references. The code compiles, but the next person reads stale JSDoc and wastes 30 minutes confused about an endpoint that no longer exists.

@@ -283,7 +283,7 @@ Already deleted in spec 2 cleanup. This spec removes the opensidian hand-rolled 
 
 If tab-manager defers migration, its `auth.onStateChange` block stays. That's the only remaining hand-rolled lifecycle handler in the monorepo. Document it as a temporary async-build blocker, not as the preferred pattern.
 
-## Final check (cohesive-clean-breaks)
+## Final check (greenfield-clean-breaks)
 
 ```txt
 Can I explain the new API without saying "or"?

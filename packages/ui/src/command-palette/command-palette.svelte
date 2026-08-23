@@ -6,7 +6,7 @@
 
 	let {
 		items,
-		open = $bindable(false),
+		open: isOpen = $bindable(false),
 		value = $bindable(''),
 		placeholder = 'Search commands...',
 		emptyMessage = 'No commands found.',
@@ -49,7 +49,7 @@
 
 	// \u2500\u2500 Reset search value when palette closes \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	$effect(() => {
-		if (!open) value = '';
+		if (!isOpen) value = '';
 	});
 
 	// \u2500\u2500 Group items by the `group` field \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -64,12 +64,12 @@
 	onkeydown={(e) => {
 		if (shortcut && (e.metaKey || e.ctrlKey) && e.key === shortcut) {
 			e.preventDefault();
-			open = !open;
+			isOpen = !isOpen;
 		}
 	}}
 />
 
-<Command.Dialog bind:open {title} {description} {shouldFilter}>
+<Command.Dialog bind:open={isOpen} {title} {description} {shouldFilter}>
 	<Command.Input {placeholder} bind:value>
 		{#if inputEndContent}
 			{@render inputEndContent()}
@@ -84,7 +84,7 @@
 						value={item.label}
 						keywords={item.keywords}
 						onSelect={() => {
-							open = false;
+							isOpen = false;
 							if (item.destructive) {
 								confirmationDialog.open({
 									title: item.label,

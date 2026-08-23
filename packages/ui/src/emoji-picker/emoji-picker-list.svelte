@@ -47,7 +47,7 @@
 				const { name } = parseValue(item);
 				return filter(
 					pickerState.root.emojiPickerState.search,
-					emojiData.emojis[name].keywords,
+					emojiData.emojis[name]?.keywords ?? [],
 				);
 			})
 			.slice(0, pickerState.maxRecents)}
@@ -61,7 +61,7 @@
 				<CommandPrimitive.GroupItems class="grid grid-cols-6 px-2">
 					{#each recents as item (item)}
 						{@const { name, skin } = parseValue(item)}
-						{@const emoji = emojiData.emojis[name].skins[skin].native}
+						{@const emoji = emojiData.emojis[name]?.skins[skin]?.native}
 						<Command.Item
 							class="flex aspect-square size-9 place-items-center justify-center text-lg"
 							value="{item}:recent"
@@ -81,7 +81,7 @@
 		{@const emojis = category.emojis.filter((item) =>
 			filter(
 				pickerState.root.emojiPickerState.search,
-				emojiData.emojis[item].keywords,
+				emojiData.emojis[item]?.keywords ?? [],
 			),
 		)}
 		{#if emojis.length > 0}
@@ -95,7 +95,7 @@
 					{#each emojis as item (item)}
 						{@const emoji = emojiData.emojis[item]}
 						{@const emojiSkin =
-							emoji.skins.length > 1 ? pickerState.skinIndex : 0}
+							(emoji?.skins.length ?? 0) > 1 ? pickerState.skinIndex : 0}
 						{@const key = makeValue(item, emojiSkin)}
 						<Command.Item
 							class="flex aspect-square size-9 place-items-center justify-center text-lg"
@@ -105,7 +105,7 @@
 								pickerState.root.frecency?.use(key);
 							}}
 						>
-							{emoji.skins[emojiSkin].native}
+							{emoji?.skins[emojiSkin]?.native}
 						</Command.Item>
 					{/each}
 				</CommandPrimitive.GroupItems>

@@ -12,38 +12,44 @@ Every test file that needs shared infrastructure MUST have a `setup()` function.
 
 1. `setup()` ALWAYS returns a destructured object, even for single values
 2. Tests ALWAYS destructure the return: `const { thing } = setup()`
-3. `setup()` is a plain function, not a hook — each test calls it independently
-4. No mutable `let` variables at describe scope — setup returns fresh state per test
+3. `setup()` is a plain function, not a hook; each test calls it independently
+4. No mutable `let` variables at describe scope. Setup returns fresh state per test
 
 ### Why Always an Object (Even for One Value)
 
 - **Extensibility**: Adding a second value later doesn't require changing any existing callsites
 - **Self-documenting**: `const { files } = setup()` tells you what you're getting by name
-- **Consistency**: Every test file follows the same pattern — no guessing
+- **Consistency**: Every test file follows the same pattern. No guessing
 
 ### Single Value
 
 ```typescript
-// Good — always an object, even for one thing
+// Good: always an object, even for one thing
 function setup() {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	return { files: tables.files };
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	return { files: workspace.tables.files };
 }
 
 test('creates a file', () => {
 	const { files } = setup();
-	files.set({ id: '1', name: 'test.txt', _v: 1 });
+	files.set({ id: asFileId('1'), name: 'test.txt' });
 	expect(files.has('1')).toBe(true);
 });
 ```
 
 ```typescript
-// Bad — returns value directly
+// Bad: returns value directly
 function setup() {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	return tables.files; // No destructuring = breaks convention
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	return workspace.tables.files; // No destructuring = breaks convention
 }
 ```
 
@@ -77,9 +83,12 @@ When tests need additional setup beyond the base, create composable setup varian
 ```typescript
 function setup() {
 	const tableDef = defineTable(fileSchema);
-	const ydoc = new Y.Doc({ guid: 'test-workspace' });
-	const tables = attachTables(ydoc, { files: tableDef });
-	return { ydoc, tables };
+	const workspace = createWorkspace({
+		id: 'test-workspace',
+		tables: { files: tableDef },
+		kv: {},
+	});
+	return { ydoc: workspace.ydoc, tables: workspace.tables };
 }
 
 function setupWithBinding(
@@ -107,57 +116,63 @@ function setupWithBinding(
 Use `beforeEach`/`afterEach` ONLY for cleanup that must run even if a test fails (server shutdown, spy restoration). Never use them for data setup.
 
 ```typescript
-// Bad — mutable state, hidden setup
+// Bad: mutable state, hidden setup
 let files: TableHelper;
 beforeEach(() => {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	files = tables.files;
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	files = workspace.tables.files;
 });
 
-// Good — setup function, immutable per-test
+// Good: setup function, immutable per-test
 function setup() {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	return { files: tables.files };
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	return { files: workspace.tables.files };
 }
 ```
 
 ## Shared Schemas at Module Level
 
-Schemas and table definitions used across multiple tests should be defined at module level, outside `setup()`:
+Table definitions used across multiple tests should be defined at module level, outside `setup()`:
 
 ```typescript
-const fileSchema = type({
-	id: 'string',
-	name: 'string',
-	updatedAt: 'number',
-	_v: '1',
+const filesTable = defineTable({
+	id: field.string<FileId>(),
+	name: field.string(),
+	updatedAt: field.integer(),
 });
 
-const filesTable = defineTable(fileSchema);
-
 function setup() {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	return { files: tables.files };
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	return { files: workspace.tables.files };
 }
 ```
 
-These are stateless definitions — safe to share. Stateful objects (Y.Doc, workspace instances) go in `setup()`.
+These are stateless definitions, safe to share. Stateful objects (Y.Doc, workspace instances) go in `setup()`.
 
 ## Don't Return Dead Weight
 
 Every property in the setup return should be used by at least one test. If no test uses `ydoc`, don't return it:
 
 ```typescript
-// Bad — ydoc is never destructured by any test
+// Bad: ydoc is never destructured by any test
 function setup() {
 	const ydoc = new Y.Doc();
 	return { ydoc, tl: createTimeline(ydoc) };
 }
 
-// Good — only return what tests actually use
+// Good: only return what tests actually use
 function setup() {
 	return { tl: createTimeline(new Y.Doc()) };
 }

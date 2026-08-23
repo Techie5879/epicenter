@@ -2,5 +2,6 @@
 # These paths contain the sync server and protocol (AGPL-3.0).
 
 /apps/api/              @braden-w
+/apps/self-host/        @braden-w
 /packages/sync/         @braden-w
-/packages/sync-client/  @braden-w
+/packages/server/       @braden-w

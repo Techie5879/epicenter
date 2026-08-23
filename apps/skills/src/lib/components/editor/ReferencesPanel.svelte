@@ -2,8 +2,11 @@
 	import { Button } from '@epicenter/ui/button';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { getSkills } from '$lib/context.js';
+	import { runSkillsMutation } from '$lib/mutation.js';
 	import ExpandedReference from './ExpandedReference.svelte';
+
+	const { state: skillsState } = getSkills();
 
 	let expandedRefId = $state<string | null>(null);
 </script>
@@ -16,9 +19,14 @@
 				variant="ghost"
 				size="sm"
 				onclick={() => {
-					if (!skillsState.selectedSkillId) return;
-					const id = skillsState.createReference(skillsState.selectedSkillId, 'new-reference.md');
-					expandedRefId = id;
+					const skillId = skillsState.selectedSkillId;
+					if (!skillId) return;
+					runSkillsMutation(() => {
+						expandedRefId = skillsState.createReference(
+							skillId,
+							'new-reference.md',
+						);
+					}, 'Could not add reference');
 				}}
 			>
 				<PlusIcon class="mr-1 size-3.5" />
@@ -48,7 +56,10 @@
 								size="icon-xs"
 								onclick={() => {
 									if (expandedRefId === ref.id) expandedRefId = null;
-									skillsState.deleteReference(ref.id);
+									runSkillsMutation(
+										() => skillsState.deleteReference(ref.id),
+										'Could not delete reference',
+									);
 								}}
 							>
 								<TrashIcon class="size-3.5 text-muted-foreground" />

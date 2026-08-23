@@ -1,95 +1,127 @@
-# The TanStack Query Accessor Pattern in Svelte 5
+# The TanStack Query Accessor Pattern In Svelte 5
 
-I was building a recording player in Svelte 5 with TanStack Query to fetch audio URLs. Everything worked on the first load, but when I selected a different recording, the audio URL wouldn't update. The query stayed stuck on the old recording's URL.
+I was building a recording player in Svelte 5 with TanStack Query to fetch audio URLs. The first recording loaded, but selecting a different recording left the query stuck on the old URL.
 
-Here's the code I wrote:
+The bug was not in TanStack Query or the RPC layer. I had skipped the accessor that lets Svelte track the reactive input.
 
-```typescript
-const recordingId = $state('abc-123');
-const query = createQuery(rpc.audio.getPlaybackUrl(recordingId).options);
-```
-
-This looks right. `recordingId` is reactive. TanStack Query should pick up the change when it updates. But it doesn't.
-
-## The Fix
-
-Wrap reactive values in accessor functions:
+## The Broken Shape
 
 ```typescript
 const recordingId = $state('abc-123');
-const query = createQuery(rpc.audio.getPlaybackUrl(() => recordingId).options);
+
+const playbackUrl = createQuery(() =>
+	rpc.audio.getPlaybackUrl(recordingId).options,
+);
 ```
 
-That `() => recordingId` is the key. One character difference, completely different behavior.
+`recordingId` is reactive inside the component, but passing it directly sends the current string value into `getPlaybackUrl`. The RPC definition has no way to read the next value.
 
-## Why This Works
-
-Svelte 5's reactivity is based on signals and getters. When you write `recordingId` in your code, Svelte's compiler turns that into a getter call that tracks dependencies. But when you pass `recordingId` directly to a function, you're passing the current value. A snapshot. TanStack Query doesn't know it's reactive.
-
-When you pass `() => recordingId`, you're giving Query a function it can call. Every time Query calls that function, Svelte can track the dependency. Query can subscribe to changes. Now when `recordingId` updates, Query knows to refetch the audio URL.
-
-Here's the thing that took me too long to realize: Svelte's reactivity tracking happens at the call site. If you don't give TanStack Query a way to call into your reactive scope, it can't participate in reactivity tracking.
-
-## When to Use Accessor Functions
-
-If the value can change during the component's lifetime, use an accessor:
+## The Correct Shape
 
 ```typescript
-// Props: wrap in accessor
-const query = createQuery(rpc.audio.getPlaybackUrl(() => props.recordingId).options);
-
-// $state variables: wrap in accessor
 const recordingId = $state('abc-123');
-const query = createQuery(rpc.audio.getPlaybackUrl(() => recordingId).options);
 
-// $derived values: wrap in accessor
-const computedId = $derived(props.userId + '-' + props.timestamp);
-const query = createQuery(rpc.audio.getPlaybackUrl(() => computedId).options);
+const playbackUrl = createQuery(() =>
+	rpc.audio.getPlaybackUrl(() => recordingId).options,
+);
 ```
 
-If the value will never change, pass it directly:
+There are two accessors here:
 
 ```typescript
-// String literals: pass directly
-const query = createQuery(rpc.audio.getPlaybackUrl('static-id').options);
+createQuery(() =>
+	rpc.audio.getPlaybackUrl(() => recordingId).options,
+);
+```
 
-// Constants: pass directly
+- The outer `() => ...` is the Svelte Query options accessor.
+- The inner `() => recordingId` is the domain parameter accessor.
+
+The outer accessor lets Svelte Query re-read the options. The inner accessor lets the shared query definition read the current recording ID when it builds the key and query function.
+
+## When To Use A Parameter Accessor
+
+Use an accessor when the value can change during the component lifetime:
+
+```typescript
+const fromProps = createQuery(() =>
+	rpc.audio.getPlaybackUrl(() => props.recordingId).options,
+);
+
+const fromState = createQuery(() =>
+	rpc.audio.getPlaybackUrl(() => recordingId).options,
+);
+
+const fromDerived = createQuery(() =>
+	rpc.audio.getPlaybackUrl(() => computedId).options,
+);
+```
+
+Pass a plain value only when it is static for that query instance:
+
+```typescript
+const staticRecording = createQuery(() =>
+	rpc.audio.getPlaybackUrl('static-id').options,
+);
+
 const RECORDING_ID = 'abc-123';
-const query = createQuery(rpc.audio.getPlaybackUrl(RECORDING_ID).options);
+const constantRecording = createQuery(() =>
+	rpc.audio.getPlaybackUrl(RECORDING_ID).options,
+);
 ```
 
 ## Common Mistakes
 
-The method syntax trips people up. I've seen this written backwards:
+Put the parameter accessor in the RPC method call, then read `.options` as a property:
 
 ```typescript
-// Wrong: calling .options with the accessor
-createQuery(rpc.method.options(() => param));
+// Wrong
+createQuery(() => rpc.audio.getPlaybackUrl.options(() => recordingId));
 
-// Right: call the method with the accessor, then access .options
-createQuery(rpc.method(() => param).options);
+// Right
+createQuery(() => rpc.audio.getPlaybackUrl(() => recordingId).options);
 ```
 
-The accessor goes in the method call, not after `.options`. That's because the method (like `rpc.audio.getPlaybackUrl`) returns an object that has an `.options` property. You're calling the method with reactive parameters, then accessing its options.
-
-Another common mistake is forgetting the accessor for reactive values:
+Do not pass `.options` directly to `createQuery`:
 
 ```typescript
-// Wrong: passing reactive value directly
-const recordingId = $state('abc-123');
-createQuery(rpc.audio.getPlaybackUrl(recordingId).options);
-
-// Right: wrapping in accessor
-const recordingId = $state('abc-123');
+// Wrong
 createQuery(rpc.audio.getPlaybackUrl(() => recordingId).options);
+
+// Right
+createQuery(() => rpc.audio.getPlaybackUrl(() => recordingId).options);
 ```
 
-I made this mistake a lot early on because it looks so similar. The broken version even works on the first render. It only breaks when the value changes, which makes it harder to catch.
+Do not call `.options` like a function:
 
-## The Rule I Follow Now
+```typescript
+// Wrong
+createQuery(() => rpc.audio.getPlaybackUrl(() => recordingId).options());
 
-If it can change, use an accessor function. If it's static, pass it directly.
+// Right
+createQuery(() => rpc.audio.getPlaybackUrl(() => recordingId).options);
+```
 
-That's it. When I'm writing a Query and I'm about to pass a parameter, I ask: can this value change? If yes, wrap it in `() => value`. If no, pass it as-is. This simple rule has saved me from a lot of reactivity bugs.
+## Hook-Local Queries
 
-The accessor pattern is a small detail, but it's the difference between queries that update when they should and queries that mysteriously stay stuck on old data. Once you internalize it, it becomes second nature.
+If the query is only used at one hook call site, skip the shared RPC definition and use Wellcrafted `queryOptions` locally:
+
+```typescript
+import { createQuery } from '@tanstack/svelte-query';
+import { queryOptions } from 'wellcrafted/query';
+
+const devices = createQuery(() =>
+	queryOptions({
+		queryKey: ['devices'],
+		queryFn: () => enumerateDevices(),
+	}),
+);
+```
+
+Use a shared `defineQuery` when the query belongs in `$lib/rpc` or `$lib/query`, has reusable identity, or needs imperative `.fetch()` or `.ensure()` calls.
+
+## Rule
+
+If the parameter can change, pass `() => value` to the shared query definition. In Svelte components, wrap the whole options expression in `createQuery(() => ...)`.
+
+Queries are not callable. Use `.fetch()` when a user action needs a fresh read, and `.ensure()` when cache-first data is acceptable.

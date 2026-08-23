@@ -5,7 +5,6 @@
 	import * as ButtonGroup from '@epicenter/ui/button-group';
 	import { Card } from '@epicenter/ui/card';
 	import { Checkbox } from '@epicenter/ui/checkbox';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
@@ -20,7 +19,7 @@
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import LoadingTranscriptionIcon from '@lucide/svelte/icons/ellipsis';
+	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import StartTranscriptionIcon from '@lucide/svelte/icons/play';
 	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
@@ -44,44 +43,72 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { type } from 'arktype';
-	import { format } from 'date-fns';
-	import { nanoid } from 'nanoid/non-secure';
 	import { createRawSnippet } from 'svelte';
-	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
-	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
-	import { PATHS } from '$lib/constants/paths';
-	import { rpc } from '$lib/query';
-	import { services } from '$lib/services';
-	import { type Recording, recordings } from '$lib/state/recordings.svelte';
+	import { PATHS } from '$lib/services/fs-paths';
+	import { report } from '$lib/report';
+	import { tauri } from '#platform/tauri';
+	import { deleteRecordingsWithConfirmation } from '$lib/operations/delete-recordings';
+	import type { Recording } from '$lib/state/recordings.svelte';
+	import type { RecordingId } from '$lib/workspace';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
-	import { recordingActions } from '$lib/utils/recording-actions';
-	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
-	import RenderAudioUrl from './RenderAudioUrl.svelte';
-	import { RecordingRowActions } from './row-actions';
+	import RecordingTranscriptCell from './RecordingTranscriptCell.svelte';
+	import RecordingAudioCell from './RecordingAudioCell.svelte';
+	import RecordingStorageBadge from './RecordingStorageBadge.svelte';
+	import TranscriptionStatusBadge from './TranscriptionStatusBadge.svelte';
+	import RecordingRowActions from './actions/RecordingRowActions.svelte';
+	import {
+		getWhisperingApp,
+		getWhisperingQueries,
+	} from '$lib/whispering/context';
+
+	const app = getWhisperingApp();
+	const queries = getWhisperingQueries();
 
 	/**
-	 * Returns a cell renderer for a date/time column using date-fns format.
-	 *
-	 * @param formatString - date-fns format string
+	 * Returns a cell renderer for an instant, optionally using a row-owned
+	 * display timezone.
 	 */
-	function formattedCell(formatString: string) {
-		return ({ getValue }: { getValue: () => unknown }) => {
+	function formattedCell(getTimeZone?: (recording: Recording) => string) {
+		return ({
+			getValue,
+			row,
+		}: {
+			getValue: () => unknown;
+			row: { original: Recording };
+		}) => {
 			const value = getValue();
 			if (typeof value !== 'string' || !value) return '';
 			const date = new Date(value);
 			if (Number.isNaN(date.getTime())) return value;
+			const timeZone = getTimeZone?.(row.original);
+			const options: Intl.DateTimeFormatOptions = {
+				year: 'numeric',
+				month: 'short',
+				day: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit',
+				timeZone,
+				...(timeZone ? { timeZoneName: 'short' } : {}),
+			};
 			try {
-				return format(date, formatString);
+				return new Intl.DateTimeFormat(undefined, options).format(date);
 			} catch {
-				return value;
+				return new Intl.DateTimeFormat(undefined, {
+					...options,
+					timeZone: undefined,
+					timeZoneName: undefined,
+				}).format(date);
 			}
 		};
 	}
 
 	const transcribeRecordings = createMutation(
-		() => rpc.transcription.transcribeRecordings.options,
+		() => queries.transcription.transcribeRecordings.options,
 	);
-	const DATE_FORMAT = 'PP p'; // e.g., Aug 13, 2025, 10:00 AM
+
+	function displayTranscript(recording: Recording): string {
+		return recording.polishedTranscript ?? recording.transcript;
+	}
 
 	const columns = [
 		{
@@ -98,7 +125,7 @@
 			enableHiding: false,
 			filterFn: (row, _columnId, filterValue) => {
 				const title = String(row.getValue('title'));
-				const transcript = String(row.getValue('transcript'));
+				const transcript = displayTranscript(row.original);
 				return (
 					title.toLowerCase().includes(filterValue.toLowerCase()) ||
 					transcript.toLowerCase().includes(filterValue.toLowerCase())
@@ -137,79 +164,57 @@
 					column,
 					headerText: 'Recorded',
 				}),
-			cell: formattedCell(DATE_FORMAT),
+			cell: formattedCell((recording) => recording.recordedAtZone),
 		},
 		{
-			accessorKey: 'updatedAt',
-			meta: { label: 'Updated At' },
-			header: ({ column }) =>
-				renderComponent(SortableTableHeader, {
-					column,
-					headerText: 'Updated At',
-				}),
-			cell: formattedCell(DATE_FORMAT),
-		},
-		{
-			accessorKey: 'transcript',
+			id: 'transcript',
+			accessorFn: displayTranscript,
 			meta: { label: 'Transcript' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
 					headerText: 'Transcript',
 				}),
-			cell: ({ getValue, row }) => {
-				const transcript = getValue<string>();
-				if (!transcript) return;
-				return renderComponent(TranscriptDialog, {
-					recordingId: row.id,
-					transcript: transcript,
-					onDelete: () => {
-						confirmationDialog.open({
-							title: 'Delete recording',
-							description: 'Are you sure you want to delete this recording?',
-							confirm: { text: 'Delete', variant: 'destructive' },
-							onConfirm: () => {
-								services.blobs.audio.revokeUrl(row.original.id);
-								recordings.delete(row.original.id);
-								rpc.notify.success({
-									title: 'Deleted recording!',
-									description: 'Your recording has been deleted.',
-								});
-							},
-						});
-					},
-				});
-			},
-		},
-		{
-			id: 'latestTransformationRunOutput',
-			meta: { label: 'Latest Transformation Run Output' },
-			accessorFn: ({ id }) => id,
-			header: ({ column }) =>
-				renderComponent(SortableTableHeader, {
-					column,
-					headerText: 'Latest Transformation Run Output',
+			cell: ({ row }) =>
+				renderComponent(RecordingTranscriptCell, {
+					recordingId: row.original.id,
 				}),
-			cell: ({ getValue }) => {
-				const recordingId = getValue<string>();
-				return renderComponent(LatestTransformationRunOutputByRecordingId, {
-					recordingId,
-				});
-			},
 		},
 		{
 			id: 'audio',
 			meta: { label: 'Audio' },
-			accessorFn: ({ id }) => id,
+			accessorFn: (recording) => recording,
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
 					headerText: 'Audio',
 				}),
-			cell: ({ getValue }) => {
-				const id = getValue<string>();
-				return renderComponent(RenderAudioUrl, { id });
-			},
+			cell: ({ getValue }) =>
+				renderComponent(RecordingAudioCell, {
+					recording: getValue<Recording>(),
+				}),
+		},
+		{
+			id: 'storage',
+			meta: { label: 'Storage' },
+			accessorFn: (recording) => recording,
+			header: 'Storage',
+			enableSorting: false,
+			cell: ({ getValue }) =>
+				renderComponent(RecordingStorageBadge, {
+					recording: getValue<Recording>(),
+				}),
+		},
+		{
+			id: 'status',
+			meta: { label: 'Status' },
+			accessorFn: ({ id }) => id,
+			header: 'Status',
+			enableSorting: false,
+			cell: ({ getValue }) =>
+				renderComponent(TranscriptionStatusBadge, {
+					recordingId: getValue<RecordingId>(),
+				}),
 		},
 		{
 			id: 'actions',
@@ -222,9 +227,7 @@
 				}),
 			cell: ({ getValue }) => {
 				const recording = getValue<Recording>();
-				return renderComponent(RecordingRowActions, {
-					recordingId: recording.id,
-				});
+				return renderComponent(RecordingRowActions, { recording });
 			},
 		},
 	] satisfies ColumnDef<Recording>[];
@@ -234,13 +237,12 @@
 		schema: type({ desc: 'boolean', id: 'string' }).array(),
 		defaultValue: [{ id: 'recordedAt', desc: true }],
 	});
-	let columnFilters = $state<ColumnFiltersState>([]);
+	let columnFilters = $state.raw<ColumnFiltersState>([]);
 	let columnVisibility = createPersistedState({
 		key: 'whispering-recordings-data-table-column-visibility',
 		schema: type('Record<string, boolean>'),
 		defaultValue: {
 			id: false,
-			updatedAt: false,
 		},
 	});
 	let rowSelection = createPersistedState({
@@ -248,13 +250,16 @@
 		schema: type('Record<string, boolean>'),
 		defaultValue: {},
 	});
-	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
+	let pagination = $state.raw<PaginationState>({
+		pageIndex: 0,
+		pageSize: 10,
+	});
 	let globalFilter = $state('');
 
 	const table = createSvelteTable({
 		getRowId: (originalRow) => originalRow.id,
 		get data() {
-			return recordings.sorted;
+			return app.recordings.sorted;
 		},
 		columns,
 		getCoreRowModel: getCoreRowModel(),
@@ -337,9 +342,10 @@
 	const joinedTranscriptionsText = $derived.by(() => {
 		const transcriptions = selectedRecordingRows
 			.map(({ original }) => original)
-			.filter((recording) => recording.transcript !== '')
+			.filter((recording) => displayTranscript(recording) !== '')
 			.map((recording) =>
 				template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+					if (key === 'transcript') return displayTranscript(recording);
 					if (key in recording) {
 						const value = recording[key as keyof Recording];
 						return typeof value === 'string' ? value : '';
@@ -349,6 +355,12 @@
 			);
 		return transcriptions.join(delimiter);
 	});
+
+	async function openBlobsFolder() {
+		if (!tauri) return;
+		const { error } = await tauri.opener.openPath(await PATHS.DB.BLOBS());
+		if (error) report.error({ title: 'Failed to open folder', cause: error });
+	}
 </script>
 
 <svelte:head> <title>All Recordings</title> </svelte:head>
@@ -363,7 +375,7 @@
 		</SectionHeader.Title>
 		<SectionHeader.Description>
 			Your latest recordings and transcriptions, stored locally
-			{window.__TAURI_INTERNALS__ ? 'on your file system' : 'in IndexedDB'}.
+			{tauri ? 'on your file system' : 'in IndexedDB'}.
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 	<Card class="flex flex-col gap-4 p-6">
@@ -382,46 +394,68 @@
 						size="icon"
 						disabled={transcribeRecordings.isPending}
 						onclick={() => {
-							const toastId = nanoid();
-							rpc.notify.loading({
-								id: toastId,
-								title: 'Transcribing queries.recordings...',
+							const loading = report.loading({
+								title: 'Transcribing recordings...',
 								description: 'This may take a while.',
 							});
 							transcribeRecordings.mutate(
 								selectedRecordingRows.map(({ original }) => original),
 								{
 									onSuccess: ({ oks, errs }) => {
-										const isAllSuccessful = errs.length === 0;
-										if (isAllSuccessful) {
+										const historyUnconfirmedTexts = oks.flatMap(({ data }) =>
+											data.history.error === null ? [] : [data.text],
+										);
+										const historyWarningCount = historyUnconfirmedTexts.length;
+										const copyUnsavedAction =
+											historyWarningCount === 0
+												? undefined
+												: {
+														label: 'Copy unsaved transcripts',
+														onClick: () =>
+															createCopyFn('unsaved transcripts')(
+																historyUnconfirmedTexts.join('\n\n'),
+															),
+													};
+										if (errs.length === 0) {
 											const count = oks.length;
-											rpc.notify.success({
-												id: toastId,
-												title: `Transcribed ${count} recording${count === 1 ? '' : 's'}!`,
-												description: `Your ${count} recording${count === 1 ? ' has' : 's have'} been transcribed successfully.`,
-											});
-											return;
-										}
-										const isAllFailed = oks.length === 0;
-										if (isAllFailed) {
-											const count = errs.length;
-											rpc.notify.error({
-												id: toastId,
-												title: `Failed to transcribe ${count} recording${count === 1 ? '' : 's'}`,
+											loading.resolve({
+												title: `Transcribed ${count} recording${count === 1 ? '' : 's'}`,
 												description:
-													count === 1
-														? 'Your recording could not be transcribed.'
-														: 'None of your recordings could be transcribed.',
-												action: { type: 'more-details', error: errs },
+													historyWarningCount === 0
+														? `Your ${count} recording${count === 1 ? ' has' : 's have'} been transcribed successfully.`
+														: `Recording history may be incomplete for ${historyWarningCount} transcription${historyWarningCount === 1 ? '' : 's'}.`,
+												action: copyUnsavedAction,
 											});
 											return;
 										}
-										// Mixed results
-										rpc.notify.warning({
-											id: toastId,
+
+										// transcribeAndPersist attempts to mark each failed row so
+										// history can surface its message plus a retry. So the bulk toast only
+										// summarizes, and forwards the first real failure as the
+										// cause so More details stays a genuine provider error
+										// rather than a synthesized one. Dedupe the messages so a
+										// batch that failed the same way (every row missing the API
+										// key) reads as one line, not N copies.
+										const [firstFailure] = errs;
+										if (!firstFailure) return; // errs is non-empty here
+										const failureSummary = [
+											...new Set(errs.map(({ error }) => error.message)),
+										].join('\n');
+
+										if (oks.length === 0) {
+											loading.reject({
+												cause: firstFailure.error,
+												title: `Failed to transcribe ${errs.length} recording${errs.length === 1 ? '' : 's'}`,
+												description: failureSummary,
+											});
+											return;
+										}
+
+										loading.reject({
+											cause: firstFailure.error,
 											title: `Transcribed ${oks.length} of ${oks.length + errs.length} recordings`,
-											description: `${oks.length} succeeded, ${errs.length} failed.`,
-											action: { type: 'more-details', error: errs },
+											description: `${oks.length} succeeded, ${errs.length} failed${historyWarningCount === 0 ? '' : `, ${historyWarningCount} may not have been saved to history`}:\n${failureSummary}`,
+											action: copyUnsavedAction,
 										});
 									},
 								},
@@ -430,15 +464,11 @@
 					>
 						{#if transcribeRecordings.isPending}
 							<EllipsisIcon class="size-4" />
-						{:else if selectedRecordingRows.some(({ id }) => {
-							const currentRow = recordings.get(id);
-							return currentRow?.transcriptionStatus === 'TRANSCRIBING';
-						})}
-							<LoadingTranscriptionIcon class="size-4" />
-						{:else if selectedRecordingRows.some(({ id }) => {
-							const currentRow = recordings.get(id);
-							return currentRow?.transcriptionStatus === 'DONE';
-						})}
+						{:else if selectedRecordingRows.some(
+							(recording) =>
+								app.recordings.get(recording.original.id)
+									?.transcriptionStatus === 'completed',
+						)}
 							<RetryTranscriptionIcon class="size-4" />
 						{:else}
 							<StartTranscriptionIcon class="size-4" />
@@ -462,8 +492,8 @@
 							<Modal.Header>
 								<Modal.Title>Copy Transcripts</Modal.Title>
 								<Modal.Description>
-									Make changes to your profile here. Click save when you're
-									done.
+									Choose the template and delimiter for the selected
+									transcripts.
 								</Modal.Description>
 							</Modal.Header>
 							<div class="grid gap-4 py-4">
@@ -510,18 +540,25 @@
 						variant="outline"
 						size="icon"
 						onclick={() =>
-						recordingActions.deleteWithConfirmation(
-							selectedRecordingRows.map(({ original }) => original),
-						)}
+							deleteRecordingsWithConfirmation(
+								app,
+								selectedRecordingRows.map(({ original }) => original),
+							)}
 					>
 						<TrashIcon class="size-4" />
 					</Button>
 				{/if}
 
-				<OpenFolderButton
-					getFolderPath={PATHS.DB.RECORDINGS}
-					tooltipText="Open recordings folder"
-				/>
+				{#if tauri}
+					<Button
+						tooltip="Open audio storage folder"
+						variant="outline"
+						size="icon"
+						onclick={openBlobsFolder}
+					>
+						<ExternalLinkIcon class="size-4" />
+					</Button>
+				{/if}
 
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger

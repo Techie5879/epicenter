@@ -1,63 +1,59 @@
-# Why I Pass Callbacks to .mutate() Instead of createMutation
+# Why I Pass Callbacks to `.mutate()`
 
-I was refactoring some mutation handlers and realized I kept running into the same problem. My success callbacks needed access to local component state—dialog refs, form values, navigation state—but I was defining them at the mutation creation level where that context didn't exist.
+TanStack Query mutations have two callback layers. Put shared lifecycle behavior on the mutation options. Put local UI behavior at the `.mutate()` call site.
 
-Here's the thing that took me too long to realize: TanStack Query lets you pass callbacks at two different points, and where you put them matters.
+That distinction matters in Svelte components because local UI state lives at the click handler, form handler, or dialog boundary.
 
-## The Two Patterns
+## The Two Callback Layers
 
-First, there's the pattern I was using:
+Use an options accessor when wiring a shared RPC mutation:
 
 ```typescript
-// Callbacks at mutation creation
-const deleteSessionMutation = createMutation(() => ({
-	...rpc.sessions.deleteSession.options,
-	onSuccess: () => {
-		// Can't access isDialogOpen here!
-		toast.success('Deleted');
-	},
-}));
+const deleteSessionMutation = createMutation(
+	() => rpc.sessions.deleteSession.options,
+);
 ```
 
-Then I discovered you can pass them when calling `.mutate()`:
+Then pass UI-specific callbacks when triggering the mutation:
 
 ```typescript
-// Callbacks at call site
-const deleteSessionMutation = createMutation(
-	rpc.sessions.deleteSession.options,
-);
-
-// Later, when triggering the mutation
 deleteSessionMutation.mutate(
 	{ sessionId },
 	{
 		onSuccess: () => {
-			isDialogOpen = false; // Now I can access local state!
+			isDialogOpen = false;
 			toast.success('Deleted');
 		},
 	},
 );
 ```
 
-That's it. No complex state management. No prop drilling. Just callbacks where they have the most context.
+The mutation definition stays reusable. The call site keeps access to local state, props, derived values, navigation, and refs.
 
-## Why This Works Better
+## Shared Callback Behavior
 
-When you're in a component and trigger a mutation, you usually want to do something with the UI afterward. Close a modal. Navigate somewhere. Update local state. Clear a form.
+If every call site needs the same behavior, compose that behavior into the hook options accessor:
 
-All of these things live in your component's scope. By defining callbacks at the call site, you get access to:
+```typescript
+const deleteSessionMutation = createMutation(() => ({
+	...rpc.sessions.deleteSession.options,
+	onSuccess: (data) => {
+		logAuditEvent('session_deleted', data.id);
+	},
+}));
+```
 
-- Component state (`$state` variables)
-- Props and derived values
-- Other mutations and queries
-- Navigation functions
-- Refs to DOM elements
+This is still component-level TanStack setup. The shared RPC definition remains the plain Wellcrafted mutation definition, and `.options` stays a property.
 
-Here's a real example from a file upload dialog:
+## Local Callback Behavior
+
+Prefer call-site callbacks for UI consequences:
 
 ```svelte
 <script lang="ts">
-	const copyToClipboard = createMutation(rpc.text.copyToClipboard.options);
+	const copyToClipboard = createMutation(
+		() => rpc.text.copyToClipboard.options,
+	);
 
 	let isDialogOpen = $state(false);
 	let selectedText = $state('');
@@ -69,15 +65,12 @@ Here's a real example from a file upload dialog:
 			{ text: selectedText },
 			{
 				onSuccess: () => {
-					// Access to everything in component scope
 					isDialogOpen = false;
 					selectedText = '';
-					toast.success('Copied to clipboard!');
+					toast.success('Copied to clipboard');
 				},
 				onError: (error) => {
-					// Even error handling can be contextual
-					console.error('Failed to copy:', selectedText);
-					toast.error(error.message);
+					report.error({ cause: error });
 				},
 			},
 		);
@@ -87,105 +80,32 @@ Here's a real example from a file upload dialog:
 </Button>
 ```
 
-## Different Actions, Different Behaviors
+Each interaction can do exactly what its UI context needs. A table row can show a small toast. A bulk action can update selection state. A dialog can close itself.
 
-Another pattern that emerges: the same mutation might need different success behaviors in different contexts.
+## Hook-Local Result Mutations
 
-```typescript
-// In a table row
-deleteRecording.mutate(id, {
-	onSuccess: () => toast.success('Recording deleted'),
-});
-
-// In a bulk action
-deleteRecording.mutate(id, {
-	onSuccess: () => {
-		remainingIds = remainingIds.filter((rid) => rid !== id);
-		if (remainingIds.length === 0) {
-			isSelecting = false;
-			toast.success('All recordings deleted!');
-		}
-	},
-});
-```
-
-Same mutation. Different contexts. Different callbacks.
-
-## The Loading State Still Works
-
-You might worry that moving callbacks out of `createMutation` breaks something. It doesn't. You still get all the reactive state:
-
-```svelte
-const saveSettings = createMutation(rpc.settings.save.options);
-
-<Button
-	disabled={saveSettings.isPending}
-	onclick={() => {
-		saveSettings.mutate(currentSettings, {
-			onSuccess: () => {
-				hasUnsavedChanges = false;
-				toast.success('Settings saved');
-			},
-		});
-	}}
->
-	{#if saveSettings.isPending}
-		Saving...
-	{:else}
-		Save
-	{/if}
-</Button>
-```
-
-Everything works exactly the same. You just have more flexibility.
-
-## When to Break the Rule
-
-Sometimes you do want callbacks at the mutation level. If every single call site needs identical behavior, put it there:
+When the operation is one-off and returns a Wellcrafted `Result`, use `mutationOptions` directly at the hook call site:
 
 ```typescript
-// Audit logging on every call
-const deleteSession = createMutation({
-	...rpc.sessions.deleteSession.options,
-	onSuccess: (data) => {
-		// This ALWAYS needs to happen
-		logAuditEvent('session_deleted', data.id);
-	},
-});
-```
+import { createMutation } from '@tanstack/svelte-query';
+import { mutationOptions } from 'wellcrafted/query';
 
-But even then, you can still add call-site callbacks. They'll both run.
-
-## The Pattern in Practice
-
-After adopting this pattern, my components got simpler. No more passing callbacks through props. No more lifting state up just to access it in a success handler.
-
-Each mutation call is self-contained:
-
-```typescript
-shareMutation.mutate(
-	{ sessionId },
-	{
-		onSuccess: ({ url }) => {
-			shareUrl = url;
-			isShareModalOpen = true;
-			navigator.clipboard.writeText(url);
-		},
-	},
+const startRecording = createMutation(() =>
+	mutationOptions({
+		mutationKey: ['recording', 'startManual'],
+		mutationFn: startManualRecording,
+	}),
 );
 ```
 
-You can read the click handler and understand everything that happens. The context is right there.
+Use a shared `defineMutation` only when the mutation belongs in `$lib/rpc` or `$lib/query` with reusable identity, cache invalidation, or multiple observers.
 
-## The Lesson
+## Rule
 
-Callbacks want context. Put them where the context lives.
+- Shared RPC mutation hook: `createMutation(() => rpc.thing.options)`
+- Shared callback for every call: `createMutation(() => ({ ...rpc.thing.options, onSuccess }))`
+- Local UI callback: `mutation.mutate(input, { onSuccess, onError })`
+- Hook-local Result operation: `createMutation(() => mutationOptions({ mutationKey, mutationFn }))`
+- Imperative shared mutation outside hooks: `await rpc.thing(input)`
 
-I was treating mutation creation like a service definition—trying to define all behavior upfront. But mutations in components aren't services. They're UI interactions. And UI interactions need access to UI state.
-
-So now I do this:
-
-- `createMutation(rpc.thing.options)` - just the options, no callbacks
-- `.mutate(data, { onSuccess, onError })` - callbacks with full context
-
-Less abstraction. More clarity. And my modals finally close when they're supposed to.
+Do not use `createMutation(rpc.thing.options)` directly. Svelte Query expects an accessor so reactive options can be tracked consistently.

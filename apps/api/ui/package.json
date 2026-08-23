@@ -1,0 +1,45 @@
+{
+	"name": "@epicenter/api-ui",
+	"description": "Cloud UI bundled with apps/api (auth, dashboard, billing, and credits)",
+	"private": true,
+	"version": "0.0.2",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "NODE_ENV=production vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+	},
+	"devDependencies": {
+		"@epicenter/ui": "workspace:*",
+		"@types/bun": "catalog:",
+		"@lucide/svelte": "catalog:",
+		"@sveltejs/adapter-static": "catalog:",
+		"@sveltejs/kit": "catalog:",
+		"@sveltejs/vite-plugin-svelte": "catalog:",
+		"@tailwindcss/vite": "catalog:",
+		"mode-watcher": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"svelte-sonner": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:"
+	},
+	"dependencies": {
+		"@better-auth/passkey": "catalog:",
+		"@epicenter/auth": "workspace:*",
+		"@epicenter/constants": "workspace:*",
+		"@epicenter/svelte": "workspace:*",
+		"better-auth": "catalog:",
+		"@tanstack/svelte-query": "catalog:",
+		"@tanstack/svelte-query-devtools": "catalog:",
+		"bits-ui": "catalog:",
+		"d3-scale": "^4.0.2",
+		"d3-shape": "^3.2.0",
+		"layerchart": "^1.0.13",
+		"wellcrafted": "catalog:"
+	},
+	"license": "AGPL-3.0-or-later"
+}

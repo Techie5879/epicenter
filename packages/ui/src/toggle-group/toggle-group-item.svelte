@@ -21,12 +21,14 @@
 	data-slot="toggle-group-item"
 	data-variant={ctx.variant || variant}
 	data-size={ctx.size || size}
+	data-spacing={ctx.spacing}
 	class={cn(
+		'cn-toggle-group-item shrink-0 focus:z-10 focus-visible:z-10 group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:border-l-0 group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:border-t-0 group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-l group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-t',
 		toggleVariants({
 			variant: ctx.variant || variant,
 			size: ctx.size || size,
 		}),
-		'min-w-0 flex-1 shrink-0 rounded-none shadow-none first:rounded-s-md last:rounded-e-md focus:z-10 focus-visible:z-10 data-[variant=outline]:border-s-0 data-[variant=outline]:first:border-s',
+		'min-w-0 flex-1',
 		className,
 	)}
 	{value}
