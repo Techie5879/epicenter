@@ -370,14 +370,15 @@ const media = {
 // Transcription, not model administration: Whispering asks the host to
 // transcribe on whichever model is active, and reads advisory readiness so it
 // can warn before capture. Choosing, downloading, and deleting models, and even
-// learning which model is active, belong to Epicenter Home (ADR-0180); no
+// learning which model is active, belong to the model-administration window
+// (ADR-0180); no
 // Whispering window is granted those commands.
 //
 // These are raw Tauri shapes and are internal on purpose. ADR-0181 replaces
 // them with one portable `epicenter` handle whose members are the same in every
 // runtime: this namespace becomes `epicenter.transcription`
 // (`capabilities()` / `transcribe()` / `prewarm()`) and the navigation below
-// becomes `epicenter.shell.openHome('transcription')`. Nothing here claims to
+// becomes `epicenter.shell.openLocalModels()`. Nothing here claims to
 // be that handle. What this wave does establish is the substrate it will wrap:
 // the host-side contract, and the two behaviours the SDK shape depends on, kept
 // here so the next wave moves them rather than redesigns them.
@@ -411,13 +412,13 @@ const transcription = {
 	},
 
 	/**
-	 * Ask the shell to open Home's transcription section. Fire-and-forget for
+	 * Ask the shell to open local-model administration. Fire-and-forget for
 	 * the same reason: the outcome a caller cares about is the user arriving,
 	 * which is not something this promise reports.
 	 */
-	openHomeTranscription: (): void => {
-		void commands.openHome('transcription').catch((cause) => {
-			log.info('Opening Epicenter Home was refused', { cause });
+	openLocalModels: (): void => {
+		void commands.openLocalModels().catch((cause) => {
+			log.info('Opening local-model administration was refused', { cause });
 		});
 	},
 };

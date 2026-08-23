@@ -2,7 +2,8 @@
  * Whether the host's local transcription route can run here, and what it accepts.
  *
  * Epicenter has exactly one active local model per device; the host owns it and
- * Epicenter Home administers it (ADR-0180). Whispering chooses the *route*
+ * The desktop model-administration window administers it (ADR-0180).
+ * Whispering chooses the *route*
  * (local against a cloud provider) and reads this to render that choice
  * honestly. It never learns which model is active, what models exist, or
  * anything about what is cached or resident.
@@ -48,7 +49,7 @@ function createLocalRoute() {
 	// runs and answers `host-unavailable`, so callers never platform-detect.
 	void refresh();
 	if (host) {
-		// A model activated, downloaded, or deleted in Home lands here when the
+		// A model activated, downloaded, or deleted in the administration window
 		// user comes back to this window.
 		window.addEventListener('focus', () => void refresh());
 	}
@@ -68,12 +69,12 @@ function createLocalRoute() {
 			return result?.data ?? { supportsPrompt: true, supportsLanguage: true };
 		},
 		/**
-		 * Send the user to Epicenter Home's model administration. The app shell
+		 * Send the user to local-model administration. The app shell
 		 * owns this navigation (ADR-0181); Whispering only asks for it, and the
 		 * user still chooses what to do there.
 		 */
-		openHomeTranscription() {
-			host?.transcription.openHomeTranscription();
+		openLocalModels() {
+			host?.transcription.openLocalModels();
 		},
 	};
 }

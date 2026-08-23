@@ -9,7 +9,7 @@
  * Key behaviors:
  * - The launch token is accepted only by the bootstrap route
  * - Home APIs and WebSockets require an HttpOnly browser session
- * - Home and Whispering serve their builds; Mail and Books stay placeholders
+ * - Local-model administration and Whispering serve their builds
  * - Unknown, non-canonical, and traversal-shaped app paths stay closed
  * - Host, Origin, CSP, frame, and referrer policies are enforced
  * - Malformed WebSocket frames drop silently without killing the socket
@@ -45,16 +45,13 @@ import { desktopBlobUrl } from '@epicenter/blobs/webview';
 import { Ok } from 'wellcrafted/result';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { createHomeHost, type HomeHost, type HomeHostInputs } from './host.ts';
-import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
 	ACCOUNT_SIGN_OUT_ROUTE,
-	BOOKS_ROUTE,
 	BOOTSTRAP_ROUTE,
 	BUILT_IN_ROUTES,
 	HOME_ROUTE,
-	MAIL_ROUTE,
 	SESSION_ROUTE,
 	SESSION_STREAM_ROUTE,
 	WHISPERING_ROUTE,
@@ -502,7 +499,7 @@ describe('createHomeServer', () => {
 		}
 	});
 
-	test('serves Home and every compiled application plus honest placeholders', async () => {
+	test('serves local-model administration and Whispering', async () => {
 		await using host = await createTestHost({
 			engine: scriptedEngine([[]]),
 		});
@@ -516,8 +513,6 @@ describe('createHomeServer', () => {
 			).toEqual([
 				{ id: 'home', pattern: '/apps/home/' },
 				{ id: 'whispering', pattern: '/apps/whispering/' },
-				{ id: 'mail', pattern: '/apps/mail/' },
-				{ id: 'books', pattern: '/apps/books/' },
 			]);
 
 			const query = await fetch(HOME_ROUTE.url(server.url.origin), {
@@ -553,27 +548,12 @@ describe('createHomeServer', () => {
 			expect(withoutAuthBootstrap(await clientRoute.text())).toBe(
 				WHISPERING_PAGE,
 			);
-			// The page itself, not a phrase inside it: what this route owes is the
-			// release-bundled placeholder rather than an app or a 404, and pinning
-			// a sentence here only means the copy cannot be improved without
-			// editing a test that was never about the copy.
-			const mail = await fetch(MAIL_ROUTE.url(server.url.origin), {
-				headers: authenticatedHeaders(server),
-			});
-			expect(await mail.text()).toBe(PLACEHOLDER_PAGES.mail);
-			const books = await fetch(BOOKS_ROUTE.url(server.url.origin), {
-				headers: authenticatedHeaders(server),
-			});
-			expect(await books.text()).toBe(PLACEHOLDER_PAGES.books);
-
 			for (const response of [
 				query,
 				whispering,
 				whisperingAsset,
 				vadAsset,
 				clientRoute,
-				mail,
-				books,
 			]) {
 				expect(response.status).toBe(200);
 				expect(response.headers.get('cache-control')).toBe('no-store');
@@ -594,6 +574,8 @@ describe('createHomeServer', () => {
 		try {
 			for (const path of [
 				'/apps/unknown/',
+				'/apps/mail/',
+				'/apps/books/',
 				'/apps/home/extra',
 				'/apps/home%2f',
 				'/apps/home/%2e%2e/%2e%2e/package.json',
@@ -612,15 +594,6 @@ describe('createHomeServer', () => {
 			);
 			expect(queryState.status).toBe(200);
 			expect(withoutAuthBootstrap(await queryState.text())).toBe(PAGE);
-
-			// URL fragments are browser state and are not sent in an HTTP request.
-			// The server therefore sees this as the one canonical Mail path.
-			const browserFragment = await fetch(
-				`${MAIL_ROUTE.url(server.url.origin)}#compose`,
-				{ headers: authenticatedHeaders(server) },
-			);
-			expect(browserFragment.status).toBe(200);
-			expect(await browserFragment.text()).toContain('<h1>Mail</h1>');
 		} finally {
 			await server.stop(true);
 		}

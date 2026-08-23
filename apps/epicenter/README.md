@@ -6,7 +6,7 @@ Epicenter is the repository's native application host. It owns one Tauri runtime
 trusted SPA source                 Epicenter build output
 
 apps/whispering/src  -----------> dist/whispering
-apps/epicenter/ui     -----------> dist/home (local-model setup fallback)
+apps/epicenter/ui     -----------> dist/home (local-model administration)
                                           |
                                           v
                               Bun loopback sidecar
@@ -35,11 +35,10 @@ Start Epicenter from the repository root:
 bun dev:epicenter
 ```
 
-Epicenter opens Whispering directly. Home remains a recovery surface for local
-model administration because the host owns the active model and its downloads.
-Whispering opens that surface only when a person chooses on-device transcription
-without a usable model. The tray reopens Whispering, while deep links can still
-reach either window:
+The desktop app opens Whispering directly. Its only secondary window administers
+local models because the host owns the active model and its downloads. Whispering
+opens that window only when a person asks to manage on-device transcription. The
+tray reopens Whispering, while deep links can still reach either window:
 
 ```bash
 open 'epicenter://app/whispering'
@@ -75,13 +74,13 @@ to activate the new catalog.
 ## Build and verify
 
 ```bash
-# Build Home, Whispering, and the Bun sidecar
+# Build local-model administration, Whispering, and the Bun sidecar
 bun run --cwd apps/epicenter build:desktop
 
 # Package the complete native application
 bun run --cwd apps/epicenter desktop:build
 
-# Typecheck Home plus every compiled application's platform conditions
+# Typecheck model administration plus every compiled application's platform conditions
 bun run --cwd apps/epicenter typecheck
 
 # Host, routing, sidecar, and window tests
@@ -94,7 +93,7 @@ cargo test --manifest-path apps/epicenter/src-tauri/Cargo.toml
 ## Ownership rules
 
 - `src-tauri` owns native commands, permissions, windows, deep links, and packaging.
-- `src` owns the Bun host, trusted route catalog, static-asset containment, and Home session.
+- `src` owns the Bun host, trusted route catalog, static-asset containment, and model administration.
 - `dist` is generated. Never edit it or commit product source beneath it.
 - A product SPA owns its UI and browser deployment from its own app folder.
 - A multi-host SPA selects implementations through build-time `#platform/*` conditions. Runtime checks guard optional capabilities; they do not choose which implementation was bundled.

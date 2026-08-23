@@ -3,8 +3,8 @@
  *
  * Verifies the compiled Bun child runs without a system Bun on PATH, accepts
  * only the fixed production boot contract, finds packaged Home and Whispering
- * assets through the Rust-supplied resource path, excludes Honeycrisp, and exits
- * when the parent pipe closes.
+ * assets through the Rust-supplied resource path, excludes unrelated built-ins,
+ * and exits when the parent pipe closes.
  */
 
 import { expect, test } from 'bun:test';
@@ -125,14 +125,26 @@ test('compiled production host serves packaged apps and exits on parent EOF', as
 
 		const home = await fetch(`${origin}/apps/home/`, session);
 		expect(home.status).toBe(200);
-		expect(await home.text()).toContain('<title>Home</title>');
+		const homePage = await home.text();
+		expect(homePage).toContain('<title>Whispering: Local models</title>');
+		for (const removedSurface of [
+			'>Apps<',
+			'>Chat<',
+			'Honeycrisp',
+			'>Mail<',
+			'>Books<',
+		]) {
+			expect(homePage).not.toContain(removedSurface);
+		}
 		const whispering = await fetch(`${origin}/apps/whispering/`, session);
 		expect(whispering.status).toBe(200);
 		const whisperingPage = await whispering.text();
 		expect(whisperingPage).toContain('<title>Whispering</title>');
-		expect((await fetch(`${origin}/apps/honeycrisp/`, session)).status).toBe(
-			404,
-		);
+		for (const removedApp of ['honeycrisp', 'mail', 'books']) {
+			expect(
+				(await fetch(`${origin}/apps/${removedApp}/`, session)).status,
+			).toBe(404);
+		}
 		const entryPath = whisperingPage.match(
 			/\/apps\/whispering\/_app\/[^" ]+\.js/,
 		)?.[0];

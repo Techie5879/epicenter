@@ -27,11 +27,10 @@ const transcriptionNamespace = facade.slice(
 describe('the local transcription boundary Whispering sits behind', () => {
 	it('reaches no administration or identity command', () => {
 		// `getActiveModel` is in this list on purpose: model identity is
-		// administration data, so even the read is Home's.
+		// administration data, so even the read stays outside Whispering.
 		for (const command of [
 			'getActiveModel',
 			'setActiveModel',
-			'takePendingHomeSection',
 			'listModels',
 			'downloadModel',
 			'deleteModel',
@@ -48,7 +47,7 @@ describe('the local transcription boundary Whispering sits behind', () => {
 			'getLocalTranscriptionReadiness',
 			'transcribeRecording',
 			'prewarmModel',
-			'openHomeTranscription',
+			'openLocalModels',
 		]) {
 			expect(transcriptionNamespace).toContain(command);
 		}

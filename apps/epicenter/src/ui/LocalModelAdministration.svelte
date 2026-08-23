@@ -12,12 +12,10 @@
 	import { localModels } from './local-models.svelte';
 
 	/**
-	 * Epicenter's local transcription model administration.
+	 * Whispering's local transcription model administration.
 	 *
-	 * This is the one place a local model is chosen (ADR-0180). Every application
-	 * on this device transcribes on whichever model is active here, and none of
-	 * them can pick a different one per request, so the choice is stated plainly
-	 * rather than buried per app.
+	 * This is the one place a local model is chosen (ADR-0180). Whispering uses
+	 * whichever model is active here and cannot pick another per request.
 	 *
 	 * Device-local: the choice names files and an accelerator on this machine, so
 	 * it never syncs to another device.
@@ -59,7 +57,7 @@
 	<Card.Header>
 		<Card.Title class="text-lg">Local transcription model</Card.Title>
 		<Card.Description>
-			Epicenter runs every local transcription on one active model. Apps choose
+			Whispering runs every local transcription on one active model. You choose
 			whether to transcribe locally; this is where you choose what they run on.
 			Models live in your shared Hugging Face cache and stay on this device.
 		</Card.Description>
