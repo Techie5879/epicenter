@@ -72,7 +72,7 @@
 	// the active model belongs to the host (ADR-0180). So the action goes to the
 	// surface that owns the fix rather than to a Whispering page that would only
 	// repeat the same sentence and a second button.
-	const needsHomeTranscriptionSetup = $derived(
+	const needsLocalModelSetup = $derived(
 		Boolean(tauri) &&
 			getSelectedTranscriptionProvider(app)?.access === 'onDevice',
 	);
@@ -194,13 +194,13 @@
 						Change provider, model, or endpoint in Privacy &amp; Processing
 					</Link>
 				</p>
-			{:else if needsHomeTranscriptionSetup}
+			{:else if needsLocalModelSetup}
 				<Button
 					variant="outline"
 					class="w-full"
-					onclick={() => localRoute.openHomeTranscription()}
+					onclick={() => localRoute.openLocalModels()}
 				>
-					Set up in Epicenter Home
+					Manage local models
 				</Button>
 				<p class="text-muted-foreground text-sm">
 					Or <Link href={whisperingPath('/settings/processing')}>

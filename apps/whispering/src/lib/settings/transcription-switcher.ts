@@ -4,7 +4,7 @@
  *
  * Every route contributes exactly one row, on-device included. Choosing "Local"
  * picks a route; it does not pick a model, because the host owns the one active
- * local model and Epicenter Home administers it (ADR-0180). The local row names
+ * local model and the model-administration window administers it (ADR-0180). The local row names
  * no model at all: model identity is administration data this app never
  * receives, and a row that named one would be a picker growing back.
  *

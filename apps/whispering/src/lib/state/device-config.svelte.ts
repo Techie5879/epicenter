@@ -24,6 +24,14 @@ const globalBinding = type({
 	keys: 'string[]',
 }).or('null');
 
+const codexOAuthSession = type({
+	accessToken: 'string',
+	refreshToken: 'string',
+	expiresAt: 'number',
+	'accountId?': 'string',
+	'email?': 'string',
+}).or('null');
+
 // Default global gestures, not mnemonic app hotkeys. These are plain chords the
 // `tauri-plugin-global-shortcut` backend registers with no Accessibility grant,
 // the only global-shortcut backend on every platform (ADR-0117). Every default
@@ -99,6 +107,8 @@ const DEVICE_DEFINITIONS = {
 	// Empty `endpoint` means the provider's official API; Custom and Speaches
 	// have no official API, so their endpoints carry real defaults.
 	...SECRET_DEFINITIONS,
+	// Structured OAuth state is device-local but is not a string secret facade key.
+	'auth.codex': defineEntry(codexOAuthSession, null),
 	'providers.openai.endpoint': defineEntry(type('string'), ''),
 	'providers.groq.endpoint': defineEntry(type('string'), ''),
 	'providers.custom.endpoint': defineEntry(
@@ -128,7 +138,7 @@ const DEVICE_DEFINITIONS = {
 
 	// Local transcription model selection and unload policy are deliberately
 	// absent: the host owns the one active local model and its lifecycle, and
-	// Epicenter Home administers both (ADR-0180). They are still device-local,
+	// The model-administration window administers both (ADR-0180). They are still device-local,
 	// just owned a layer down, where the model files and the accelerator are.
 
 	// ── Global OS shortcuts (device-specific, never synced) ───────────
@@ -210,7 +220,7 @@ export const deviceConfig = createPersistedMap({
 // native recording rate also moved down to the host under ADR-0184, so the retired
 // `recording.cpal.sampleRate` entry is ignored rather than migrated. The model
 // files themselves are untouched in the shared Hugging Face cache, so recovery is
-// one choice in Epicenter Home rather than a re-download. Global shortcuts once
+// one choice in model administration rather than a re-download. Global shortcuts once
 // stored accelerator strings under the same key: a legacy value fails the
 // `globalBinding` schema on read and falls back to the default (see
 // `createPersistedMap`). Either way upgrading users get the new defaults, and we

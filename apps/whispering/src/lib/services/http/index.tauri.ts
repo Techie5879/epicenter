@@ -1,6 +1,8 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { Err, tryAsync } from 'wellcrafted/result';
+import { tauri } from '#platform/tauri';
+import { createCodexFetch } from './codex-fetch';
 import type { HttpService } from './types';
 import { HttpError } from './types';
 
@@ -17,6 +19,15 @@ export { HttpError } from './types';
  * bypass CORS restrictions in the desktop app.
  */
 export const customFetch = tauriFetch;
+
+/**
+ * Codex uses a native request command because the Tauri HTTP plugin can leave a
+ * completed response body open forever. The command accepts only the two Codex
+ * endpoints and stops each request after 60 seconds.
+ */
+export const codexFetch = createCodexFetch({
+	request: tauri?.codex.request,
+});
 
 export const HttpServiceLive = {
 	async post({ body, url, schema, headers }) {

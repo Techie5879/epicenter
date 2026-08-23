@@ -27,10 +27,12 @@ function config(values: Partial<Record<InferenceConfigKey, string>>) {
 function state(
 	provider: InferenceProviderId,
 	values: Partial<Record<InferenceConfigKey, string>>,
+	codexConnected = false,
 ): CompletionState {
 	return resolveCompletionStateFromConfig({
 		provider,
 		getDeviceConfig: config(values),
+		codexConnected,
 	});
 }
 
@@ -101,6 +103,19 @@ describe('resolveCompletionState', () => {
 			target: { baseUrl: 'http://127.0.0.1:11434/v1', apiKey: 'local-key' },
 			canRun: true,
 			textStaysOnDevice: true,
+		});
+	});
+
+	test('Codex readiness follows the device-local account session', () => {
+		expect(state('Codex', {})).toEqual({
+			target: { kind: 'codex' },
+			canRun: false,
+			textStaysOnDevice: false,
+		});
+		expect(state('Codex', {}, true)).toEqual({
+			target: { kind: 'codex' },
+			canRun: true,
+			textStaysOnDevice: false,
 		});
 	});
 });
@@ -219,9 +234,46 @@ describe('describePolishDestination', () => {
 			'Audio is transcribed on-device, but Polish sends transcript text to completion.example.',
 		);
 	});
+
+	test('connected Codex names the subscription without exposing credentials', () => {
+		expect(
+			describePolishDestination(onDevice, 'Codex', {
+				target: { kind: 'codex' },
+				canRun: true,
+				textStaysOnDevice: false,
+			}),
+		).toBe(
+			'Audio is transcribed on-device, but Polish sends transcript text to Codex subscription.',
+		);
+	});
 });
 
 describe('describeCompletionReadiness', () => {
+	test('disconnected Codex asks the user to connect ChatGPT', () => {
+		expect(
+			describeCompletionReadiness('Codex', {
+				target: { kind: 'codex' },
+				canRun: false,
+				textStaysOnDevice: false,
+			}),
+		).toEqual({
+			ready: false,
+			summary: 'Connect ChatGPT below. Until then, transcripts ship raw.',
+		});
+	});
+
+	test('connected Codex names the remote subscription destination', () => {
+		expect(
+			describeCompletionReadiness('Codex', {
+				target: { kind: 'codex' },
+				canRun: true,
+				textStaysOnDevice: false,
+			}),
+		).toEqual({
+			ready: true,
+			summary: 'Transcript text is sent to Codex subscription.',
+		});
+	});
 	test('Custom with no endpoint asks for a server URL', () => {
 		expect(
 			describeCompletionReadiness('Custom', {

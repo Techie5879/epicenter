@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-send-codex-http-request"
+description = "Enables the send_codex_http_request command without any pre-configured scope."
+commands.allow = ["send_codex_http_request"]
+
+[[permission]]
+identifier = "deny-send-codex-http-request"
+description = "Denies the send_codex_http_request command without any pre-configured scope."
+commands.deny = ["send_codex_http_request"]

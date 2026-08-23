@@ -169,7 +169,7 @@
 	<!-- Whispering chooses the transcription route; Epicenter owns which local
 	     model runs and administers downloads, deletion, and the unload policy
 	     (ADR-0180). This section reports whether the route is ready and hands off
-	     to Home; it names no model, because model identity is administration data
+	     to model administration; it names no model, because model identity is administration data
 	     this app is not given. -->
 	<Field.Field orientation="horizontal">
 		<Field.Content>
@@ -180,8 +180,8 @@
 				{:else if localRouteBlocker}
 					{localRouteBlocker}
 				{:else}
-					Ready. Epicenter runs local transcription on the model you chose in
-					Home, and reports which model produced each transcript.
+					Ready. Whispering runs local transcription on the active model and
+					reports which model produced each transcript.
 				{/if}
 			</Field.Description>
 		</Field.Content>
@@ -191,9 +191,9 @@
 			<Button
 				variant="outline"
 				size="sm"
-				onclick={() => localRoute.openHomeTranscription()}
+				onclick={() => localRoute.openLocalModels()}
 			>
-				Open Home
+				Manage local models
 			</Button>
 		{/if}
 	</Field.Field>

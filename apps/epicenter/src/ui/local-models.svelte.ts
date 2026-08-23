@@ -1,11 +1,10 @@
 /**
- * Home's local transcription model administration.
+ * Whispering's local transcription model administration.
  *
  * Epicenter has exactly one **active** local transcription model per device.
- * The host owns it; Home is the window that administers it (ADR-0180): which
- * model is active, downloading and deleting model files, and when the host
- * drops the resident model. Applications ask for transcription and never for a
- * model, so this store is the only place in the product where a model is chosen.
+ * The host owns it. The model-administration window controls which model is
+ * active, downloads and deletion, and when the host drops the resident model
+ * (ADR-0180). Whispering asks for transcription and never names a model.
  *
  * Three kinds of truth, deliberately kept apart:
  *
@@ -21,7 +20,7 @@
  * Nothing here reports residency. Whether a model is loaded, warm, or evicted is
  * host-private; `installed` is disk presence and nothing more.
  *
- * Native-only. Home is also served to a plain browser and to a remote device,
+ * Native-only. The document is also served to a plain browser or remote device,
  * where these commands do not exist and the model files are on another machine
  * anyway. Off Tauri the store stays inert and reports `available: false` rather
  * than throwing at import.

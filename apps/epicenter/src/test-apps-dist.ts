@@ -12,7 +12,9 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Application, COMPILED_APPLICATIONS } from './applications.ts';
+import { COMPILED_APPLICATIONS } from './applications.ts';
+
+type CompiledApplication = (typeof COMPILED_APPLICATIONS)[number];
 
 export function writeAppsDist({
 	root = mkdtempSync(join(tmpdir(), 'epicenter-apps-dist-')),
@@ -21,7 +23,7 @@ export function writeAppsDist({
 }: {
 	root?: string;
 	homePage: string;
-	applicationPage(application: Application): string;
+	applicationPage(application: CompiledApplication): string;
 }): string {
 	mkdirSync(join(root, 'home'), { recursive: true });
 	writeFileSync(join(root, 'home', 'index.html'), homePage);

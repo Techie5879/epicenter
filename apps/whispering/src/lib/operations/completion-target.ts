@@ -1,11 +1,15 @@
-import { INFERENCE, type InferenceProviderId } from '../constants/inference';
+import {
+	type ApiKeyInferenceProviderId,
+	INFERENCE,
+	type InferenceProviderId,
+	isApiKeyInferenceProvider,
+} from '../constants/inference';
 import { hostFromBaseUrl, isLoopbackBaseUrl } from './locality';
 import type { TranscriptionLocality } from './transcription-target';
 
-export type CompletionTarget = {
-	baseUrl: string;
-	apiKey: string | undefined;
-};
+export type CompletionTarget =
+	| { baseUrl: string; apiKey: string | undefined }
+	| { kind: 'codex' };
 
 /**
  * The single resolved completion fact set: what to call, whether Polish can run,
@@ -17,9 +21,8 @@ export type CompletionTarget = {
  */
 export type CompletionState = {
 	/**
-	 * The OpenAI-compatible connection to hand `complete()`. Null only when there
-	 * is no base URL to talk to (Custom with no endpoint configured), the one
-	 * genuinely un-runnable state.
+	 * The route the operation will call. API-key providers resolve a connection;
+	 * Codex resolves its subscription route. Null means Custom has no endpoint.
 	 */
 	target: CompletionTarget | null;
 	/**
@@ -39,8 +42,10 @@ export type CompletionState = {
 };
 
 export type InferenceConfigKey =
-	| (typeof INFERENCE)[InferenceProviderId]['apiKeyConfigKey']
-	| NonNullable<(typeof INFERENCE)[InferenceProviderId]['endpointConfigKey']>;
+	| (typeof INFERENCE)[ApiKeyInferenceProviderId]['apiKeyConfigKey']
+	| NonNullable<
+			(typeof INFERENCE)[ApiKeyInferenceProviderId]['endpointConfigKey']
+	  >;
 
 /**
  * The honest name for where completion text goes. Custom's label
@@ -54,9 +59,10 @@ function resolveTextDestination(
 	provider: InferenceProviderId,
 	target: CompletionTarget,
 ): string {
-	return provider === 'Custom'
-		? hostFromBaseUrl(target.baseUrl)
-		: INFERENCE[provider].label;
+	if (provider === 'Custom' && 'baseUrl' in target) {
+		return hostFromBaseUrl(target.baseUrl);
+	}
+	return INFERENCE[provider].label;
 }
 
 type DeviceConfigReader = (key: InferenceConfigKey) => string;
@@ -64,10 +70,22 @@ type DeviceConfigReader = (key: InferenceConfigKey) => string;
 export function resolveCompletionStateFromConfig({
 	provider,
 	getDeviceConfig,
+	codexConnected = false,
 }: {
 	provider: InferenceProviderId;
 	getDeviceConfig: DeviceConfigReader;
+	codexConnected?: boolean;
 }): CompletionState {
+	if (provider === 'Codex') {
+		return {
+			target: { kind: 'codex' },
+			canRun: codexConnected,
+			textStaysOnDevice: false,
+		};
+	}
+	if (!isApiKeyInferenceProvider(provider)) {
+		return { target: null, canRun: false, textStaysOnDevice: false };
+	}
 	const { apiKeyConfigKey, endpointConfigKey, defaultBaseUrl } =
 		INFERENCE[provider];
 	const override = endpointConfigKey
@@ -113,6 +131,12 @@ export function describeCompletionReadiness(
 		};
 	}
 	if (!state.canRun) {
+		if (provider === 'Codex') {
+			return {
+				ready: false,
+				summary: 'Connect ChatGPT below. Until then, transcripts ship raw.',
+			};
+		}
 		return {
 			ready: false,
 			summary: `Add the ${INFERENCE[provider].label} API key below. Until then, transcripts ship raw.`,

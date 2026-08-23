@@ -134,7 +134,7 @@ const settingsKv = {
 	transcriptionPrompt: "string = ''",
 
 	completionProvider:
-		"'OpenAI'|'Groq'|'Anthropic'|'Google'|'OpenRouter'|'Custom' = 'Google'",
+		"'OpenAI'|'Groq'|'Anthropic'|'Google'|'OpenRouter'|'Codex'|'Custom' = 'Google'",
 	completionModel: "string = 'gemini-2.5-flash'",
 
 	dictionary: 'string[]|null = null',

@@ -14,7 +14,7 @@ import { readLocalCapabilities } from './local-capabilities';
 describe('reading local transcription capabilities', () => {
 	it('turns a host that rejects into a typed unavailable, never ready', async () => {
 		const { data, error } = await readLocalCapabilities(() =>
-			Promise.reject(new Error('command open_home not allowed')),
+			Promise.reject(new Error('command open_local_models not allowed')),
 		);
 		expect(data).toBeNull();
 		expect(error?.reason).toBe('host-unavailable');

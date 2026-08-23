@@ -12,8 +12,14 @@ export {
 	type InferenceProviderId,
 } from './inference-provider-ids';
 
-type InferenceProvider = {
+type InferenceProviderBase = {
 	label: string;
+	/** Fixed model list, or null when the model is typed free-form (OpenRouter, Custom). */
+	models: readonly string[] | null;
+};
+
+type ApiKeyInferenceProvider = InferenceProviderBase & {
+	access: 'apiKey';
 	/**
 	 * Canonical OpenAI-compatible base URL this provider's completions run
 	 * against, or null when the user must supply it (Custom). Anthropic and Google
@@ -22,8 +28,6 @@ type InferenceProvider = {
 	 * client. An endpoint override in deviceConfig still wins over this default.
 	 */
 	defaultBaseUrl: string | null;
-	/** Fixed model list, or null when the model is typed free-form (OpenRouter, Custom). */
-	models: readonly string[] | null;
 	/**
 	 * The provider's API key: a secret, so it routes through the credential facade
 	 * (`secrets.get`), not raw `deviceConfig`. `SecretKey` (not the wider
@@ -34,27 +38,32 @@ type InferenceProvider = {
 	endpointConfigKey: DeviceConfigKey | null;
 };
 
+type SubscriptionInferenceProvider = InferenceProviderBase & {
+	access: 'subscription';
+};
+
+type InferenceProvider =
+	| ApiKeyInferenceProvider
+	| SubscriptionInferenceProvider;
+
 /**
- * Single source of truth for inference providers: their models, labels, the
- * deviceConfig key NAMES holding each provider's credential and endpoint override,
- * and the canonical base URL each provider's completions run against. SDK-free
- * (only a type import), so the workspace schema imports it without bundling any
- * provider client. This is the completion twin of transcription's `PROVIDERS`:
- * every provider speaks the OpenAI completion wire (Anthropic and Google through
- * their OpenAI-compatibility endpoints), so a completion resolves a
- * `{ baseUrl, apiKey? }` connection from this table and hands it to one
- * `complete()` call: no per-provider dispatch, no bespoke client.
+ * Single source of truth for inference providers: their models, labels, and
+ * access shape. API-key providers also name their device config keys and
+ * OpenAI-compatible base URL. Subscription providers own their protocol and
+ * session behind a service boundary. This table stays SDK-free, so the workspace
+ * schema and settings UI can import it without bundling a provider client.
  *
  * Access patterns:
  * - Provider IDs:  `keyof typeof INFERENCE` → 'OpenAI' | 'Groq' | ...
  * - Models:        `INFERENCE.OpenAI.models` → readonly ['gpt-5', ...]
  * - Labels:        `INFERENCE.OpenAI.label` → 'OpenAI'
- * - Config keys:   `INFERENCE.OpenAI.apiKeyConfigKey` → 'providers.openai.apiKey'
+ * - Config keys:   `INFERENCE.OpenAI.apiKeyConfigKey` names its API key entry
  * - Enumerate:     `Object.keys(INFERENCE)` / `Object.entries(INFERENCE)`
  * - Schema:        `type.enumerated(...INFERENCE.OpenAI.models)`
  */
 export const INFERENCE = {
 	OpenAI: {
+		access: 'apiKey',
 		label: 'OpenAI',
 		defaultBaseUrl: 'https://api.openai.com/v1',
 		apiKeyConfigKey: 'providers.openai.apiKey',
@@ -74,6 +83,7 @@ export const INFERENCE = {
 		],
 	},
 	Groq: {
+		access: 'apiKey',
 		label: 'Groq',
 		defaultBaseUrl: 'https://api.groq.com/openai/v1',
 		apiKeyConfigKey: 'providers.groq.apiKey',
@@ -96,6 +106,7 @@ export const INFERENCE = {
 		],
 	},
 	Anthropic: {
+		access: 'apiKey',
 		label: 'Anthropic',
 		defaultBaseUrl: 'https://api.anthropic.com/v1',
 		apiKeyConfigKey: 'providers.anthropic.apiKey',
@@ -124,6 +135,7 @@ export const INFERENCE = {
 		],
 	},
 	Google: {
+		access: 'apiKey',
 		label: 'Google',
 		defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
 		apiKeyConfigKey: 'providers.google.apiKey',
@@ -138,13 +150,20 @@ export const INFERENCE = {
 		],
 	},
 	OpenRouter: {
+		access: 'apiKey',
 		label: 'OpenRouter',
 		defaultBaseUrl: 'https://openrouter.ai/api/v1',
 		apiKeyConfigKey: 'providers.openrouter.apiKey',
 		endpointConfigKey: null,
 		models: null,
 	},
+	Codex: {
+		access: 'subscription',
+		label: 'Codex subscription',
+		models: ['gpt-5.3-codex-spark', 'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.5'],
+	},
 	Custom: {
+		access: 'apiKey',
 		label: 'Custom (OpenAI-compatible)',
 		defaultBaseUrl: null,
 		apiKeyConfigKey: 'providers.custom.apiKey',
@@ -163,10 +182,36 @@ export type ModelSelectProviderId = {
 		: K;
 }[InferenceProviderId];
 
+export type ApiKeyInferenceProviderId = {
+	[K in InferenceProviderId]: (typeof INFERENCE)[K] extends {
+		access: 'apiKey';
+	}
+		? K
+		: never;
+}[InferenceProviderId];
+
+export const isApiKeyInferenceProvider = (
+	provider: InferenceProviderId,
+): provider is ApiKeyInferenceProviderId =>
+	INFERENCE[provider].access === 'apiKey';
+
 /** Narrow a provider to one whose model comes from a fixed list. */
 export const hasModelSelect = (
 	provider: InferenceProviderId,
 ): provider is ModelSelectProviderId => INFERENCE[provider].models !== null;
+
+/** Keep a valid model across provider changes, otherwise use the first fixed model. */
+export function completionModelAfterProviderChange(
+	provider: InferenceProviderId,
+	currentModel: string,
+): string {
+	const models = INFERENCE[provider].models;
+	if (provider === 'Codex') return INFERENCE.Codex.models[0];
+	if (!models || models.some((model) => model === currentModel)) {
+		return currentModel;
+	}
+	return models[0];
+}
 
 /** UI dropdown options for provider selection. */
 export const INFERENCE_PROVIDER_OPTIONS = INFERENCE_PROVIDER_IDS.map((id) => ({

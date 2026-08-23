@@ -2,9 +2,9 @@
 //! **active**, and when to drop it from memory.
 //!
 //! Epicenter has exactly one active local transcription model per device
-//! (ADR-0180). The host owns it and Epicenter Home administers it; no
-//! application carries a model name into a transcribe call, so no ordinary
-//! request can reassign the shared model cache behind the user's back.
+//! (ADR-0180). The host owns it, and the model-administration window administers
+//! it. No application carries a model name into a transcribe call, so no
+//! ordinary request can reassign the shared model cache behind the user's back.
 //!
 //! Device-local on purpose, and durable here rather than in any workspace: the
 //! value names model files and an accelerator that exist on *this* machine. A

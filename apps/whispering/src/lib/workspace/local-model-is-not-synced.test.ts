@@ -8,7 +8,7 @@ import { whisperingDatabase } from './index';
  * device may have neither the bytes nor compatible hardware, so a synced choice
  * would arrive as a model that cannot run. Whispering therefore owns the
  * transcription *route* here and nothing about which local model runs; the host
- * owns that, device-locally, and Epicenter Home administers it.
+ * owns that device-locally, and the model-administration window administers it.
  *
  * This guards the direction the mistake would come from. The workspace's `kv` section
  * IS the synced settings surface, so a local-model key landing in it is exactly

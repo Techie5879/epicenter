@@ -9,7 +9,6 @@
 // `build.rs` pulls this in with `include!`, so it cannot drift from the crate.
 
 pub const COMMANDS: &[&str] = &[
-    "launch_application",
     "write_text",
     "simulate_enter_keystroke",
     "simulate_copy_keystroke",
@@ -27,8 +26,7 @@ pub const COMMANDS: &[&str] = &[
     "request_microphone_permission",
     "get_active_model",
     "get_local_transcription_readiness",
-    "open_home",
-    "take_pending_home_section",
+    "open_local_models",
     "set_active_model",
     "get_unload_policy",
     "set_unload_policy",
@@ -47,4 +45,6 @@ pub const COMMANDS: &[&str] = &[
     "replace_global_shortcuts",
     "is_autostart_enabled",
     "set_autostart_enabled",
+    "complete_codex_oauth_login",
+    "send_codex_http_request",
 ];

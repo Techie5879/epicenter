@@ -13,7 +13,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::webview::NewWindowResponse;
 use tauri::{
-    AppHandle, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    AppHandle, Manager, RunEvent, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     WindowEvent, Wry,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -21,7 +21,6 @@ use tauri_plugin_dialog::{
     DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
 };
 use tauri_plugin_opener::OpenerExt;
-use tauri_specta::Event as _;
 
 /// The command list, shared with `build.rs` through `include!`. Only the tests
 /// read it from the crate, which is where the drift checks live.
@@ -29,6 +28,12 @@ use tauri_specta::Event as _;
 mod command_names;
 
 pub mod app_data;
+
+mod codex_oauth;
+use codex_oauth::{complete_codex_oauth_login, CodexOAuthCallbackState};
+
+mod codex_http;
+use codex_http::send_codex_http_request;
 
 pub mod audio;
 use audio::encode_recording_for_upload;
@@ -82,10 +87,6 @@ pub mod overlay;
 #[cfg(target_os = "macos")]
 pub mod clipboard;
 
-/// Reserved label prefix for derived-catalog app windows (ADR-0153). One
-/// capability glob (`app-*`) grants every such window the first trusted-app
-/// authority slice, so no host-internal window label may ever start with it.
-const APP_WINDOW_PREFIX: &str = "app-";
 #[cfg(any(not(debug_assertions), test))]
 const PRODUCTION_PORT: u16 = 39_130;
 #[cfg(any(debug_assertions, test))]
@@ -99,39 +100,15 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 enum BuiltInApp {
     Home,
     Whispering,
-    Honeycrisp,
-    Mail,
-    Books,
 }
 
 impl BuiltInApp {
-    const ALL: [Self; 5] = [
-        Self::Home,
-        Self::Whispering,
-        Self::Honeycrisp,
-        Self::Mail,
-        Self::Books,
-    ];
-
-    /// Whether Home lists this app as one a person can open (ADR-0189).
-    ///
-    /// Every variant here is an app in the product model; this says only which
-    /// ones Home offers. Home is absent because you are already looking at it,
-    /// not because it is above the others (ADR-0209). Mail and Books are
-    /// release-bundled placeholder documents with nothing behind them to open.
-    /// All stay reserved IDs the catalog refuses to admit, so "not launchable"
-    /// never means "free for someone else to claim".
-    const fn is_launchable(self) -> bool {
-        matches!(self, Self::Whispering | Self::Honeycrisp)
-    }
+    const ALL: [Self; 2] = [Self::Home, Self::Whispering];
 
     const fn id(self) -> &'static str {
         match self {
             Self::Home => "home",
             Self::Whispering => "whispering",
-            Self::Honeycrisp => "honeycrisp",
-            Self::Mail => "mail",
-            Self::Books => "books",
         }
     }
 
@@ -139,19 +116,13 @@ impl BuiltInApp {
         match self {
             Self::Home => "/apps/home/",
             Self::Whispering => "/apps/whispering/",
-            Self::Honeycrisp => "/apps/honeycrisp/",
-            Self::Mail => "/apps/mail/",
-            Self::Books => "/apps/books/",
         }
     }
 
     const fn title(self) -> &'static str {
         match self {
-            Self::Home => "Epicenter: Home",
-            Self::Whispering => "Epicenter: Whispering",
-            Self::Honeycrisp => "Epicenter: Honeycrisp",
-            Self::Mail => "Epicenter: Mail",
-            Self::Books => "Epicenter: Books",
+            Self::Home => "Whispering: Local models",
+            Self::Whispering => "Whispering",
         }
     }
 
@@ -159,6 +130,8 @@ impl BuiltInApp {
         Self::ALL.into_iter().find(|built_in| built_in.id() == id)
     }
 }
+
+const DEFAULT_APP: BuiltInApp = BuiltInApp::Whispering;
 
 type DesktopAppHandle = AppHandle<Wry>;
 
@@ -224,10 +197,6 @@ struct HostState {
     active_token: Mutex<Option<String>>,
     pending_apps: Mutex<Vec<BuiltInApp>>,
     pending_oauth_callback: Mutex<Option<String>>,
-    /// A section of Home an application asked the shell to open, held until Home
-    /// is able to claim it. Only the latest survives: two recovery nudges in a
-    /// row should land the user somewhere once, not queue a backlog.
-    pending_home_section: Mutex<Option<HomeSection>>,
     shutting_down: AtomicBool,
     starting: AtomicBool,
 }
@@ -241,7 +210,6 @@ impl HostState {
             active_token: Mutex::new(None),
             pending_apps: Mutex::new(Vec::new()),
             pending_oauth_callback: Mutex::new(None),
-            pending_home_section: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
             starting: AtomicBool::new(false),
         }
@@ -263,20 +231,6 @@ impl HostState {
 
     fn take_pending_apps(&self) -> Vec<BuiltInApp> {
         std::mem::take(&mut *self.pending_apps.lock().expect("pending app lock poisoned"))
-    }
-
-    fn queue_home_section(&self, section: HomeSection) {
-        *self
-            .pending_home_section
-            .lock()
-            .expect("pending home section lock poisoned") = Some(section);
-    }
-
-    fn take_home_section(&self) -> Option<HomeSection> {
-        self.pending_home_section
-            .lock()
-            .expect("pending home section lock poisoned")
-            .take()
     }
 
     fn queue_oauth_callback(&self, url: String) {
@@ -335,9 +289,8 @@ enum FailureChoice {
     Quit,
 }
 
-/// The typed Whispering command and event contract. The raw audio response,
-/// Epicenter host-status command, and host-owned `launch_application` remain on Tauri's
-/// handwritten handler because they are outside this generated Whispering
+/// The typed Whispering command and event contract. The raw audio response
+/// remains on Tauri's handwritten handler because it is outside this generated
 /// binding API.
 fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
@@ -359,8 +312,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             get_active_model,
             set_active_model,
             get_local_transcription_readiness,
-            open_home,
-            take_pending_home_section,
+            open_local_models,
             get_unload_policy,
             set_unload_policy,
             list_models,
@@ -374,11 +326,12 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             replace_global_shortcuts,
             is_autostart_enabled,
             set_autostart_enabled,
+            complete_codex_oauth_login,
+            send_codex_http_request,
         ])
         .events(tauri_specta::collect_events![
             keyboard::DictationCapabilityEvent,
             GlobalShortcutTriggered,
-            HomeSectionPending,
             recorder::ended::RecordingEndedEvent,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
@@ -391,9 +344,9 @@ mod export_bindings {
     ///
     /// Each file carries the whole API because `tauri_specta` exports a
     /// builder, not a slice of one. What a window may actually call is decided
-    /// by its capability file, not by which bindings it can import: Home's
+    /// by its capability file, not by which bindings it can import: the
     /// `home-model-administration-*` capability grants exactly the local-model
-    /// administration commands (ADR-0180), and every other command in Home's
+    /// administration commands (ADR-0180), and every other command in that
     /// copy is denied at the IPC boundary.
     const TARGETS: &[&str] = &[
         "../../whispering/src/lib/tauri/bindings.gen.ts",
@@ -410,244 +363,11 @@ mod export_bindings {
     }
 }
 
-/// A section of Epicenter Home an application can ask the shell to open.
-///
-/// A closed set, not a string-addressed destination: Home is a privileged
-/// built-in app, so what an application may name inside it is enumerated
-/// here rather than parsed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum HomeSection {
-    /// Local transcription model administration.
-    Transcription,
-}
-
-/// A nudge telling an already-running Home to collect any pending section
-/// intent. It deliberately carries no section of its own: the intent lives in
-/// the host, and Home reads it with `take_pending_home_section`, so an event
-/// that arrives twice, late, or not at all cannot produce a different outcome.
-#[derive(Clone, Debug, serde::Serialize, specta::Type, tauri_specta::Event)]
-pub struct HomeSectionPending;
-
-/// Take the user to the app that can fix an unavailable local transcription
-/// route.
-///
-/// The app shell owns this navigation. The host reports that the route is
-/// unavailable, an application decides how to present it, and getting the user
-/// to Home is neither of their jobs: an application asks the shell to show a
-/// section of Home, and the shell decides how.
-///
-/// The intent is recorded *before* any window work, which is what makes this
-/// safe against the state Home happens to be in. Home may be absent, still
-/// booting, hidden, or already open; in every case the intent is waiting when
-/// Home next asks for it, and the event below is only an optimization for the
-/// already-running case. Emitting the section directly would lose it whenever
-/// no listener existed yet, which is exactly the recovery path that matters.
-///
-/// It mutates no transcription state: it opens a window, and the user chooses.
+/// Open the model-administration window without changing transcription state.
 #[tauri::command]
 #[specta::specta]
-fn open_home(section: HomeSection, app: DesktopAppHandle) {
-    app.state::<HostState>().queue_home_section(section);
+fn open_local_models(app: DesktopAppHandle) {
     request_window(&app, BuiltInApp::Home);
-    let _ = HomeSectionPending.emit_to(&app, BuiltInApp::Home.id());
-}
-
-/// Claim the pending section intent, if any. Home calls this on mount and
-/// whenever it is nudged; taking is destructive, so one intent opens one
-/// section exactly once however many nudges arrive.
-#[tauri::command]
-#[specta::specta]
-fn take_pending_home_section(app: DesktopAppHandle) -> Option<HomeSection> {
-    app.state::<HostState>().take_home_section()
-}
-
-/// How Home's window for one application is created. The two arms differ in
-/// window label, capability file, and how Bun serves the document, and none of
-/// that is a distinction a person makes, so it is resolved here from the ID
-/// rather than by the caller (ADR-0189).
-///
-/// `Admitted` says how the window is built, not that the ID is admitted. Rust
-/// keeps no catalog: the immutable generation and its membership are Bun's
-/// alone (ADR-0179), and nothing here can or should re-derive them.
-enum Application {
-    /// A compiled application with its own stable window label and enumerated
-    /// capabilities.
-    Compiled(BuiltInApp),
-    /// Anything else: opened in an `app-` window pointed at `/apps/<id>/`.
-    Admitted(String),
-}
-
-/// Launch one application Home lists: reveal and focus its window, creating it
-/// the first time. Calling again focuses rather than duplicating, and Home is
-/// never hidden to do it.
-///
-/// Windows are deliberate (ADR-0209). One window that switched between
-/// applications would union every capability file onto one label, because a
-/// label is what native authority is granted to; separate windows are what keep
-/// `home`, `whispering`, and `app-*` meaning different things. From here the OS
-/// is the switcher.
-///
-/// This is Home's verb, not an app-facing one. It deliberately does not reuse
-/// the `openApp(appId)` name ADR-0181 reserves for the portable handle, because
-/// that operation targets a catalog member only and must not become a way for
-/// one application to reveal another.
-///
-/// # Who decides an ID is real
-///
-/// Not this function. Rust validates the ID's *shape* and resolves it against
-/// its own compiled app table; it never asks whether a folder was admitted,
-/// because the catalog is one immutable generation owned by Bun (ADR-0179) and
-/// a second copy in Rust would be a second answer. What keeps a made-up ID from
-/// arriving is that Home only offers IDs from the authenticated list Bun serves.
-///
-/// An ID that shape-checks but names no member still cannot reach anything: it
-/// opens an `app-` window at `/apps/<id>/`, which is a URL Rust derived itself
-/// (the frontend never supplies one), and Bun answers it 404. That is a
-/// contained dead end, not a privilege.
-///
-/// # Why it waits
-///
-/// Window work happens on the main thread, so this command hands the attempt
-/// over and blocks on its outcome rather than reporting that it scheduled
-/// something. A caller that gets `Ok` has a window; a caller that gets `Err`
-/// has a sentence to show. `#[tauri::command(async)]` is what makes the wait
-/// safe: it moves this body off the main thread, which would otherwise be the
-/// thread the closure below is waiting for.
-#[tauri::command(async)]
-fn launch_application(
-    app: DesktopAppHandle,
-    state: State<'_, HostState>,
-    app_id: String,
-) -> std::result::Result<(), String> {
-    let Some(application) = parse_application_id(&app_id) else {
-        return Err(format!(
-            "app id must match [a-z0-9-]+ and must not name a built-in app Home does not offer: {app_id}"
-        ));
-    };
-    // Unlike the tray, deep links, and startup, a user-invoked launch does not
-    // queue itself for a future host generation: the person is waiting, and a
-    // window that appears after the next restart is not what they asked for.
-    let Some(token) = state.active_token() else {
-        return Err("the Epicenter host is not ready".to_string());
-    };
-    let port = state.port().map_err(|error| format!("{error:#}"))?;
-
-    launch_on_main_thread(&app, application, port, &token).map_err(|error| format!("{error:#}"))
-}
-
-/// Create or reveal the window on the main thread and report what happened.
-///
-/// Mirrors `create_windows_on_main_thread`: hand the work over, wait for the
-/// one result. The sender lives in the closure, so an event loop that shuts
-/// down before running it drops the sender and this returns an error rather
-/// than waiting forever.
-fn launch_on_main_thread(
-    app: &DesktopAppHandle,
-    application: Application,
-    port: u16,
-    token: &str,
-) -> Result<()> {
-    let (sender, receiver) = mpsc::sync_channel(1);
-    let window_app = app.clone();
-    let token = token.to_string();
-    app.run_on_main_thread(move || {
-        let result = if window_app.state::<HostState>().token_is_active(&token) {
-            match application {
-                Application::Compiled(built_in) => {
-                    ensure_window(&window_app, built_in, port, &token, true)
-                }
-                Application::Admitted(id) => ensure_app_window(&window_app, &id, port, &token),
-            }
-        } else {
-            // The host restarted between the click and the main thread reaching
-            // this: every window from the old generation is being torn down, so
-            // opening one now would create a window against a dead token.
-            Err(anyhow!(
-                "the Epicenter host restarted before the window opened"
-            ))
-        };
-        let _ = sender.send(result);
-    })
-    .context("schedule the application window on the main thread")?;
-    receiver
-        .recv()
-        .context("the main thread stopped before opening the window")?
-}
-
-/// Accept the ID shapes this command can act on, resolved against the compiled
-/// app table.
-///
-/// The grammar mirrors `APP_ID_PATTERN` in `@epicenter/constants`: lowercase
-/// alphanumerics, `-`, and `.`, beginning and ending alphanumeric. Dots are here
-/// because an admitted app's ID is the reverse-domain workspace ID it declares
-/// (ADR-0210); bare labels stay legal for the compiled apps. The
-/// first and last character are constrained for the same reason the TypeScript
-/// side constrains them: an ID names a directory, and `.` or `..` would name one
-/// outside it.
-///
-/// This is a shape check, not a membership check. A reserved built-in app Home
-/// does not offer (Home itself, a placeholder) and an ID with characters no ID
-/// may contain are the same refusal, because Home offers neither.
-fn parse_application_id(id: &str) -> Option<Application> {
-    let is_inner = |byte: u8| {
-        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
-    };
-    let is_edge = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
-    let bytes = id.as_bytes();
-    let matches_pattern = match (bytes.first(), bytes.last()) {
-        (Some(&first), Some(&last)) => {
-            is_edge(first) && is_edge(last) && bytes.iter().all(|&byte| is_inner(byte))
-        }
-        _ => false,
-    };
-    if !matches_pattern {
-        return None;
-    }
-    match BuiltInApp::from_id(id) {
-        Some(built_in) if built_in.is_launchable() => Some(Application::Compiled(built_in)),
-        Some(_) => None,
-        None => Some(Application::Admitted(id.to_string())),
-    }
-}
-
-/// The Tauri handle for one application's window.
-///
-/// A window label admits alphanumerics, `-`, `/`, `:`, and `_`, and no `.`, and
-/// Tauri enforces that with an assertion rather than an error, so a workspace
-/// ID with dots would panic the host. Mapping `.` to `_` is a bijection and not
-/// an escape: an app ID's whole alphabet is `[a-z0-9-.]`, so `_` cannot occur in
-/// one and no two IDs can produce one label.
-///
-/// This is the only place Tauri's label grammar reaches. A window label is
-/// Tauri's handle for a window, not Epicenter's name for an application
-/// (ADR-0210).
-fn app_window_label(id: &str) -> String {
-    format!("{APP_WINDOW_PREFIX}{}", id.replace('.', "_"))
-}
-
-fn ensure_app_window(app: &DesktopAppHandle, id: &str, port: u16, token: &str) -> Result<()> {
-    let label = app_window_label(id);
-    if let Some(window) = app.get_webview_window(&label) {
-        focus(window);
-        return Ok(());
-    }
-
-    let origin = origin(port);
-    let url: tauri::Url = format!("{origin}/apps/{id}/").parse()?;
-    let initialization_script = initialization_script(&origin, token)?;
-    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
-        .title(format!("Epicenter: {id}"))
-        .inner_size(1100.0, 760.0)
-        .min_inner_size(680.0, 480.0)
-        .initialization_script(initialization_script)
-        .on_navigation(move |url| is_allowed_navigation(url, port))
-        .on_new_window(|_, _| NewWindowResponse::Deny)
-        .build()
-        .with_context(|| format!("create the {id} app WebView"))?;
-    release_host_resources_on_destroy(&window);
-    focus(window);
-    Ok(())
 }
 
 /// Release the host resources a window owns once it is destroyed.
@@ -675,7 +395,7 @@ pub fn run() {
     let port = configured_port();
     let specta_builder = make_specta_builder();
     let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let native_handler = tauri::generate_handler![encode_recording_for_upload, launch_application]
+    let native_handler = tauri::generate_handler![encode_recording_for_upload]
         as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
@@ -709,17 +429,15 @@ pub fn run() {
         .manage(HostState::new(port))
         .manage(GlobalShortcutRegistry::default())
         .manage(Mutex::new(Recorder::new()))
-        .manage(DownloadManager::default());
+        .manage(DownloadManager::default())
+        .manage(CodexOAuthCallbackState::default());
 
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
 
     builder
         .invoke_handler(move |invoke| {
-            if matches!(
-                invoke.message.command(),
-                "encode_recording_for_upload" | "launch_application"
-            ) {
+            if invoke.message.command() == "encode_recording_for_upload" {
                 native_handler(invoke)
             } else {
                 specta_handler(invoke)
@@ -774,7 +492,7 @@ pub fn run() {
                 }
             }
             if !opened_window {
-                request_window(app.handle(), BuiltInApp::Home);
+                request_window(app.handle(), DEFAULT_APP);
             }
             request_start(app.handle().clone(), None);
             Ok(())
@@ -782,7 +500,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build Epicenter")
         .run(|app, event| match event {
-            RunEvent::Reopen { .. } => request_window(app, BuiltInApp::Home),
+            RunEvent::Reopen { .. } => request_window(app, DEFAULT_APP),
             RunEvent::Exit => shutdown_host(app),
             _ => {}
         });
@@ -799,7 +517,7 @@ fn open_forwarded_deep_links(app: &DesktopAppHandle, arguments: &[String]) {
         }
     }
     if built_ins.is_empty() {
-        request_window(app, BuiltInApp::Home);
+        request_window(app, DEFAULT_APP);
     } else {
         for built_in in built_ins {
             request_window(app, built_in);
@@ -875,10 +593,8 @@ fn queue_or_send_oauth_callback(app: &DesktopAppHandle, url: String) {
 /// Ask for a window without waiting: queue it when the host is not ready yet,
 /// and log rather than report what the main thread makes of it.
 ///
-/// That is right for the callers that have nobody to answer to (startup, the
-/// tray, a deep link, macOS reopen, an app asking for a section of Home). It is
-/// wrong for `launch_application`, where a person clicked and is owed an
-/// outcome, so that command waits on the main thread instead.
+/// Callers have nobody to answer to: startup, the tray, a deep link, macOS
+/// reopen, or Whispering asking for local-model administration.
 fn request_window(app: &DesktopAppHandle, built_in: BuiltInApp) {
     let state = app.state::<HostState>();
     let Some(token) = state.active_token() else {
@@ -1019,7 +735,7 @@ fn start_once(app: &DesktopAppHandle) -> Result<()> {
     state.activate(&token);
     let mut built_ins = state.take_pending_apps();
     if built_ins.is_empty() {
-        built_ins.push(BuiltInApp::Home);
+        built_ins.push(DEFAULT_APP);
     }
     if let Err(error) = create_windows_on_main_thread(app, port, &token, built_ins) {
         state.deactivate();
@@ -1477,13 +1193,6 @@ fn invalidate_windows(app: &DesktopAppHandle) {
                 }
             }
         }
-        // Derived-catalog app windows carry the dead host's launch token in
-        // their initialization script, so a restart must tear them down too.
-        for (label, window) in app.webview_windows() {
-            if label.starts_with(APP_WINDOW_PREFIX) && window.destroy().is_err() {
-                let _ = window.hide();
-            }
-        }
         #[cfg(target_os = "macos")]
         if let Some(window) = app.get_webview_window(overlay::WINDOW_LABEL) {
             if window.destroy().is_err() {
@@ -1753,87 +1462,15 @@ mod tests {
         assert_eq!(
             actual,
             [
-                ("home", "/apps/home/", "Epicenter: Home"),
-                ("whispering", "/apps/whispering/", "Epicenter: Whispering"),
-                ("honeycrisp", "/apps/honeycrisp/", "Epicenter: Honeycrisp"),
-                ("mail", "/apps/mail/", "Epicenter: Mail"),
-                ("books", "/apps/books/", "Epicenter: Books"),
+                ("home", "/apps/home/", "Whispering: Local models"),
+                ("whispering", "/apps/whispering/", "Whispering"),
             ]
         );
     }
 
-    /// Home lists exactly the applications this table calls launchable, so the
-    /// two must not drift: an ID Home can show has to be one this verb opens,
-    /// and an ID it cannot show has to be one this verb refuses. The Bun side
-    /// asserts the same list against `applications.ts`.
     #[test]
-    fn compiled_applications_are_the_release_built_spas() {
-        let launchable: Vec<&str> = BuiltInApp::ALL
-            .into_iter()
-            .filter(|window| window.is_launchable())
-            .map(BuiltInApp::id)
-            .collect();
-        assert_eq!(launchable, ["whispering", "honeycrisp"]);
-    }
-
-    #[test]
-    fn one_verb_opens_compiled_and_admitted_applications_alike() {
-        assert!(matches!(
-            parse_application_id("whispering"),
-            Some(Application::Compiled(BuiltInApp::Whispering))
-        ));
-        assert!(matches!(
-            parse_application_id("honeycrisp"),
-            Some(Application::Compiled(BuiltInApp::Honeycrisp))
-        ));
-
-        // Every well-formed non-reserved ID resolves to the app-window path,
-        // including ones no generation ever admitted. That is the ownership
-        // boundary, not an oversight: the catalog is Bun's (ADR-0179), Home
-        // only offers IDs from the list Bun served it, and an ID that names no
-        // member opens a window Bun answers with 404. Re-deriving membership
-        // here would be a second catalog with a second answer.
-        for accepted in ["hello-http", "a", "notes2", "x-y-z", "0-", "never-admitted"] {
-            assert!(
-                matches!(parse_application_id(accepted), Some(Application::Admitted(id)) if id == accepted),
-                "expected {accepted:?} to resolve to the app-window path"
-            );
-        }
-
-        for denied in [
-            "",
-            "Hello",
-            "hello_http",
-            "hello.http",
-            "hello/http",
-            "..",
-            "hello http",
-            "héllo",
-            // Reserved windows Home does not list: the shell itself, and
-            // placeholder documents with nothing behind them to open.
-            "home",
-            "mail",
-            "books",
-        ] {
-            assert!(
-                parse_application_id(denied).is_none(),
-                "expected {denied:?} rejected"
-            );
-        }
-    }
-
-    #[test]
-    fn app_window_labels_are_reserved_and_never_collide_with_host_windows() {
-        assert_eq!(app_window_label("hello-http"), "app-hello-http");
-
-        let mut host_labels: Vec<&str> = BuiltInApp::ALL.map(BuiltInApp::id).to_vec();
-        host_labels.push("recording-overlay");
-        for label in host_labels {
-            assert!(
-                !label.starts_with(APP_WINDOW_PREFIX),
-                "host window label {label:?} must not match the app-* capability glob"
-            );
-        }
+    fn ordinary_launches_open_whispering() {
+        assert_eq!(DEFAULT_APP, BuiltInApp::Whispering);
     }
 
     #[test]
@@ -1922,53 +1559,6 @@ mod tests {
         }
     }
 
-    /// The recovery path an application offers must survive Home not being
-    /// there yet. The intent is host state, so "Home is absent", "Home is still
-    /// booting", and "Home is open behind another window" are the same code
-    /// path: the intent waits until Home claims it.
-    #[test]
-    fn a_pending_home_section_waits_for_home_to_claim_it() {
-        let state = HostState::new(Ok(1));
-        assert_eq!(
-            state.take_home_section(),
-            None,
-            "nothing pending before anyone asks"
-        );
-
-        // Home absent or mid-boot: nobody is listening, and the intent survives.
-        state.queue_home_section(HomeSection::Transcription);
-        assert_eq!(
-            state.take_home_section(),
-            Some(HomeSection::Transcription),
-            "the intent is still there whenever Home gets around to asking"
-        );
-    }
-
-    /// Taking is destructive, so however many nudges arrive, one request opens
-    /// one section once. Without this a stale intent would reopen the panel on
-    /// some later unrelated mount.
-    #[test]
-    fn a_claimed_home_section_is_not_replayed() {
-        let state = HostState::new(Ok(1));
-        state.queue_home_section(HomeSection::Transcription);
-        assert!(state.take_home_section().is_some());
-        assert_eq!(
-            state.take_home_section(),
-            None,
-            "a claimed intent must not fire again"
-        );
-    }
-
-    /// Two recovery attempts in a row should land the user somewhere once.
-    #[test]
-    fn repeated_requests_collapse_to_one_pending_section() {
-        let state = HostState::new(Ok(1));
-        state.queue_home_section(HomeSection::Transcription);
-        state.queue_home_section(HomeSection::Transcription);
-        assert!(state.take_home_section().is_some());
-        assert_eq!(state.take_home_section(), None);
-    }
-
     /// Every command a capability grants must exist, and every command the crate
     /// exposes must be declared to the Tauri manifest. These are two hand-kept
     /// lists today, and a grant for a command that does not exist is a silent
@@ -2010,12 +1600,11 @@ mod tests {
     /// The generated bindings are a committed artifact, so they can go stale
     /// against the command list without anything failing to compile.
     ///
-    /// Two commands are deliberately outside the generated API: they ride
-    /// Tauri's handwritten handler because their shapes are not `specta::Type`
-    /// (raw bytes) or are host-owned rather than part of the app contract.
+    /// The raw audio command deliberately stays outside the generated API
+    /// because its bytes are not `specta::Type`.
     #[test]
     fn generated_bindings_cover_every_declared_command() {
-        const HANDWRITTEN: &[&str] = &["encode_recording_for_upload", "launch_application"];
+        const HANDWRITTEN: &[&str] = &["encode_recording_for_upload"];
         for bindings in [
             include_str!("../../../whispering/src/lib/tauri/bindings.gen.ts"),
             include_str!("../../src/ui/bindings.gen.ts"),
@@ -2035,7 +1624,7 @@ mod tests {
         }
     }
 
-    /// Model administration is routed to Home and to no application window
+    /// Model administration is routed to its secondary window and to no application window
     /// (ADR-0180). This is wiring, not a sandbox: an app window runs as
     /// Epicenter. What it proves is that the ownership the record describes is
     /// the ownership the build actually wires, so "Whispering cannot pick a
@@ -2065,13 +1654,13 @@ mod tests {
             assert_eq!(
                 capability["windows"].as_array().unwrap(),
                 &vec![serde_json::json!("home")],
-                "model administration belongs to Home alone"
+                "model administration belongs to its secondary window alone"
             );
             let permissions = capability["permissions"].as_array().unwrap();
             for permission in ADMINISTRATION {
                 assert!(
                     permissions.contains(&serde_json::json!(permission)),
-                    "Home must be able to invoke {permission}"
+                    "model administration must be able to invoke {permission}"
                 );
             }
         }
@@ -2089,12 +1678,12 @@ mod tests {
                 );
             }
             // It still transcribes, still reads advisory readiness so it can warn
-            // before capture, and can still send the user to Home to fix it.
+            // before capture, and can still open model administration to fix it.
             for permission in [
                 "allow-transcribe-recording",
                 "allow-prewarm-model",
                 "allow-get-local-transcription-readiness",
-                "allow-open-home",
+                "allow-open-local-models",
             ] {
                 assert!(
                     permissions.contains(&serde_json::json!(permission)),
@@ -2273,52 +1862,11 @@ mod tests {
         assert_ne!(production["identifier"], development["identifier"]);
     }
 
-    /// Home lists what can be launched, so Home is the window that launches it
-    /// (ADR-0189). Granting the verb more widely would let an application open
-    /// another application without the user ever choosing it, which is a
-    /// product decision nobody made.
-    #[test]
-    fn only_home_can_launch_an_application() {
-        for encoded in [
-            include_str!("../capabilities/home-launch-application-development.json"),
-            include_str!("../capabilities/home-launch-application-production.json"),
-        ] {
-            let capability: serde_json::Value = serde_json::from_str(encoded).unwrap();
-            assert_eq!(
-                capability["windows"],
-                serde_json::json!(["home"]),
-                "the launch verb belongs to the Home window alone"
-            );
-            let permissions = capability["permissions"].as_array().unwrap();
-            assert!(permissions.contains(&serde_json::json!("allow-launch-application")));
-        }
-    }
-
-    /// ADR-0181 keeps `openHome(section)` and `openApp(appId)` apart because a
-    /// built-in window and an admitted member have different identity and
-    /// authority rules. Home's launch verb crosses that line by design, which is
-    /// exactly why no app window may hold it: an admitted app must not be able
-    /// to reveal a compiled window, and reusing the reserved `open_app` name
-    /// for this would have made that the default the day a `shell` namespace
-    /// shipped.
-    #[test]
-    fn no_app_window_can_launch_an_application() {
-        for encoded in APP_WINDOW_CAPABILITIES {
-            assert!(
-                !granted_app_commands(encoded).contains("launch_application"),
-                "an app window must not be able to reveal another application"
-            );
-        }
-    }
-
     #[test]
     fn deep_links_accept_only_the_closed_built_in_app_table() {
         for (url, expected) in [
             ("epicenter://app/home", BuiltInApp::Home),
             ("epicenter://app/whispering", BuiltInApp::Whispering),
-            ("epicenter://app/honeycrisp", BuiltInApp::Honeycrisp),
-            ("epicenter://app/mail", BuiltInApp::Mail),
-            ("epicenter://app/books", BuiltInApp::Books),
         ] {
             assert_eq!(parse_app_deep_link(&url.parse().unwrap()), Some(expected));
         }
@@ -2327,6 +1875,8 @@ mod tests {
             // Both retired spellings. Neither is kept as a compatibility alias.
             "epicenter://surface/home",
             "epicenter://window/home",
+            "epicenter://app/mail",
+            "epicenter://app/books",
             "epicenter://app/unknown",
             "epicenter://app/home/",
             "epicenter://app/home/extra",
@@ -2410,15 +1960,15 @@ mod tests {
     fn forwarded_arguments_extract_valid_unique_app_links() {
         let arguments = [
             "/Applications/Epicenter.app/Contents/MacOS/Epicenter",
-            "epicenter://app/mail",
+            "epicenter://app/whispering",
             "epicenter://app/unknown",
-            "epicenter://app/mail",
-            "epicenter://app/books",
+            "epicenter://app/whispering",
+            "epicenter://app/home",
         ]
         .map(String::from);
         assert_eq!(
             apps_from_arguments(&arguments),
-            vec![BuiltInApp::Mail, BuiltInApp::Books]
+            vec![BuiltInApp::Whispering, BuiltInApp::Home]
         );
     }
 

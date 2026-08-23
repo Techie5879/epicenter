@@ -122,11 +122,11 @@ pub enum TranscriptionOutcome {
 /// The active local model's identity and whether it can run right now, or
 /// `None` when nobody has chosen one.
 ///
-/// **Administration only.** Home holds this grant because Home chooses the
-/// active model and must show which one that is. Applications are not granted
-/// it and read `get_local_transcription_readiness` instead, which answers the
-/// question they actually have without handing them an identity they could
-/// start keying behaviour off.
+/// **Administration only.** The model-administration window holds this grant
+/// because it chooses the active model and must show which one that is.
+/// Applications are not granted it. They read
+/// `get_local_transcription_readiness` instead, which answers the question they
+/// actually have without handing them an identity they could key behaviour off.
 #[tauri::command]
 #[specta::specta]
 pub fn get_active_model(model_cache: State<'_, ModelCache>) -> Option<ActiveModel> {
@@ -138,7 +138,7 @@ pub fn get_active_model(model_cache: State<'_, ModelCache>) -> Option<ActiveMode
 }
 
 /// Make `model_id` the active local model, or clear the choice with `null`.
-/// Home's administration write: the only way the active model changes.
+/// The administration write: the only way the active model changes.
 #[tauri::command]
 #[specta::specta]
 pub fn set_active_model(

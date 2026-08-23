@@ -15,8 +15,6 @@
  *   routes, and refuses traversal, smuggled separators, and symlink escape
  * - The Home server serves members at /apps/<id>/, 404s unknown apps, and
  *   keeps the legacy Home and Whispering routes intact
- * - The application list requires a browser session and merges compiled
- *   applications with derived members into one {id, title} shape
  *
  * See also:
  * - `applications.test.ts` for the composition rules behind that one list
@@ -32,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { createBunBlobStore } from '@epicenter/blobs/bun';
 import { COMPILED_APPLICATIONS } from './applications.ts';
 import { createHomeHost } from './host.ts';
-import { APPLICATIONS_ROUTE, BOOTSTRAP_ROUTE } from './routes.ts';
+import { BOOTSTRAP_ROUTE } from './routes.ts';
 import { createHomeServer } from './server.ts';
 import {
 	type AppCatalog,
@@ -383,30 +381,6 @@ describe('home server catalog routes', () => {
 				.update('start();')
 				.digest('base64');
 			expect(scriptSrc).toContain(`'sha256-${inlineHash}'`);
-		} finally {
-			await server.stop(true);
-		}
-	});
-
-	test('the application list requires a browser session and merges compiled with derived members', async () => {
-		const { origin, server } = await serveWithCatalog();
-		try {
-			expect((await fetch(APPLICATIONS_ROUTE.url(origin))).status).toBe(401);
-
-			const cookie = await bootstrapCookie(origin);
-			const listed = await fetch(APPLICATIONS_ROUTE.url(origin), {
-				headers: { cookie },
-			});
-			expect(listed.status).toBe(200);
-			// One list, one shape (ADR-0189): nothing on the wire says which of
-			// these Epicenter compiled and which it admitted as a folder.
-			expect(await listed.json()).toEqual({
-				apps: [
-					{ id: 'whispering', title: 'Whispering' },
-					{ id: 'honeycrisp', title: 'Honeycrisp' },
-					{ id: 'so.epicenter.hello-http', title: 'Hello HTTP' },
-				],
-			});
 		} finally {
 			await server.stop(true);
 		}

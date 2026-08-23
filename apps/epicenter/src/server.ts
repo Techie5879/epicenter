@@ -13,7 +13,6 @@ import type { BunBlobStore } from '@epicenter/blobs/bun';
 import { type Context, Hono, type Next } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { getCookie, setCookie } from 'hono/cookie';
-import { type Application, listApplications } from './applications.ts';
 import type { DesktopAuthAuthority } from './desktop-auth-authority.ts';
 import { createDesktopAuthorityFetch } from './desktop-authority-fetch.ts';
 import {
@@ -21,13 +20,11 @@ import {
 	type HomeSessionSnapshot,
 	parseHomeCommand,
 } from './host.ts';
-import { PLACEHOLDER_PAGES } from './placeholder-pages.ts';
 import {
 	ACCOUNT_INSTANCE_ROUTE,
 	ACCOUNT_PROFILE_ROUTE,
 	ACCOUNT_SIGN_IN_ROUTE,
 	ACCOUNT_SIGN_OUT_ROUTE,
-	APPLICATIONS_ROUTE,
 	BOOTSTRAP_ROUTE,
 	BUILT_IN_ROUTES,
 	LOCAL_BLOB_REMOTE_ROUTES,
@@ -45,10 +42,6 @@ export type HomeServerEvent = {
 export type HomeSessionResponse = {
 	tools: AgentToolDefinition[];
 	snapshot: HomeSessionSnapshot;
-};
-
-export type ApplicationsResponse = {
-	apps: Application[];
 };
 
 export type HomeServerOptions = {
@@ -96,7 +89,6 @@ export function createHomeServer({
 	const sessionHashes = new Set<string>();
 	const hostPages = {
 		home: injectAuthBootstrap(staticAssets.homePage, desktopAuth.bootSnapshot),
-		...PLACEHOLDER_PAGES,
 	};
 	// A compiled application and an admitted catalog member are the same thing
 	// to this server: a built SPA below `/apps/<id>/` whose document the host
@@ -228,19 +220,11 @@ export function createHomeServer({
 		return c.body(null, 202);
 	});
 
-	// Home and the release-bundled placeholders: one document each, no asset
-	// tree behind them.
-	for (const builtInRoute of [
-		BUILT_IN_ROUTES.home,
-		BUILT_IN_ROUTES.mail,
-		BUILT_IN_ROUTES.books,
-	]) {
-		app.get(builtInRoute.pattern, (c) => {
-			c.header('cache-control', 'no-store');
-			if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
-			return c.html(hostPages[builtInRoute.id]);
-		});
-	}
+	app.get(BUILT_IN_ROUTES.home.pattern, (c) => {
+		c.header('cache-control', 'no-store');
+		if (!hasBrowserSession(c)) return c.html(SESSION_SHELL);
+		return c.html(hostPages.home);
+	});
 	// One contained asset tree each, with the document served from memory so
 	// every client route lands on the stamped page.
 	for (const application of servedApps) {
@@ -267,7 +251,6 @@ export function createHomeServer({
 	}
 	app.get('/apps/*', (c) => c.text('Not Found', 404));
 
-	app.use(APPLICATIONS_ROUTE.pattern, requireBrowserSession);
 	app.use('/api/home/*', requireBrowserSession);
 	app.use('/api/local-blobs/*', requireBrowserSession);
 	app.use(SESSION_STREAM_ROUTE.pattern, async (c, next) => {
@@ -280,15 +263,6 @@ export function createHomeServer({
 			tools: host.toolDefinitions(),
 			snapshot: host.snapshot(),
 		} satisfies HomeSessionResponse),
-	);
-
-	// What Home lists as launchable: compiled applications plus the members of
-	// the selected catalog generation, with no distinction between them crossing
-	// the wire (ADR-0189).
-	app.get(APPLICATIONS_ROUTE.pattern, (c) =>
-		c.json({
-			apps: listApplications(appCatalog),
-		} satisfies ApplicationsResponse),
 	);
 
 	app.put(LOCAL_BLOB_ROUTE.pattern, async (c) => {

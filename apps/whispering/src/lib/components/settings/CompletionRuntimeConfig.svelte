@@ -5,14 +5,17 @@
 	import * as Select from '@epicenter/ui/select';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import {
+		completionModelAfterProviderChange,
 		hasModelSelect,
 		INFERENCE,
 		INFERENCE_PROVIDER_OPTIONS,
 		type InferenceProviderId,
+		isApiKeyInferenceProvider,
 	} from '$lib/constants/inference';
 	import { resolveCompletionState } from '$lib/operations/completion';
 	import { describeCompletionReadiness } from '$lib/operations/completion-target';
 	import AdvancedDisclosure from './AdvancedDisclosure.svelte';
+	import CodexAccountControl from './CodexAccountControl.svelte';
 	import ProviderConfigFields from './ProviderConfigFields.svelte';
 	import { getWhisperingApp } from '$lib/whispering/context';
 
@@ -43,18 +46,13 @@
 
 	function selectProvider(next: InferenceProviderId) {
 		app.settings.set('completionProvider', next);
-		// A model id from the previous provider would 404 the next completion.
-		// Default fixed-list providers to their first model; free-form providers
-		// (OpenRouter, Custom) have `models: null` and keep whatever the user
-		// typed. The `includes` cast widens off the per-provider tuple union (its
-		// element type is `never`); `models[0]` stays typed as the tuple's first.
-		const models = INFERENCE[next].models;
-		if (
-			models &&
-			!(models as readonly string[]).includes(app.settings.get('completionModel'))
-		) {
-			app.settings.set('completionModel', models[0]);
-		}
+		app.settings.set(
+			'completionModel',
+			completionModelAfterProviderChange(
+				next,
+				app.settings.get('completionModel'),
+			),
+		);
 	}
 </script>
 
@@ -86,7 +84,11 @@
 		</Alert.Root>
 	{/if}
 
-	<ProviderConfigFields {provider} />
+	{#if provider === 'Codex'}
+		<CodexAccountControl />
+	{:else if isApiKeyInferenceProvider(provider)}
+		<ProviderConfigFields {provider} />
+	{/if}
 
 	{#if modelItems}
 		<!-- Fixed-list providers get a working default model on selection, so the

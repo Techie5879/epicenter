@@ -4,6 +4,7 @@ export const INFERENCE_PROVIDER_IDS = [
 	'Anthropic',
 	'Google',
 	'OpenRouter',
+	'Codex',
 	'Custom',
 ] as const;
 

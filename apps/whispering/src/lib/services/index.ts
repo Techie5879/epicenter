@@ -1,7 +1,9 @@
 import { AnalyticsServiceLive } from '#platform/analytics';
 import { BlobSourcesLive, BlobsLive } from '#platform/blobs';
 import { DownloadServiceLive } from '#platform/download';
+import { codexFetch } from '#platform/http';
 import { TextServiceLive } from '#platform/text';
+import { createCodexService } from './codex';
 import { LocalShortcutManagerLive } from './local-shortcut-manager';
 import { PlaySoundServiceLive } from './sound';
 
@@ -15,6 +17,7 @@ export const services = {
 	blobs: BlobsLive,
 	blobSources: BlobSourcesLive,
 	download: DownloadServiceLive,
+	codex: createCodexService({ fetch: codexFetch }),
 	localShortcutManager: LocalShortcutManagerLive,
 	sound: PlaySoundServiceLive,
 } as const;
