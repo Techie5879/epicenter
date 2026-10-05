@@ -107,13 +107,14 @@ test('missing Codex session fails before the service is called', async () => {
 	expect(completeCodex).not.toHaveBeenCalled();
 });
 
-test('Codex routing forwards the active session, model, prompts, and signal', async () => {
+test('Codex routing forwards the active session, fixed model, prompts, and signal', async () => {
 	const captured = session('r0');
 	const active = session('r1');
 	const controller = new AbortController();
 	storedSession = captured;
 	ensureActiveSession.mockResolvedValue(Ok(active));
 
+	// A model stored from an older Codex list is ignored for the fixed one.
 	const result = await completeWithGlobalDefault(app(), {
 		systemPrompt: 'system',
 		userPrompt: 'user',
@@ -125,7 +126,7 @@ test('Codex routing forwards the active session, model, prompts, and signal', as
 	expect(ensureActiveSession).toHaveBeenCalledWith(captured);
 	expect(completeCodex).toHaveBeenCalledWith({
 		session: active,
-		model: 'gpt-5.3-codex-spark',
+		model: 'gpt-6-luna',
 		systemPrompt: 'system',
 		userPrompt: 'user',
 		signal: controller.signal,

@@ -7,20 +7,15 @@ import { expect, test } from 'bun:test';
 import { completionModelAfterProviderChange, INFERENCE } from './inference';
 
 test('Codex models stay fixed in product order', () => {
-	expect(INFERENCE.Codex.models).toEqual([
-		'gpt-5.3-codex-spark',
-		'gpt-5.4-mini',
-		'gpt-5.4',
-		'gpt-5.5',
-	]);
+	expect(INFERENCE.Codex.models).toEqual(['gpt-6-luna']);
 });
 
-test('switching to Codex always selects Spark', () => {
+test('switching to Codex always selects Luna', () => {
 	expect(completionModelAfterProviderChange('Codex', 'gemini-2.5-flash')).toBe(
-		'gpt-5.3-codex-spark',
+		'gpt-6-luna',
 	);
 	expect(completionModelAfterProviderChange('Codex', 'gpt-5.4')).toBe(
-		'gpt-5.3-codex-spark',
+		'gpt-6-luna',
 	);
 });
 

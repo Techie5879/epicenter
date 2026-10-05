@@ -160,7 +160,7 @@ export const INFERENCE = {
 	Codex: {
 		access: 'subscription',
 		label: 'Codex subscription',
-		models: ['gpt-5.3-codex-spark', 'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.5'],
+		models: ['gpt-6-luna'],
 	},
 	Custom: {
 		access: 'apiKey',

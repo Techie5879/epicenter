@@ -1,7 +1,7 @@
 import { CompleteError, complete, resolveConnection } from '@epicenter/client';
 import type { Result } from 'wellcrafted/result';
 import { customFetch } from '#platform/http';
-import type { InferenceProviderId } from '$lib/constants/inference';
+import { INFERENCE, type InferenceProviderId } from '../constants/inference';
 import {
 	type CompletionState,
 	resolveCompletionStateFromConfig,
@@ -157,8 +157,10 @@ export function completeWithGlobalDefault(
 	},
 ): Promise<Result<string, CompleteError>> {
 	if (app.settings.get('completionProvider') === 'Codex') {
+		// Codex serves one fixed model, so a stored choice from an older list
+		// (one OpenAI has since retired for ChatGPT accounts) cannot strand Polish.
 		return completeWithCodex({
-			model: app.settings.get('completionModel').trim(),
+			model: INFERENCE.Codex.models[0],
 			systemPrompt,
 			userPrompt,
 			signal,
