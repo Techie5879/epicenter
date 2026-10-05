@@ -88,6 +88,19 @@ static CATALOG: &[CatalogEntry] = &[
     },
     CatalogEntry {
         coord: ModelCoord {
+            repo_id: "handy-computer/whisper-large-v3-turbo-gguf",
+            revision: "main",
+            filename: "whisper-large-v3-turbo-Q8_0.gguf",
+        },
+        name: "Whisper Large v3 Turbo",
+        description: "Multilingual, best accuracy, follows your Dictionary closely",
+        size_bytes: 886_000_000,
+        supports_prompt: true,
+        supports_language: true,
+        recommended: false,
+    },
+    CatalogEntry {
+        coord: ModelCoord {
             repo_id: "handy-computer/parakeet-tdt-0.6b-v3-gguf",
             revision: "main",
             filename: "parakeet-tdt-0.6b-v3-Q4_K_M.gguf",
