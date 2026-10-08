@@ -33,6 +33,7 @@
 		"shortDescription": "One trusted desktop host for Epicenter apps",
 		"externalBin": ["binaries/epicenter-host"],
 		"resources": {
+			"models/silero-v5/LICENSE": "licenses/silero-v5-LICENSE",
 			"../dist": "apps-dist",
 			"recorder-state-icons/studio_microphone.png": "recorder-state-icons/studio_microphone.png",
 			"recorder-state-icons/red_large_square.png": "recorder-state-icons/red_large_square.png"

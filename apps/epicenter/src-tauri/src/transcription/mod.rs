@@ -2,6 +2,7 @@ mod catalog;
 mod error;
 mod model_cache;
 mod settings;
+mod thank_you;
 
 pub use catalog::{
     delete_model, download_model, list_models, ActiveModel, CatalogError, ModelInfo,

@@ -35,6 +35,7 @@ keyring = "4"
 lazy_static = "1.4"
 log = "0.4"
 ogg = "0.9"
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "download-binaries"] }
 rayon = "1.10"
 reqwest = "0.12"
 rubato = "0.15"

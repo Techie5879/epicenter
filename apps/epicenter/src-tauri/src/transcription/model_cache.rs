@@ -184,7 +184,8 @@ impl ModelCache {
         );
 
         let inference_started = Instant::now();
-        let (text, applied) = self.run_loaded(&model, &hints, &samples)?;
+        let (mut text, applied) = self.run_loaded(&model, &hints, &samples)?;
+        super::thank_you::filter(&mut text, &samples);
 
         info!(
             "[Transcription] GGUF transcription complete: characters={} elapsed_ms={}",
